@@ -1,0 +1,25 @@
+{
+  "name": "reviewzy",
+  "version": "0.1.0",
+  "description": "agents draft user-facing copy, humans sign off on a dashboard, agents apply the approved words back in place",
+  "license": "AGPL-3.0-only",
+  "type": "module",
+  "private": true,
+  "engines": {
+    "bun": ">=1.3.0"
+  },
+  "scripts": {
+    "check": "tsc --noEmit && bun test",
+    "daemon": "bun run src/daemon/main.ts"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/server": "^2.0.0",
+    "hono": "^4.13.2",
+    "ulid": "^3.0.2",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.3.0",
+    "typescript": "^5.9.0"
+  }
+}
