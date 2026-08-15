@@ -6,9 +6,14 @@ import { createApp } from "./app.ts";
 
 /**
  * Boots the daemon: opens the store first so a bad db fails before a port is bound, then serves.
- * Returns both so a caller (tests, the shim) can shut them down.
+ * Returns both so a caller (tests, the shim) can shut them down. `hooks.onDrain` is what the
+ * `/drain` route hands off to; omitting it leaves the route refusing new requests without ending
+ * the process, which is exactly what an in-process test wants.
  */
-export function startDaemon(config = loadConfig()) {
+export function startDaemon(
+  config = loadConfig(),
+  hooks: { onDrain?: () => void | Promise<void> } = {},
+) {
   for (const warning of startupWarnings(config)) {
     console.error(`reviewzy: warning: ${warning}`);
   }
@@ -20,7 +25,7 @@ export function startDaemon(config = loadConfig()) {
     server = Bun.serve({
       hostname: HOST,
       port: config.REVIEWZY_PORT,
-      fetch: createApp(config).fetch,
+      fetch: createApp(config, store, new Date(), hooks.onDrain).fetch,
     });
   } catch (error) {
     // A bind failure (e.g. a shim racing an already-running daemon on the same port) must not
@@ -37,7 +42,10 @@ export function startDaemon(config = loadConfig()) {
 if (import.meta.main) {
   let daemon: ReturnType<typeof startDaemon>;
   try {
-    daemon = startDaemon();
+    // The drain hook closes over `stop`, which is declared below it: a function declaration is
+    // hoisted, and the hook only ever runs after `startDaemon` has returned, so the shutdown it
+    // names is always the daemon that just booted.
+    daemon = startDaemon(loadConfig(), { onDrain: () => stop() });
   } catch (error) {
     if (error instanceof ConfigError) {
       console.error(error.message);
@@ -47,9 +55,10 @@ if (import.meta.main) {
   }
 
   // Graceful only (`false`): waits out in-flight requests before closing the store and exiting.
-  // The real drain protocol (resolving in-flight long-polls, versioned handoff) is queue task 4.
+  // SIGINT, SIGTERM, and the `/drain` route all land here, so a handoff drain and an operator's
+  // Ctrl-C shut down through one path.
   let stopping = false;
-  const stop = () => {
+  function stop(): void {
     if (stopping) return;
     stopping = true;
     void (async () => {
@@ -57,7 +66,7 @@ if (import.meta.main) {
       daemon.store.close();
       process.exit(0);
     })();
-  };
+  }
   process.on("SIGINT", stop);
   process.on("SIGTERM", stop);
 }

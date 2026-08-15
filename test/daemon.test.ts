@@ -1,5 +1,5 @@
 import { Database } from "bun:sqlite";
-import { afterAll, expect, test } from "bun:test";
+import { afterAll, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -36,6 +36,7 @@ test("the daemon boots and serves its version and pid on /health", async () => {
   expect(body.name).toBe(manifest.name);
   expect(body.version).toBe(manifest.version);
   expect(body.pid).toBe(process.pid);
+  expect(body.nonce).toBeString();
   expect(Date.parse(body.startedAt)).not.toBeNaN();
 });
 
@@ -70,4 +71,101 @@ test("a failed bind closes the store it already opened, so the sqlite connection
   );
   probe.close();
   void blocker.stop(true);
+});
+
+describe("the drain route", () => {
+  /** One short-lived daemon per case: draining is one-way, so a shared instance would couple the cases. */
+  function withDrainDaemon(
+    env: Record<string, string>,
+    body: (port: number, drained: () => number) => Promise<void>,
+  ): Promise<void> {
+    const caseDir = mkdtempSync(join(tmpdir(), "reviewzy-drain-test-"));
+    let drains = 0;
+    const daemon = startDaemon(
+      { ...loadConfig(env), REVIEWZY_PORT: 0, REVIEWZY_DB: join(caseDir, "reviewzy.db") },
+      { onDrain: () => { drains += 1; } },
+    );
+    return body(daemon.server.port!, () => drains)
+      .finally(() => {
+        void daemon.server.stop(true);
+        daemon.store.close();
+        rmSync(caseDir, { recursive: true, force: true });
+      });
+  }
+
+  test("answers 200, then refuses mcp posts with 503, and fires the drain hook once", async () => {
+    await withDrainDaemon({}, async (port, drained) => {
+      const response = await fetch(`http://127.0.0.1:${port}/drain`, { method: "POST" });
+      expect(response.status).toBe(200);
+      expect(await response.json()).toEqual({ status: "draining" });
+
+      // The hook runs on a timer set after the response flushes; a beat makes its firing observable
+      // without racing it.
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      expect(drained()).toBe(1);
+
+      const refused = await fetch(`http://127.0.0.1:${port}/mcp`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ jsonrpc: "2.0", id: 42, method: "tools/list", params: {} }),
+      });
+      expect(refused.status).toBe(503);
+      const frame = (await refused.json()) as { id: number; error: { code: number; message: string } };
+      expect(frame.error.code).toBe(-32000);
+      expect(frame.error.message).toContain("draining");
+      // The refusal must be correlatable: the request's own id echoes, never a bare null.
+      expect(frame.id).toBe(42);
+
+      // A notification has no id and JSON-RPC forbids answering one: it gets a bare empty 503.
+      const notified = await fetch(`http://127.0.0.1:${port}/mcp`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ jsonrpc: "2.0", method: "notifications/cancelled", params: { requestId: 42 } }),
+      });
+      expect(notified.status).toBe(503);
+      expect(await notified.text()).toBe("");
+    });
+  });
+
+  test("a second drain while draining is idempotent", async () => {
+    await withDrainDaemon({}, async (port, drained) => {
+      const first = await fetch(`http://127.0.0.1:${port}/drain`, { method: "POST" });
+      expect(first.status).toBe(200);
+      const second = await fetch(`http://127.0.0.1:${port}/drain`, { method: "POST" });
+      expect(second.status).toBe(200);
+      expect(await second.json()).toEqual({ status: "draining" });
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      expect(drained()).toBe(1);
+    });
+  });
+
+  test("refuses a non-POST with 405 and names the one method it takes", async () => {
+    await withDrainDaemon({}, async (port) => {
+      const response = await fetch(`http://127.0.0.1:${port}/drain`, { method: "GET" });
+      expect(response.status).toBe(405);
+      expect(response.headers.get("allow")).toBe("POST");
+    });
+  });
+
+  test("requires the bearer token when REVIEWZY_TOKEN is set, and serves it when sent", async () => {
+    await withDrainDaemon({ REVIEWZY_TOKEN: "sekrit" }, async (port, drained) => {
+      const missing = await fetch(`http://127.0.0.1:${port}/drain`, { method: "POST" });
+      expect(missing.status).toBe(401);
+      expect(missing.headers.get("www-authenticate")).toContain("invalid_token");
+
+      const wrong = await fetch(`http://127.0.0.1:${port}/drain`, {
+        method: "POST",
+        headers: { authorization: "Bearer not-sekrit" },
+      });
+      expect(wrong.status).toBe(401);
+
+      const right = await fetch(`http://127.0.0.1:${port}/drain`, {
+        method: "POST",
+        headers: { authorization: "Bearer sekrit" },
+      });
+      expect(right.status).toBe(200);
+      expect(await right.json()).toEqual({ status: "draining" });
+      expect(drained()).toBe(0); // the hook is on a timer; it has not fired yet at this point
+    });
+  });
 });
