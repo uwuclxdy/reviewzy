@@ -8,6 +8,7 @@ import type { MiddlewareHandler } from "hono";
 import type { Hono } from "hono";
 import { timingSafeEqual } from "hono/utils/buffer";
 import type { Config } from "../config.ts";
+import type { Store } from "../db/store.ts";
 import { createMcpServer } from "./server.ts";
 
 /** One endpoint, POST only. `docs/mcp-contract.md` freezes the surface. */
@@ -95,7 +96,7 @@ function authRequired(description: string): Response {
  * passed. Everything past the gate is the SDK's: `_meta` validation, header-versus-body agreement,
  * revision negotiation, and the method registry.
  */
-export function mountMcp(app: Hono, config: Config): void {
+export function mountMcp(app: Hono, config: Config, store: Store): void {
   // `legacy: 'reject'` is the whole of the revision guard, so the endpoint serves only the one
   // revision `docs/mcp-contract.md` freezes. `supportedProtocolVersions` on the server cannot do
   // it and is deliberately unset: the SDK's `installDiscoverHandler` unions its served modern
@@ -104,7 +105,9 @@ export function mountMcp(app: Hono, config: Config): void {
   // `legacyVersions[0] ?? LATEST_PROTOCOL_VERSION`, and `LATEST_PROTOCOL_VERSION` is
   // `"2025-11-25"`. A modern-only list empties `legacyVersions`, which is exactly what reaches
   // that hardcoded fallback, so narrowing it is what would serve one.
-  const handler = createMcpHandler(() => createMcpServer(), { legacy: "reject" });
+  // The store is the daemon's own open handle (`startDaemon` opens it before the port binds), so
+  // every tool call writes through the one connection the daemon will close on shutdown.
+  const handler = createMcpHandler(() => createMcpServer(config, store), { legacy: "reject" });
 
   // The `Origin` rung is `originGate`, mounted app-wide in `createApp`; it runs before this
   // handler, so the pinned order (origin, then method, then credential) holds without a repeat of

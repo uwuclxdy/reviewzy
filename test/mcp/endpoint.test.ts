@@ -1,6 +1,11 @@
 import { afterAll, describe, expect, test } from "bun:test";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { type Config, HOST, loadConfig } from "../../src/config.ts";
 import { createApp, type HealthBody } from "../../src/daemon/app.ts";
+import { openStore } from "../../src/db/store.ts";
+import type { Store } from "../../src/db/store.ts";
 
 // Read independently of `src/mcp/server.ts`, so an assertion cannot pass by importing its answer.
 const manifest = (await Bun.file(new URL("../../package.json", import.meta.url)).json()) as {
@@ -17,17 +22,31 @@ const META = {
   "io.modelcontextprotocol/clientInfo": { name: "reviewzy-probe", version: "0" },
 };
 
+const stores: Store[] = [];
+const tempDirs: string[] = [];
+
+/** One disposable store per served app, each on its own temp file: `createApp` takes the daemon's store, so every probe app gets one that outlives the suite. */
+function tempStore(env: Record<string, string> = {}): { config: Config; store: Store } {
+  const dir = mkdtempSync(join(tmpdir(), "reviewzy-endpoint-test-"));
+  tempDirs.push(dir);
+  const config = loadConfig({ ...env, REVIEWZY_DB: join(dir, "reviewzy.db") });
+  const store = openStore(config);
+  stores.push(store);
+  return { config, store };
+}
+
 // Port 0 lets the kernel pick, so the suite never collides with a daemon already running here.
 // `loadConfig` floors the port at 1, so this config is deliberately desynchronized from the bind
 // rather than a state a real boot reaches: the desync is what makes `configuredOrigin` never match,
 // forcing the loopback branch of the allow-list to be what answers.
 const serve = (env: Record<string, string>) => {
-  const config: Config = {
-    ...loadConfig(env),
+  const { config, store } = tempStore(env);
+  const probeConfig: Config = {
+    ...config,
     REVIEWZY_PORT: 0,
     baseUrl: env.REVIEWZY_BASE_URL ?? `http://${HOST}:0`,
   };
-  return Bun.serve({ hostname: HOST, port: 0, fetch: createApp(config).fetch });
+  return Bun.serve({ hostname: HOST, port: 0, fetch: createApp(probeConfig, store).fetch });
 };
 
 const open = serve({});
@@ -38,12 +57,16 @@ const proxied = serve({ REVIEWZY_BASE_URL: "https://reviewzy.example" });
 // the port the daemon bound. Bound first and reloaded, because the kernel picks the port and
 // `loadConfig` will not accept 0 to ask for one.
 const native = serve({});
+const nativeStore = tempStore();
 native.reload({
-  fetch: createApp({
-    ...loadConfig({}),
-    REVIEWZY_PORT: boundPort(native),
-    baseUrl: `http://${HOST}:${boundPort(native)}`,
-  }).fetch,
+  fetch: createApp(
+    {
+      ...nativeStore.config,
+      REVIEWZY_PORT: boundPort(native),
+      baseUrl: `http://${HOST}:${boundPort(native)}`,
+    },
+    nativeStore.store,
+  ).fetch,
 });
 
 afterAll(() => {
@@ -51,6 +74,10 @@ afterAll(() => {
   void guarded.stop(true);
   void proxied.stop(true);
   void native.stop(true);
+  for (const store of stores) store.close();
+  while (tempDirs.length > 0) {
+    rmSync(tempDirs.pop()!, { recursive: true, force: true });
+  }
 });
 
 /** `port` is optional in the type (a unix-socket server has none), and every server here is a tcp bind. */
@@ -150,10 +177,13 @@ describe("protocol conformance", () => {
     });
   });
 
-  test("tools/list answers an empty list, since this build registers none", async () => {
+  // Task 5 registered `file_entries`, so the pin is "exactly the registered set" rather than the
+  // empty list it was. `test/mcp/file-entries.test.ts` owns the tool's own behavior.
+  test("tools/list answers exactly the registered tool, file_entries", async () => {
     const { status, body } = await probe({ rpc: "tools/list" });
     expect(status).toBe(200);
-    expect(body?.result?.tools).toEqual([]);
+    const tools = (body?.result?.tools ?? []) as { name: string }[];
+    expect(tools.map((tool) => tool.name)).toEqual(["file_entries"]);
     expect(body?.result?.resultType).toBe("complete");
   });
 

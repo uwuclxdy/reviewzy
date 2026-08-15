@@ -1,4 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/server";
+import type { Config } from "../config.ts";
+import type { Store } from "../db/store.ts";
+import { registerFileEntriesTool } from "./file-entries.ts";
 import { NAME, VERSION } from "../version.ts";
 
 /**
@@ -11,11 +14,12 @@ File the strings you want to change as draft entries against a project. A human 
 
 /**
  * A fresh server per request, since the 2026-07-28 revision is stateless and `createMcpHandler`
- * builds one instance per HTTP request. Registers no tools and no resources: later queue tasks own
- * those, and this build answers the protocol surface alone.
+ * builds one instance per HTTP request. Every instance registers the tools over the same store the
+ * daemon opened at boot, so the write path never opens a connection of its own; later queue tasks
+ * register theirs the same way.
  */
-export function createMcpServer(): McpServer {
-  return new McpServer(
+export function createMcpServer(config: Config, store: Store): McpServer {
+  const server: McpServer = new McpServer(
     { name: NAME, version: VERSION },
     {
       // Without `tools`, `McpServer` never registers `tools/list` at all. `listChanged` is explicit
@@ -34,4 +38,7 @@ export function createMcpServer(): McpServer {
       },
     },
   );
+
+  registerFileEntriesTool(server, config.baseUrl, store);
+  return server;
 }
