@@ -116,8 +116,11 @@ describe("editor page", () => {
     // Status tag: the draft is still a draft.
     expect(html).toContain("Draft");
 
-    // Context pane renders the parsed context as key-value rows, then the anchor metadata.
-    expectOrder(html, ["<table class=\"info-table\">", "where", "setup docs", "code", "bun install"]);
+    // Context pane renders the parsed context as key-value rows, then the anchor metadata. The
+    // diff view above the editor also carries the anchor text, so the order check is scoped to the
+    // pane itself.
+    const contextPane = html.slice(html.indexOf('<table class="info-table">'));
+    expectOrder(contextPane, ["where", "setup docs", "code", "bun install"]);
     expect(html).toContain("https://example.com/org/repo.git");
     expect(html).toContain("docs/setup.md");
     expect(html).toContain("Run bun install");
@@ -219,7 +222,8 @@ describe("list rows", () => {
     const { env, id } = envWithDraft();
     const html = await (await env.get("/")).text();
     expect(html).toContain(`<a class="btn btn-secondary btn-sm" href="/entries/${id}">Edit</a>`);
-    expect(html).toContain("<th>Edit</th>");
+    // Task 13 widened the column to the row's transitions, so the header names the whole cell.
+    expect(html).toContain("<th>Actions</th>");
     env.close();
   });
 });

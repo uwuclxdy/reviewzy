@@ -1,6 +1,6 @@
 import type { JSX } from "hono/jsx/jsx-runtime";
 import { listRevisions, parseConstraints } from "../db/human-save.ts";
-import type { Constraints, HumanSaveRefusal, RevisionRow } from "../db/human-save.ts";
+import type { Constraints, HumanSaveRefusal, RevisionRow, TransitionRefusal } from "../db/human-save.ts";
 import {
   countEntries,
   listEntries,
@@ -225,19 +225,76 @@ function FilterForm({ vm }: { vm: ListViewModel }) {
   );
 }
 
-/** The settled list region: success, empty, or partial. The loading and error states are client-side. */
-function ListRegion({ vm }: { vm: ListViewModel }) {
+/**
+ * What an action round settles into, rendered above the list region: a single refusal (one entry
+ * could not move, why, and the fix) or the batch report (how many moved, each refusal named).
+ * The route layer builds these from the store's outcomes; the view owns the shapes.
+ */
+export type ListNotice =
+  | { readonly kind: "refusal"; readonly title: string; readonly message: string }
+  | { readonly kind: "batch"; readonly approved: number; readonly total: number; readonly refused: readonly string[] };
+
+/** The settled rendering of a notice: a success panel when a batch fully moved, an alert otherwise. */
+function NoticeCallout({ notice }: { notice: ListNotice }) {
+  if (notice.kind === "refusal") {
+    return <DangerCallout title={notice.title} body={notice.message} />;
+  }
+  if (notice.refused.length === 0) {
+    return (
+      <div class="callout callout-success" role="status">
+        <div class="callout-icon" style="color: var(--success)">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+            <circle cx="8" cy="8" r="6.5" />
+            <path d="M5 8l2 2 4-4" />
+          </svg>
+        </div>
+        <div class="callout-content">
+          <div class="callout-title">
+            Approved {notice.approved} {notice.approved === 1 ? "entry" : "entries"}
+          </div>
+        </div>
+      </div>
+    );
+  }
+  return (
+    <div class="callout callout-danger" role="alert">
+      <div class="callout-icon" style="color: var(--danger)">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+          <circle cx="8" cy="8" r="6.5" />
+          <path d="M10 6L6 10M6 6l4 4" />
+        </svg>
+      </div>
+      <div class="callout-content">
+        <div class="callout-title">
+          Approved {notice.approved} of {notice.total} entries
+        </div>
+        <ul class="notice-list">
+          {notice.refused.map((message) => (
+            <li key={message}>{message}</li>
+          ))}
+        </ul>
+      </div>
+    </div>
+  );
+}
+
+/** The settled list region: success, empty, or partial, with an action round's notice on top. The loading and error states are client-side. */
+function ListRegion({ vm, notice }: { vm: ListViewModel; notice: ListNotice | undefined }) {
   if (vm.shown === 0) {
     // Zero entries at all is "no entries yet" even under a filter: nothing exists to filter, and
     // the empty state explains how entries get here. Only a store with entries can have matches.
-    return vm.total === 0 ? <EmptyAll /> : <EmptyMatch />;
+    return (
+      <>
+        {notice !== undefined ? <NoticeCallout notice={notice} /> : null}
+        {vm.total === 0 ? <EmptyAll /> : <EmptyMatch />}
+      </>
+    );
   }
   return (
     <>
+      {notice !== undefined ? <NoticeCallout notice={notice} /> : null}
       {vm.filtersActive && vm.shown < vm.total ? <PartialHeader shown={vm.shown} total={vm.total} /> : null}
-      {vm.groups.map((group) => (
-        <ProjectGroupView key={group.slug} group={group} />
-      ))}
+      <BatchForm vm={vm} />
     </>
   );
 }
@@ -284,6 +341,37 @@ function EmptyMatch() {
   );
 }
 
+/**
+ * The batch approve form wrapping the whole list region: the checkboxes post as `id`, the hidden
+ * inputs carry the active filters so an action round re-renders the region under the same filter
+ * (htmx includes the closest form's inputs for the row buttons too), and the native action keeps
+ * no-JS batch approve working. One form per page, never nested: the filters form lives outside the
+ * swap region.
+ */
+function BatchForm({ vm }: { vm: ListViewModel }) {
+  return (
+    <form
+      id="batch-form"
+      method="post"
+      action="/batch-approve"
+      hx-post="/batch-approve"
+      hx-target="#entries-list"
+      hx-swap="innerHTML"
+      hx-indicator="#entries-loading"
+    >
+      <input type="hidden" name="q" value={vm.q} />
+      <input type="hidden" name="status" value={vm.status} />
+      <input type="hidden" name="project" value={vm.project} />
+      <div class="batch-bar">
+        <button class="btn btn-primary btn-sm" type="submit">Approve selected</button>
+      </div>
+      {vm.groups.map((group) => (
+        <ProjectGroupView key={group.slug} group={group} />
+      ))}
+    </form>
+  );
+}
+
 function ProjectGroupView({ group }: { group: ProjectGroup }) {
   const count = group.batches.reduce((n, batch) => n + batch.entries.length, 0);
   return (
@@ -304,13 +392,14 @@ function ProjectGroupView({ group }: { group: ProjectGroup }) {
             <table>
               <thead>
                 <tr>
+                  <th class="cell-select">Select</th>
                   <th>File</th>
                   <th>Anchor</th>
                   <th>Text</th>
                   <th>Status</th>
                   <th>Filed by</th>
                   <th>Constraints</th>
-                  <th>Edit</th>
+                  <th>Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -326,11 +415,26 @@ function ProjectGroupView({ group }: { group: ProjectGroup }) {
   );
 }
 
+/**
+ * One row. The checkbox names the entry for the batch form; it exists only on drafts, because an
+ * approve on any other status always refuses and a checkbox that can only refuse is noise (races
+ * are still reported per entry). The action buttons carry the row's own approve and reject,
+ * targeting the list region; their requests include the batch form's hidden filters, so an action
+ * round re-renders the region under the same filter. Applied and rejected rows are terminal from
+ * the dashboard side and offer only the editor.
+ */
 function EntryRowView({ entry }: { entry: EntryRow }) {
   const text = entry.human_text ?? entry.agent_draft;
   const constraints = constraintSummary(entry.constraints);
+  const approve = entry.status === "draft";
+  const reject = entry.status === "draft" || entry.status === "approved";
   return (
     <tr>
+      <td class="cell-select">
+        {approve ? (
+          <input type="checkbox" name="id" value={entry.id} aria-label={`Select ${entry.file}`} />
+        ) : null}
+      </td>
       <td class="cell-file">
         <span class="file-path" title={entry.file}>{entry.file}</span>
       </td>
@@ -350,7 +454,31 @@ function EntryRowView({ entry }: { entry: EntryRow }) {
       <td class="cell-constraints">
         {constraints.length > 0 ? <span class="constraint-summary">{constraints.join(" · ")}</span> : null}
       </td>
-      <td>
+      <td class="cell-actions">
+        {approve ? (
+          <button
+            type="button"
+            class="btn btn-primary btn-sm"
+            hx-post={`/entries/${entry.id}/approve`}
+            hx-target="#entries-list"
+            hx-swap="innerHTML"
+            hx-indicator="#entries-loading"
+          >
+            Approve
+          </button>
+        ) : null}
+        {reject ? (
+          <button
+            type="button"
+            class="btn btn-danger btn-sm"
+            hx-post={`/entries/${entry.id}/reject`}
+            hx-target="#entries-list"
+            hx-swap="innerHTML"
+            hx-indicator="#entries-loading"
+          >
+            Reject
+          </button>
+        ) : null}
         <a class="btn btn-secondary btn-sm" href={`/entries/${entry.id}`}>Edit</a>
       </td>
     </tr>
@@ -381,13 +509,15 @@ function ErrorBoxTemplate() {
 }
 
 /** The full page for a plain navigation; the mount wraps it in the doctype. */
-export function dashboardPage(store: Store, params: ListParams): JSX.Element {
+export function dashboardPage(store: Store, params: ListParams, notice: ListNotice | undefined = undefined): JSX.Element {
   const vm = loadList(store, params);
   return (
     <html lang="en" data-theme="dark">
       <head>
         <meta charset="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
+        {/* The empty data: URL kills the browser's /favicon.ico probe, which would 404 under /static. */}
+        <link rel="icon" href="data:," />
         <title>Entries · {NAME}</title>
         <link rel="stylesheet" href="/static/tokens.css" />
         <link rel="stylesheet" href="/static/components.css" />
@@ -407,7 +537,7 @@ export function dashboardPage(store: Store, params: ListParams): JSX.Element {
                 Loading entries
               </div>
               <div id="entries-list">
-                <ListRegion vm={vm} />
+                <ListRegion vm={vm} notice={notice} />
               </div>
             </div>
             <ErrorBoxTemplate />
@@ -419,8 +549,8 @@ export function dashboardPage(store: Store, params: ListParams): JSX.Element {
 }
 
 /** The list region only, for htmx requests; the loading strip and the error template stay in the page. */
-export function entriesFragment(store: Store, params: ListParams): JSX.Element {
-  return <ListRegion vm={loadList(store, params)} />;
+export function entriesFragment(store: Store, params: ListParams, notice: ListNotice | undefined = undefined): JSX.Element {
+  return <ListRegion vm={loadList(store, params)} notice={notice} />;
 }
 
 // ---- Entry editor ----
@@ -432,17 +562,18 @@ export type EditorViewModel = {
 };
 
 /**
- * What the last save round rendered the editor with. `submittedText` is the text the user
- * submitted (a refusal must keep it in the textarea), and `refusal` is the formatted message when
- * the last save was refused. Both are present so a swap never has to guess which one exists.
+ * What the last save or transition round rendered the editor with. `submittedText` is the text the
+ * user submitted (a refusal must keep it in the textarea), and `refusal` is the formatted title and
+ * message when the last round was refused (a save, an approve, or a reject each name their own
+ * failure). Both are present so a swap never has to guess which one exists.
  */
 export type EditorState = {
   readonly submittedText: string;
-  readonly refusal: string | undefined;
+  readonly refusal: { readonly title: string; readonly body: string } | undefined;
 };
 
 /** The one entry the editor edits, by the same keyset query the list uses; `undefined` when the id is unknown. */
-function getEntry(store: Store, id: string): EntryRow | undefined {
+export function getEntry(store: Store, id: string): EntryRow | undefined {
   return listEntries(store, { projectId: undefined, status: undefined, ids: [id], q: undefined, limit: 1, cursor: undefined })
     .rows[0];
 }
@@ -484,6 +615,33 @@ export function formatSaveRefusal(refusal: Exclude<HumanSaveRefusal, { kind: "un
   }
 }
 
+/**
+ * The user-facing refusal messages for the approve and reject transitions, in the dashboard's own
+ * voice: name the entry and what failed, then the fix. Both transitions share the refusal kinds;
+ * the message spells the verb each one refused.
+ */
+export function formatTransitionRefusal(
+  action: "approve" | "reject",
+  refusal: Exclude<TransitionRefusal, { kind: "unknown" }>,
+  entryFile: string,
+): string {
+  switch (refusal.kind) {
+    case "no_draft":
+      return `Entry ${entryFile} has no draft to approve. Open the editor to write the text.`;
+    case "status":
+      switch (refusal.status) {
+        case "approved":
+          return `Entry ${entryFile} is already approved, so there's nothing to accept. Open the editor to revise its text.`;
+        case "applied":
+          return action === "approve"
+            ? `Entry ${entryFile} is already applied, so it can't be approved. If the anchor goes stale, the entry returns to approved.`
+            : `Entry ${entryFile} is already applied, so it can't be rejected. If the anchor goes stale, it returns to approved and can be rejected then.`;
+        case "rejected":
+          return `Entry ${entryFile} was rejected, and a rejected entry stays rejected. File a new entry if the line still needs changing.`;
+      }
+  }
+}
+
 function DangerCallout({ title, body }: { title: string; body: string }) {
   return (
     <div class="callout callout-danger" role="alert">
@@ -502,16 +660,20 @@ function DangerCallout({ title, body }: { title: string; body: string }) {
 }
 
 /**
- * The editor region, swapped wholesale by a save (form + status tag + history + any refusal).
- * The textarea carries `hx-preserve`, so a swap keeps the user's focus and typing while the
- * server-rendered value stays what the last save left: the submitted text on a refusal.
+ * The editor region, swapped wholesale by a save or a transition (form + status tag + history +
+ * any refusal). The textarea carries `hx-preserve`, so a swap keeps the user's focus and typing
+ * while the server-rendered value stays what the last save left: the submitted text on a refusal.
+ * The `view` marker tells the approve and reject routes which region to answer with: this region,
+ * or the list's. The buttons carry htmx only; the save button keeps the native submit.
  */
 function EditorRegion({ vm, state }: { vm: EditorViewModel; state: EditorState | undefined }) {
   const text = state?.submittedText ?? vm.entry.human_text ?? vm.entry.agent_draft ?? "";
+  const approve = vm.entry.status === "draft";
+  const reject = vm.entry.status === "draft" || vm.entry.status === "approved";
   return (
     <div id="editor-region">
       {state?.refusal !== undefined ? (
-        <DangerCallout title="Text not saved" body={state.refusal} />
+        <DangerCallout title={state.refusal.title} body={state.refusal.body} />
       ) : null}
       <form
         id="editor-form"
@@ -522,6 +684,7 @@ function EditorRegion({ vm, state }: { vm: EditorViewModel; state: EditorState |
         hx-target="#editor-region"
         hx-swap="outerHTML"
       >
+        <input type="hidden" name="view" value="editor" />
         <div class="card-header">
           <div class="card-title">Text</div>
           <span class={`tag ${STATUS_TAG[vm.entry.status]}`}>
@@ -535,6 +698,34 @@ function EditorRegion({ vm, state }: { vm: EditorViewModel; state: EditorState |
           </textarea>
           <div class="editor-actions">
             <button class="btn btn-primary" type="submit">Save text</button>
+            {approve ? (
+              <button
+                type="button"
+                class="btn btn-secondary"
+                hx-post={`/entries/${vm.entry.id}/approve`}
+                hx-target="#editor-region"
+                hx-swap="outerHTML"
+                hx-indicator="#editor-action-loading"
+              >
+                Approve draft
+              </button>
+            ) : null}
+            {reject ? (
+              <button
+                type="button"
+                class="btn btn-danger"
+                hx-post={`/entries/${vm.entry.id}/reject`}
+                hx-target="#editor-region"
+                hx-swap="outerHTML"
+                hx-indicator="#editor-action-loading"
+              >
+                Reject
+              </button>
+            ) : null}
+            <span id="editor-action-loading" class="htmx-indicator" role="status">
+              <span class="spinner" aria-hidden="true"></span>
+              Updating entry
+            </span>
           </div>
         </div>
       </form>
@@ -684,6 +875,38 @@ function ContextCard({ entry }: { entry: EntryRow }) {
   );
 }
 
+/**
+ * The before-and-after of the entry's text, above the editor: what the anchored region reads now
+ * (the anchor line visually distinct) and what the entry's text will replace it with. Both sides
+ * escape through JSX; the text is the stored bytes, shown as-is.
+ */
+function DiffView({ entry }: { entry: EntryRow }) {
+  const after = entry.human_text ?? entry.agent_draft;
+  // No text at all means nothing to compare: a filed entry whose agent never drafted, or an
+  // approved entry whose text was never set.
+  if (after === null) return null;
+  return (
+    <div class="diff-grid">
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">Before</div>
+        </div>
+        <pre class="diff-code">
+          <span class="diff-line">{entry.anchor_before}</span>
+          <span class="diff-line diff-anchor">{entry.anchor_text}</span>
+          <span class="diff-line">{entry.anchor_after}</span>
+        </pre>
+      </div>
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">After</div>
+        </div>
+        <pre class="diff-code">{after}</pre>
+      </div>
+    </div>
+  );
+}
+
 /** The full editor page; the mount wraps it in the doctype. */
 export function editorPage(vm: EditorViewModel, state: EditorState | undefined = undefined): JSX.Element {
   const text = state?.submittedText ?? vm.entry.human_text ?? vm.entry.agent_draft ?? "";
@@ -692,6 +915,8 @@ export function editorPage(vm: EditorViewModel, state: EditorState | undefined =
       <head>
         <meta charset="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
+        {/* The empty data: URL kills the browser's /favicon.ico probe, which would 404 under /static. */}
+        <link rel="icon" href="data:," />
         <title>Edit entry · {NAME}</title>
         <link rel="stylesheet" href="/static/tokens.css" />
         <link rel="stylesheet" href="/static/components.css" />
@@ -708,6 +933,7 @@ export function editorPage(vm: EditorViewModel, state: EditorState | undefined =
               <h1 class="page-title">Edit entry</h1>
               <p class="page-lede">Saving the text approves the entry and releases it to agents.</p>
             </header>
+            <DiffView entry={vm.entry} />
             <div class="editor-grid">
               <div class="editor-main">
                 <EditorRegion vm={vm} state={state} />
@@ -739,6 +965,8 @@ export function notFoundPage(): JSX.Element {
       <head>
         <meta charset="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
+        {/* The empty data: URL kills the browser's /favicon.ico probe, which would 404 under /static. */}
+        <link rel="icon" href="data:," />
         <title>Entry not found · {NAME}</title>
         <link rel="stylesheet" href="/static/tokens.css" />
         <link rel="stylesheet" href="/static/components.css" />

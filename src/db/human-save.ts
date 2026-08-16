@@ -84,6 +84,34 @@ export function parseConstraints(json: string): Constraints {
 }
 
 /**
+ * Everything an approve or reject refuses, with the value the dashboard's message needs: `unknown`
+ * became a page's gone-fragment, `status` names the status that blocked the move (never `draft`,
+ * which is the source state both transitions act on), `no_draft` the entry whose agent never
+ * produced text. The route layer formats these into user-facing messages; the store never touches
+ * prose.
+ */
+export type TransitionRefusal =
+  | { readonly kind: "unknown" }
+  | { readonly kind: "status"; readonly status: Exclude<EntryStatus, "draft"> }
+  | { readonly kind: "no_draft" };
+
+/**
+ * `approveEntry`'s outcome. `ok` carries the status the entry now holds; a refusal means nothing
+ * was written, not even `updated_at`.
+ */
+export type ApproveOutcome = { readonly ok: true; readonly status: "approved" } | { readonly ok: false; readonly refusal: TransitionRefusal };
+
+/** `rejectEntry`'s outcome, mirroring `ApproveOutcome`. */
+export type RejectOutcome = { readonly ok: true; readonly status: "rejected" } | { readonly ok: false; readonly refusal: TransitionRefusal };
+
+/**
+ * One entry's result in a batch approve, keyed by the id the caller passed. `ok` reports the entry
+ * approved; a refusal names why and carries `id` so the route can point at the entry without
+ * re-reading a row it was just told to leave alone.
+ */
+export type BatchApproveResult = { readonly id: string; readonly ok: true; readonly status: "approved" } | { readonly id: string; readonly ok: false; readonly refusal: TransitionRefusal };
+
+/**
  * The dashboard's one save path, owned here so no route decides a status change. The refusal order
  * is deliberate: unknown id, then a terminal status (nothing is ever written on those), then empty
  * text, then the identical-text no-op, then the constraint checks. A save that passes all of them
@@ -141,6 +169,62 @@ export function saveHumanText(store: Store, input: HumanSaveInput): HumanSaveOut
   })();
   store.notifyStatusChange(input.id, "approved");
   return { ok: true, saved: true, status: "approved", text: input.text };
+}
+
+/**
+ * Approves a draft: `human_text` takes the agent's draft verbatim, the entry becomes approved, and
+ * the status-change event fires after the write so a waiter's re-read sees the new status. The
+ * single UPDATE needs no explicit transaction. Refusals: unknown id, then a status that is not
+ * draft, then an entry whose agent never produced a draft; nothing is written on any of them, not
+ * even `updated_at`. Approving authors no prose, so it logs no revision row; the save that approves
+ * is the only revision writer.
+ */
+export function approveEntry(store: Store, id: string): ApproveOutcome {
+  const row = store.db.query("SELECT status, agent_draft FROM entries WHERE id = ?").get(id) as
+    | { status: EntryStatus; agent_draft: string | null }
+    | null;
+  if (row === null) return { ok: false, refusal: { kind: "unknown" } };
+  if (row.status !== "draft") return { ok: false, refusal: { kind: "status", status: row.status } };
+  if (row.agent_draft === null) return { ok: false, refusal: { kind: "no_draft" } };
+
+  store.db.run("UPDATE entries SET human_text = ?, status = 'approved', updated_at = ? WHERE id = ?", [
+    row.agent_draft,
+    Date.now(),
+    id,
+  ]);
+  store.notifyStatusChange(id, "approved");
+  return { ok: true, status: "approved" };
+}
+
+/**
+ * Rejects a draft or an approved entry: the entry becomes rejected, and the status-change event
+ * fires after the write. Rejection is terminal and erases nothing (the draft and any human text
+ * stay in the row; a new entry is the way to start again), so it logs no revision row. Refusals:
+ * unknown id, then a status that is not draft or approved; nothing is written on either.
+ */
+export function rejectEntry(store: Store, id: string): RejectOutcome {
+  const row = store.db.query("SELECT status FROM entries WHERE id = ?").get(id) as { status: EntryStatus } | null;
+  if (row === null) return { ok: false, refusal: { kind: "unknown" } };
+  if (row.status !== "draft" && row.status !== "approved") {
+    return { ok: false, refusal: { kind: "status", status: row.status } };
+  }
+
+  store.db.run("UPDATE entries SET status = 'rejected', updated_at = ? WHERE id = ?", [Date.now(), id]);
+  store.notifyStatusChange(id, "rejected");
+  return { ok: true, status: "rejected" };
+}
+
+/**
+ * The batch approve: each id goes through `approveEntry` independently, so one entry's refusal
+ * never blocks another's approval and a race can only refuse the entry it actually hit. Results
+ * come back in the ids' order; the caller reports per entry. An empty selection approves nothing.
+ */
+export function batchApproveEntries(store: Store, ids: readonly string[]): BatchApproveResult[] {
+  return ids.map((id) => {
+    const outcome = approveEntry(store, id);
+    if (outcome.ok) return { id, ok: true, status: "approved" };
+    return { id, ok: false, refusal: outcome.refusal };
+  });
 }
 
 /**
