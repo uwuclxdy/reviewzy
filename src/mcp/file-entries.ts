@@ -199,7 +199,9 @@ export function registerFileEntriesTool(server: McpServer, baseUrl: string, stor
       const output = {
         batch_id: batch.batchId,
         results: batch.results,
-        dashboard_url: `${baseUrl}/projects/${args.project}`,
+        // The project-filtered list view: `/projects/{slug}` never existed as a route, so the old
+        // link 404ed (flagged by the task-13 browser pass).
+        dashboard_url: `${baseUrl}/?project=${encodeURIComponent(args.project)}`,
       };
       return {
         content: [{ type: "text" as const, text: JSON.stringify(output) }],

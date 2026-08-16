@@ -151,7 +151,7 @@ describe("a first file", () => {
 
     const out = result?.structuredContent as Result;
     expect(out.batch_id).toMatch(ULID);
-    expect(out.dashboard_url).toBe(`http://127.0.0.1:${PORT}/projects/app`);
+    expect(out.dashboard_url).toBe(`http://127.0.0.1:${PORT}/?project=app`);
 
     expect(out.results).toHaveLength(2);
     for (const r of out.results) {
