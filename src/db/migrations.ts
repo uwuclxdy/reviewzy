@@ -133,4 +133,17 @@ export const MIGRATIONS: Migration[] = [
       CREATE UNIQUE INDEX style_guides_global_idx ON style_guides(project_id IS NULL) WHERE project_id IS NULL;
     `,
   },
+  {
+    version: 3,
+    name: "mark-applied",
+    sql: `
+      -- mark_applied stores the hash of the text the agent applied; the contract's param table
+      -- listed applied_hash a day before the entry schema had a column to hold it (cloudy,
+      -- 2026-08-16), so the column lands now, with the doc edit in the same round.
+      ALTER TABLE entries ADD COLUMN applied_hash TEXT;
+      -- entries_archive mirrors entries column-for-column: the retention sweep copies applied
+      -- rows over whole, so it must not lose the new column.
+      ALTER TABLE entries_archive ADD COLUMN applied_hash TEXT;
+    `,
+  },
 ];

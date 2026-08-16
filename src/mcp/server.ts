@@ -4,6 +4,7 @@ import type { Store } from "../db/store.ts";
 import { registerFetchApprovedTool } from "./fetch-approved.ts";
 import { registerFileEntriesTool } from "./file-entries.ts";
 import { registerListEntriesTool } from "./list-entries.ts";
+import { registerMarkAppliedTool } from "./mark-applied.ts";
 import { registerStyleGuideResource } from "./style-guide-resource.ts";
 import { NAME, VERSION } from "../version.ts";
 
@@ -49,6 +50,7 @@ export function createMcpServer(config: Config, store: Store): McpServer {
   registerFileEntriesTool(server, config.baseUrl, store);
   registerListEntriesTool(server, store);
   registerFetchApprovedTool(server, store);
+  registerMarkAppliedTool(server, store);
   registerStyleGuideResource(server, store);
   return server;
 }

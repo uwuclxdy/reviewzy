@@ -60,6 +60,7 @@ export type EntryRow = {
   readonly constraints: string;
   readonly filed_by: string | null;
   readonly stale_note: string | null;
+  readonly applied_hash: string | null;
   readonly created_at: number;
   readonly updated_at: number;
   readonly applied_at: number | null;
@@ -239,7 +240,7 @@ const APPROVED_PAGE_SIZE = 50;
 const ENTRY_COLUMNS = [
   "id", "project_id", "batch_id", "repo", "file", "anchor_text", "anchor_before",
   "anchor_after", "anchor_hash", "file_hash", "agent_draft", "human_text", "status",
-  "context", "constraints", "filed_by", "stale_note", "created_at", "updated_at", "applied_at", "archived_at",
+  "context", "constraints", "filed_by", "stale_note", "applied_hash", "created_at", "updated_at", "applied_at", "archived_at",
 ] as const;
 
 /**
@@ -319,4 +320,69 @@ export function approvedEntries(
   const rows = store.db.query(sql).all(...params) as ApprovedEntryRow[];
   const nextSince = rows.length === APPROVED_PAGE_SIZE ? rows[rows.length - 1]!.id : null;
   return { rows, nextSince };
+}
+
+/** The two outcomes `mark_applied` may report: the text was applied, or the anchor no longer matches. */
+export type ApplyResult = "applied" | "anchor_stale";
+
+export type MarkAppliedInput = {
+  readonly id: string;
+  readonly result: ApplyResult;
+  /** The sha256 hex of the text that was applied; null when the call omitted it. */
+  readonly appliedHash: string | null;
+  /** What the anchor matched instead; null when the call omitted it. */
+  readonly foundText: string | null;
+};
+
+/** Everything the store refuses, in the contract's terms; the tool formats the message naming the id. */
+export type MarkAppliedRefusal =
+  | { readonly kind: "unknown" }
+  | { readonly kind: "status"; readonly status: EntryStatus };
+
+export type MarkAppliedOutcome =
+  | { readonly ok: true; readonly status: "applied" | "approved" }
+  | { readonly ok: false; readonly refusal: MarkAppliedRefusal };
+
+/**
+ * The `mark_applied` write: the whole agent-side transition surface, owned here so no tool layer
+ * ever decides a status change. The contract's matrix is exhaustive — `approved`→`applied`, and
+ * `approved`|`applied`→`approved` on a stale anchor — and every other (id, status) pair is a
+ * refusal carrying the status the tool names. The dashboard's transitions (`draft`→`approved`,
+ * →`rejected`) are not expressible here, which is what keeps an agent from ever reaching either
+ * state. A refusal returns before any write, so the row is untouched, `updated_at` included.
+ */
+export function markApplied(store: Store, input: MarkAppliedInput): MarkAppliedOutcome {
+  const row = store.db.query("SELECT status FROM entries WHERE id = ?").get(input.id) as
+    | { status: EntryStatus }
+    | null;
+  if (row === null) return { ok: false, refusal: { kind: "unknown" } };
+
+  const now = Date.now();
+  if (input.result === "applied") {
+    if (row.status !== "approved") {
+      return { ok: false, refusal: { kind: "status", status: row.status } };
+    }
+    // `COALESCE(?, applied_hash)` is the pinned semantics whole: a call with the hash overwrites
+    // any earlier value, a call without one leaves the stored value alone.
+    store.db.run(
+      "UPDATE entries SET status = 'applied', applied_at = ?, updated_at = ?, applied_hash = COALESCE(?, applied_hash) WHERE id = ?",
+      [now, now, input.appliedHash, input.id],
+    );
+    return { ok: true, status: "applied" };
+  }
+
+  // anchor_stale: the entry stays or returns to `approved` with the note. The note is written even
+  // when `found_text` is absent — the pinned rule is stale_note = found_text, null included, so a
+  // stale report without the found text clears a previous note instead of keeping a stale one.
+  // `applied_at` and `applied_hash` are only ever written by an apply; a stale report leaves the
+  // last apply's stamp alone.
+  if (row.status !== "approved" && row.status !== "applied") {
+    return { ok: false, refusal: { kind: "status", status: row.status } };
+  }
+  store.db.run("UPDATE entries SET status = 'approved', stale_note = ?, updated_at = ? WHERE id = ?", [
+    input.foundText,
+    now,
+    input.id,
+  ]);
+  return { ok: true, status: "approved" };
 }

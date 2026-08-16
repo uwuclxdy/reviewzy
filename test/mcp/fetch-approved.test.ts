@@ -145,7 +145,7 @@ describe("the tool surface", () => {
   test("fetch_approved is advertised beside file_entries and list_entries, with both schemas and the apply-back contract in the description", async () => {
     const { body } = await first.call("tools/list", {});
     const tools = body.result?.tools ?? [];
-    expect(tools.map((t) => t.name)).toEqual(["file_entries", "list_entries", "fetch_approved"]);
+    expect(tools.map((t) => t.name)).toEqual(["file_entries", "list_entries", "fetch_approved", "mark_applied"]);
 
     const tool = tools[2]!;
     const input = tool.inputSchema as {

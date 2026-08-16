@@ -114,7 +114,7 @@ describe("the tool surface", () => {
   test("list_entries is advertised beside file_entries, with the filters, the limit bounds, and both schemas", async () => {
     const { body } = await first.call("tools/list", {});
     const tools = body.result?.tools ?? [];
-    expect(tools.map((t) => t.name)).toEqual(["file_entries", "list_entries", "fetch_approved"]);
+    expect(tools.map((t) => t.name)).toEqual(["file_entries", "list_entries", "fetch_approved", "mark_applied"]);
 
     const tool = tools[1]!;
     const input = tool.inputSchema as {
@@ -147,7 +147,7 @@ describe("the returned rows", () => {
     const FIELDS = [
       "id", "project_id", "batch_id", "repo", "file", "anchor_text", "anchor_before",
       "anchor_after", "anchor_hash", "file_hash", "agent_draft", "human_text", "status",
-      "context", "constraints", "filed_by", "stale_note", "created_at", "updated_at", "applied_at", "archived_at",
+      "context", "constraints", "filed_by", "stale_note", "applied_hash", "created_at", "updated_at", "applied_at", "archived_at",
     ];
     for (const field of FIELDS) {
       expect(out[field], field).toBe(stored[field]);
@@ -155,6 +155,13 @@ describe("the returned rows", () => {
     // The frozen entry schema carries `archived_at`; every v1 row is null (no archive sweep yet).
     expect("archived_at" in out).toBe(true);
     expect(out.archived_at).toBeNull();
+
+    // applied_hash round-trips: a null wire value alone could hide a schema omission, so write a
+    // real hash the way mark_applied stores one and re-list it.
+    first.store.db.run("UPDATE entries SET applied_hash = ? WHERE id = ?", ["a".repeat(64), out.id as string]);
+    const relisted = (await listEntries({ project: "fields" })).body.result
+      ?.structuredContent as ListResult;
+    expect(relisted.entries[0]?.applied_hash).toBe("a".repeat(64));
 
     expect(typeof out.context).toBe("string");
     expect(JSON.parse(out.context as string)).toEqual(entry().context);
