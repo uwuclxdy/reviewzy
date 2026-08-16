@@ -58,7 +58,10 @@ export function parseStyleGuideForm(form: StyleGuideForm): StyleGuideFormParse {
     if (word !== "" && !bannedWords.includes(word)) bannedWords.push(word);
   }
 
-  const glossary: Record<string, string> = {};
+  // The glossary accumulates on a null-prototype object: `glossary["__proto__"] = value` on a plain
+  // object would vanish through the Object.prototype setter, silently dropping a key the merge
+  // would render. An own property stores and round-trips like any other key.
+  const glossary: Record<string, string> = Object.create(null);
   const lines = form.glossaryText.split(/\r?\n/);
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i]!;
@@ -211,9 +214,11 @@ export function mergedStyleGuide(store: Store, projectSlug: string): string {
   const projectGlossary = parseGlossary(projectRow?.glossary ?? "{}");
   const keys = new Set<string>();
   for (const [key, value] of Object.entries(globalGlossary)) {
-    // The project wins a key both define; `??` falls through only on null/undefined, so an
-    // intentionally empty project value renders as empty.
-    glossary.push([key, projectGlossary[key] ?? value]);
+    // The project wins a key it owns; the own-property read keeps a `__proto__` key the project
+    // lacks on the global value, where a bare index would return the inherited accessor. `??`
+    // falls through only on null/undefined, so an intentionally empty project value renders empty.
+    const projectValue = Object.hasOwn(projectGlossary, key) ? projectGlossary[key] : undefined;
+    glossary.push([key, projectValue ?? value]);
     keys.add(key);
   }
   for (const [key, value] of Object.entries(projectGlossary)) {

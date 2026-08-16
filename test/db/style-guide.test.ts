@@ -187,6 +187,21 @@ describe("mergedStyleGuide", () => {
     expect(mergedStyleGuide(store, "app")).toBe("## glossary\n- k: ");
   });
 
+  test("a __proto__ key only the global row defines renders the global value, never an inherited lookup", () => {
+    const store = openTempStore();
+    upsertStyleGuide(store, null, {
+      markdown: "",
+      bannedWords: [],
+      glossary: { ["__proto__"]: "x", widget: "a screen element" },
+    });
+    insertProject(store, "app");
+    upsertStyleGuide(store, "app", { markdown: "", bannedWords: [], glossary: {} });
+
+    // A bare `projectGlossary["__proto__"]` would return the inherited accessor (an object), so
+    // the own-property read is what keeps the global value on the rendered line.
+    expect(mergedStyleGuide(store, "app")).toBe("## glossary\n- __proto__: x\n- widget: a screen element");
+  });
+
   test("re-upserting a row updates it in place: still one row, carrying the newer values", () => {
     const store = openTempStore();
     upsertStyleGuide(store, null, { markdown: "First global.", bannedWords: [], glossary: {} });
@@ -309,6 +324,16 @@ describe("parseStyleGuideForm", () => {
       ok: true,
       input: { markdown: "", bannedWords: [], glossary: { widget: "" } },
     });
+  });
+
+  test("a __proto__ glossary key stores as a plain entry, never dropped", () => {
+    const parsed = parseStyleGuideForm({ markdown: "", bannedWordsCsv: "", glossaryText: "__proto__: x" });
+    expect(parsed.ok).toBe(true);
+    if (parsed.ok) {
+      // A plain-object accumulator would swallow the assignment through the Object.prototype
+      // setter; the entry must read back as an own value.
+      expect(parsed.input.glossary["__proto__"]).toBe("x");
+    }
   });
 
   test("blank lines are no entries, not a refusal", () => {
