@@ -71,15 +71,6 @@ export function isPidAlive(pid: number): boolean {
   }
 }
 
-/**
- * Answers "could this pid be OUR daemon". The daemon's argv always embeds its entry path
- * (`reviewzy/src/daemon/main.ts`, in a repo checkout or under `node_modules/reviewzy`), and this
- * matches the entry path, not the name: a process that merely mentions "reviewzy" in its argv is
- * still foreign, or an editor with this repo open would read as a daemon. An unreadable cmdline
- * (no `/proc`, or the process vanished mid-read) reads as "could be ours": the caller's `/health`
- * check is the authoritative decision, and refusing here would drain a healthy daemon on a probe
- * hiccup.
- */
 /** The real uid `/proc/<pid>/status` reports, or null when the file is unreadable. */
 export function processUid(pid: number): number | null {
   try {
@@ -90,6 +81,15 @@ export function processUid(pid: number): number | null {
   }
 }
 
+/**
+ * Answers "could this pid be OUR daemon". The daemon's argv always embeds its entry path, and this
+ * matches the entry path's tail `/src/daemon/main.ts`, never the checkout dir's name: a renamed
+ * checkout and the npm layout (`node_modules/reviewzy/src/daemon/main.ts`) both match, while a
+ * process that merely mentions "reviewzy" in its argv (an editor with this repo open) is still
+ * foreign. An unreadable cmdline (no `/proc`, or the process vanished mid-read) reads as "could be
+ * ours": the caller's `/health` check is the authoritative decision, and refusing here would drain
+ * a healthy daemon on a probe hiccup.
+ */
 export function isReviewzyProcess(pid: number): boolean {
   let cmdline: string;
   try {
@@ -97,7 +97,7 @@ export function isReviewzyProcess(pid: number): boolean {
   } catch {
     return true;
   }
-  if (!cmdline.includes("reviewzy/src/daemon/main.ts")) return false;
+  if (!cmdline.includes("/src/daemon/main.ts")) return false;
 
   // Cross-user defence: another local user can bind 127.0.0.1 and craft argv embedding the entry
   // path, and a spoof adopted on the lockfile-less incumbent path would receive the shim's bearer

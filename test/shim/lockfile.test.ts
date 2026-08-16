@@ -1,8 +1,8 @@
 import { afterAll, describe, expect, test } from "bun:test";
 import { spawn } from "node:child_process";
-import { existsSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   acquireClaim,
@@ -98,6 +98,13 @@ describe("readLockfile", () => {
 });
 
 describe("pid classification", () => {
+  /** Spawns a real bun process in the daemon's spawn shape (`bun run <entry>`), writing a stay-alive script at `entry` first. */
+  function spawnEntryCarrier(entry: string) {
+    mkdirSync(dirname(entry), { recursive: true });
+    writeFileSync(entry, "setTimeout(() => {}, 60_000);\n");
+    return spawn(process.execPath, ["run", entry], { stdio: "ignore" });
+  }
+
   test("processUid reads this process's own uid", () => {
     expect(processUid(process.pid)).toBe(process.getuid?.() ?? null);
   });
@@ -150,6 +157,39 @@ describe("pid classification", () => {
     } finally {
       carrier.kill();
       await new Promise((resolve) => carrier.once("exit", resolve));
+    }
+  });
+
+  test("a bun process carrying the daemon entry in a checkout dir not named reviewzy counts as reviewzy", async () => {
+    // The identity is the entry, not the dir it lives in: the dir here is deliberately free of
+    // "reviewzy", so only an entry-path match that ignores the checkout dir's name reads this as
+    // ours. The tempdir entry is the same shape a renamed checkout spawns the daemon from.
+    const dir = mkdtempSync(join(tmpdir(), "zqxw-checkout-"));
+    const entry = join(dir, "src", "daemon", "main.ts");
+    const carrier = spawnEntryCarrier(entry);
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      expect(isPidAlive(carrier.pid ?? -1)).toBe(true);
+      expect(isReviewzyProcess(carrier.pid ?? -1)).toBe(true);
+    } finally {
+      carrier.kill();
+      await new Promise((resolve) => carrier.once("exit", () => resolve(undefined)));
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("the npm-layout entry (node_modules/reviewzy/src/daemon/main.ts) counts as reviewzy", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "zqxw-npm-"));
+    const entry = join(dir, "node_modules", "reviewzy", "src", "daemon", "main.ts");
+    const carrier = spawnEntryCarrier(entry);
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      expect(isPidAlive(carrier.pid ?? -1)).toBe(true);
+      expect(isReviewzyProcess(carrier.pid ?? -1)).toBe(true);
+    } finally {
+      carrier.kill();
+      await new Promise((resolve) => carrier.once("exit", () => resolve(undefined)));
+      rmSync(dir, { recursive: true, force: true });
     }
   });
 });
