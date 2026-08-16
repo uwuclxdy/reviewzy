@@ -151,7 +151,7 @@ function constraintSummary(constraintsJson: string): string[] {
   return parts;
 }
 
-function Navbar() {
+function Navbar({ signedIn }: { signedIn: boolean }) {
   return (
     <nav class="navbar">
       <div class="navbar-brand">
@@ -162,6 +162,11 @@ function Navbar() {
         <a class="navbar-link active" href="/">Entries</a>
         <div class="navbar-ink" id="navbar-ink"></div>
       </div>
+      {signedIn ? (
+        <form method="post" action="/logout" class="navbar-actions">
+          <button class="btn btn-ghost btn-sm" type="submit">Sign out</button>
+        </form>
+      ) : null}
     </nav>
   );
 }
@@ -519,8 +524,13 @@ function ErrorBoxTemplate() {
   );
 }
 
-/** The full page for a plain navigation; the mount wraps it in the doctype. */
-export function dashboardPage(store: Store, params: ListParams, notice: ListNotice | undefined = undefined): JSX.Element {
+/** The full page for a plain navigation; the mount wraps it in the doctype. `signedIn` is whether the navbar offers sign-out. */
+export function dashboardPage(
+  store: Store,
+  params: ListParams,
+  notice: ListNotice | undefined = undefined,
+  signedIn = false,
+): JSX.Element {
   const vm = loadList(store, params);
   return (
     <html lang="en" data-theme="dark">
@@ -538,7 +548,7 @@ export function dashboardPage(store: Store, params: ListParams, notice: ListNoti
       </head>
       <body>
         <div class="app-shell">
-          <Navbar />
+          <Navbar signedIn={signedIn} />
           <main class="main">
             <PageHeader />
             <FilterForm vm={vm} />
@@ -552,6 +562,62 @@ export function dashboardPage(store: Store, params: ListParams, notice: ListNoti
               </div>
             </div>
             <ErrorBoxTemplate />
+          </main>
+        </div>
+      </body>
+    </html>
+  );
+}
+
+/**
+ * The login page: the navbar shell, the page-header triplet, and one centered card holding the
+ * password field. `error` is the single failure message, shown as an alert callout; the field
+ * itself is always cleared, and `next` rides along as a hidden input so a successful retry still
+ * lands where the visitor was going.
+ */
+export function loginPage(next: string | undefined, error: string | undefined = undefined): JSX.Element {
+  return (
+    <html lang="en" data-theme="dark">
+      <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        {/* The empty data: URL kills the browser's /favicon.ico probe, which would 404 under /static. */}
+        <link rel="icon" href="data:," />
+        <title>Sign in · {NAME}</title>
+        <link rel="stylesheet" href="/static/tokens.css" />
+        <link rel="stylesheet" href="/static/components.css" />
+        <link rel="stylesheet" href="/static/dashboard.css" />
+        <script src="/static/htmx.min.js"></script>
+        <script src="/static/dashboard.js" defer></script>
+      </head>
+      <body>
+        <div class="app-shell">
+          <Navbar signedIn={false} />
+          <main class="main login-main">
+            <header class="page-header">
+              <div class="label page-eyebrow">Dashboard</div>
+              <h1 class="page-title">Sign in</h1>
+              <p class="page-lede">The dashboard is password protected. Enter the password to continue.</p>
+            </header>
+            {error !== undefined ? <DangerCallout title={error} /> : null}
+            <form method="post" action="/login" class="card login-card">
+              {next !== undefined ? <input type="hidden" name="next" value={next} /> : null}
+              <div class="card-content">
+                <div class="field">
+                  <label class="field-label" for="password">Password</label>
+                  <input
+                    class="input"
+                    id="password"
+                    name="password"
+                    type="password"
+                    autocomplete="current-password"
+                  />
+                </div>
+                <div class="login-actions">
+                  <button class="btn btn-primary" type="submit">Sign in</button>
+                </div>
+              </div>
+            </form>
           </main>
         </div>
       </body>
@@ -653,7 +719,7 @@ export function formatTransitionRefusal(
   }
 }
 
-function DangerCallout({ title, body }: { title: string; body: string }) {
+function DangerCallout({ title, body }: { title: string; body?: string }) {
   return (
     <div class="callout callout-danger" role="alert">
       <div class="callout-icon" style="color: var(--danger)">
@@ -664,7 +730,7 @@ function DangerCallout({ title, body }: { title: string; body: string }) {
       </div>
       <div class="callout-content">
         <div class="callout-title">{title}</div>
-        <div class="callout-body">{body}</div>
+        {body !== undefined ? <div class="callout-body">{body}</div> : null}
       </div>
     </div>
   );
@@ -950,8 +1016,8 @@ function EditorView({ vm, state }: { vm: EditorViewModel; state: EditorState | u
   );
 }
 
-/** The full editor page; the mount wraps it in the doctype. */
-export function editorPage(vm: EditorViewModel, state: EditorState | undefined = undefined): JSX.Element {
+/** The full editor page; the mount wraps it in the doctype. `signedIn` is whether the navbar offers sign-out. */
+export function editorPage(vm: EditorViewModel, state: EditorState | undefined = undefined, signedIn = false): JSX.Element {
   return (
     <html lang="en" data-theme="dark">
       <head>
@@ -968,7 +1034,7 @@ export function editorPage(vm: EditorViewModel, state: EditorState | undefined =
       </head>
       <body>
         <div class="app-shell">
-          <Navbar />
+          <Navbar signedIn={signedIn} />
           <main class="main">
             <header class="page-header">
               <div class="label page-eyebrow">Entry review</div>
@@ -996,8 +1062,8 @@ export function editorViewFragment(vm: EditorViewModel, state: EditorState | und
   return <EditorView vm={vm} state={state} />;
 }
 
-/** The 404 page for an unknown entry id, with the way onward the page-not-found pattern demands. */
-export function notFoundPage(): JSX.Element {
+/** The 404 page for an unknown entry id, with the way onward the page-not-found pattern demands. `signedIn` is whether the navbar offers sign-out. */
+export function notFoundPage(signedIn = false): JSX.Element {
   return (
     <html lang="en" data-theme="dark">
       <head>
@@ -1014,7 +1080,7 @@ export function notFoundPage(): JSX.Element {
       </head>
       <body>
         <div class="app-shell">
-          <Navbar />
+          <Navbar signedIn={signedIn} />
           <main class="main">
             <header class="page-header">
               <div class="label page-eyebrow">Entry review</div>

@@ -167,3 +167,9 @@
   font-size: var(--text-sm);
   color: var(--text-muted);
 }
+
+/* ---- Login page: the navbar shell, then one centered card ---- */
+.login-main { display: flex; flex-direction: column; align-items: center; }
+.login-main .page-header, .login-card { width: 100%; max-width: 400px; }
+.login-card .card-content { display: flex; flex-direction: column; gap: var(--space-4); }
+.login-actions { display: flex; justify-content: flex-end; }

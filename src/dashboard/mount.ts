@@ -17,9 +17,11 @@ import {
   formatTransitionRefusal,
   getEntry,
   loadEditor,
+  loginPage,
   notFoundPage,
 } from "./views.tsx";
 import type { EditorState, ListNotice, ListParams } from "./views.tsx";
+import { createSessionAuth, safeNext } from "./auth.ts";
 
 /** The directory the vendored assets live in, resolved from this module's own location, so the mount works from any cwd. */
 const STATIC_ROOT = new URL("./static/", import.meta.url).pathname;
@@ -28,10 +30,70 @@ const STATIC_ROOT = new URL("./static/", import.meta.url).pathname;
  * Mounts the dashboard: the entry list at `/`, the entry editor at `/entries/:id`, its save at
  * `/entries/:id/save`, the approve and reject transitions, the batch approve, and the vendored
  * assets under `/static/`. The Origin gate is app-wide in `createApp`, so no route here re-adds
- * it; `config` is reserved for `DASHBOARD_PASSWORD`, which task 14 gates the dashboard behind.
+ * it. A set `DASHBOARD_PASSWORD` gates every dashboard route behind a signed session cookie and
+ * mounts the login surface; unset, the dashboard stays open and the auth surface does not exist.
  */
 export function mountDashboard(app: Hono, config: Config, store: Store): void {
-  void config;
+  const auth = createSessionAuth(config.DASHBOARD_PASSWORD);
+
+  if (auth.enabled) {
+    // The gate, registered before every dashboard route so nothing below it answers unsigned.
+    // Exempt: the auth surface itself, the vendored assets (css/js/fonts, never data), and the
+    // mcp/health/drain surface this app mounts ahead of the dashboard, which owns its own gates.
+    // Everything else fails closed. htmx requests answer 401 with HX-Redirect so the browser
+    // follows the login instead of swapping it into the target region (a 303 would swap the login
+    // page into the list); a plain GET redirects with the path as `next` so the login lands back;
+    // a plain POST goes to the login without one.
+    app.use("*", async (c, next) => {
+      const path = c.req.path;
+      if (
+        path === "/login" ||
+        path === "/logout" ||
+        path === "/mcp" ||
+        path === "/health" ||
+        path === "/drain" ||
+        path.startsWith("/static/")
+      ) {
+        return next();
+      }
+      if (await auth.accept(c.req.header("Cookie"))) return next();
+      if (c.req.header("HX-Request") !== undefined) {
+        return new Response(null, { status: 401, headers: { "HX-Redirect": "/login" } });
+      }
+      if (c.req.method === "GET") {
+        const url = new URL(c.req.url);
+        return c.redirect(`/login?next=${encodeURIComponent(url.pathname + url.search)}`, 303);
+      }
+      return c.redirect("/login", 303);
+    });
+
+    // The login surface. GET /login renders the form (a signed-in visitor goes straight through,
+    // honoring a safe `next`); POST /login is the one credential check, a timing-safe compare,
+    // and sets the session cookie on success; the failure re-renders the form with one message
+    // and the field cleared. POST /logout clears the cookie; it is exempt from the gate so it is
+    // idempotent when already signed out.
+    app.get("/login", async (c) => {
+      const next = safeNext(c.req.query("next"));
+      if (await auth.accept(c.req.header("Cookie"))) return c.redirect(next ?? "/", 303);
+      return c.html(html`<!doctype html>${loginPage(next)}`);
+    });
+
+    app.post("/login", async (c) => {
+      const form = await c.req.formData();
+      const next = safeNext(form.get("next"));
+      const presented = form.get("password");
+      if (typeof presented === "string" && (await auth.acceptPassword(presented))) {
+        c.header("set-cookie", auth.setCookieHeader(await auth.sign()));
+        return c.redirect(next ?? "/", 303);
+      }
+      return c.html(html`<!doctype html>${loginPage(next, "Wrong password. Try again.")}`);
+    });
+
+    app.post("/logout", (c) => {
+      c.header("set-cookie", auth.clearCookieHeader());
+      return c.redirect("/login", 303);
+    });
+  }
 
   app.get("/", (c) => {
     const params: ListParams = {
@@ -44,7 +106,7 @@ export function mountDashboard(app: Hono, config: Config, store: Store): void {
     if (c.req.header("HX-Request") !== undefined) {
       return c.html(entriesFragment(store, params));
     }
-    return c.html(html`<!doctype html>${dashboardPage(store, params)}`);
+    return c.html(html`<!doctype html>${dashboardPage(store, params, undefined, auth.enabled)}`);
   });
 
   // serveStatic refuses traversal itself (the guard runs on the decoded request path, before the
@@ -59,8 +121,8 @@ export function mountDashboard(app: Hono, config: Config, store: Store): void {
   // The editor page; an unknown id is a true 404 page with the way onward.
   app.get("/entries/:id", (c) => {
     const vm = loadEditor(store, c.req.param("id"));
-    if (vm === null) return c.html(html`<!doctype html>${notFoundPage()}`, 404);
-    return c.html(html`<!doctype html>${editorPage(vm)}`);
+    if (vm === null) return c.html(html`<!doctype html>${notFoundPage(auth.enabled)}`, 404);
+    return c.html(html`<!doctype html>${editorPage(vm, undefined, auth.enabled)}`);
   });
 
   // The one save path. The store layer owns every decision (refusals, the single revision write,
@@ -96,7 +158,7 @@ export function mountDashboard(app: Hono, config: Config, store: Store): void {
     };
     if (c.req.header("HX-Request") === undefined) {
       if (outcome.ok) return c.redirect(`/entries/${id}`, 303);
-      return c.html(html`<!doctype html>${editorPage(vm, state)}`);
+      return c.html(html`<!doctype html>${editorPage(vm, state, auth.enabled)}`);
     }
     // The save swap targets the whole editor view, so the diff's after-side re-renders with the
     // authored text; the transitions below answer with the region fragment only.
@@ -111,18 +173,18 @@ export function mountDashboard(app: Hono, config: Config, store: Store): void {
     const id = c.req.param("id");
     const outcome = approveEntry(store, id);
     const form = await c.req.formData();
-    if (form.get("view") === "editor") return transitionEditorReply(c, store, id, outcome, "approve");
+    if (form.get("view") === "editor") return transitionEditorReply(c, store, id, outcome, "approve", auth.enabled);
     const notice = outcome.ok ? undefined : transitionNotice(store, "approve", id, outcome);
-    return listReply(c, store, form, notice, outcome.ok);
+    return listReply(c, store, form, notice, outcome.ok, auth.enabled);
   });
 
   app.post("/entries/:id/reject", async (c) => {
     const id = c.req.param("id");
     const outcome = rejectEntry(store, id);
     const form = await c.req.formData();
-    if (form.get("view") === "editor") return transitionEditorReply(c, store, id, outcome, "reject");
+    if (form.get("view") === "editor") return transitionEditorReply(c, store, id, outcome, "reject", auth.enabled);
     const notice = outcome.ok ? undefined : transitionNotice(store, "reject", id, outcome);
-    return listReply(c, store, form, notice, outcome.ok);
+    return listReply(c, store, form, notice, outcome.ok, auth.enabled);
   });
 
   // The batch approve: every selected id goes through the store's own approve independently, so one
@@ -133,7 +195,7 @@ export function mountDashboard(app: Hono, config: Config, store: Store): void {
     const ids = form.getAll("id").filter((value): value is string => typeof value === "string");
     const results = batchApproveEntries(store, ids);
     const notice = batchNotice(store, results);
-    return listReply(c, store, form, notice, false);
+    return listReply(c, store, form, notice, false, auth.enabled);
   });
 }
 
@@ -147,11 +209,18 @@ async function listParamsFrom(form: FormData): Promise<ListParams> {
 }
 
 /** An action round's settled notice: the full page for a plain navigation, the list region for htmx. */
-async function listReply(c: Context, store: Store, form: FormData, notice: ListNotice | undefined, ok: boolean) {
+async function listReply(
+  c: Context,
+  store: Store,
+  form: FormData,
+  notice: ListNotice | undefined,
+  ok: boolean,
+  signedIn: boolean,
+) {
   const params = await listParamsFrom(form);
   if (c.req.header("HX-Request") === undefined) {
     if (ok) return c.redirect("/", 303);
-    return c.html(html`<!doctype html>${dashboardPage(store, params, notice)}`);
+    return c.html(html`<!doctype html>${dashboardPage(store, params, notice, signedIn)}`);
   }
   return c.html(entriesFragment(store, params, notice));
 }
@@ -195,6 +264,7 @@ function transitionEditorReply(
   id: string,
   outcome: ApproveOutcome | RejectOutcome,
   action: "approve" | "reject",
+  signedIn: boolean,
 ) {
   if (!outcome.ok && outcome.refusal.kind === "unknown") return c.html(entryGoneFragment());
   const vm = loadEditor(store, id);
@@ -210,7 +280,7 @@ function transitionEditorReply(
   };
   if (c.req.header("HX-Request") === undefined) {
     if (outcome.ok) return c.redirect(`/entries/${id}`, 303);
-    return c.html(html`<!doctype html>${editorPage(vm, state)}`);
+    return c.html(html`<!doctype html>${editorPage(vm, state, signedIn)}`);
   }
   return c.html(editorFragment(vm, state));
 }
