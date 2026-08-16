@@ -105,4 +105,32 @@ export const MIGRATIONS: Migration[] = [
       );
     `,
   },
+  {
+    version: 2,
+    name: "style-guides",
+    sql: `
+      -- One global row (project_id NULL, inherited by every project) plus one row per project;
+      -- the merge that serves both lives in src/db/style-guide.ts. The json columns are validated
+      -- at write time (the editor's boundary), so the read path must tolerate any stored string
+      -- instead of trusting the defaults.
+      CREATE TABLE style_guides (
+        id TEXT PRIMARY KEY NOT NULL,
+        project_id TEXT REFERENCES projects(id),
+        markdown TEXT NOT NULL DEFAULT '',
+        banned_words TEXT NOT NULL DEFAULT '[]',
+        glossary TEXT NOT NULL DEFAULT '{}',
+        ${tsRequired("created_at")},
+        ${tsRequired("updated_at")},
+        UNIQUE (project_id)
+      );
+
+      -- sqlite's UNIQUE lets any number of NULL project_id rows through, and its unique indexes
+      -- treat NULLs as distinct from each other too, so the partial index cannot key on the bare
+      -- column: ON style_guides(project_id) WHERE project_id IS NULL would still admit unlimited
+      -- global rows (measured on a bare sqlite). Keying the partial index on the constant boolean
+      -- expression instead makes every global row share one index key, so the UNIQUE pins at most
+      -- one. Project rows never enter this index; UNIQUE(project_id) owns them.
+      CREATE UNIQUE INDEX style_guides_global_idx ON style_guides(project_id IS NULL) WHERE project_id IS NULL;
+    `,
+  },
 ];

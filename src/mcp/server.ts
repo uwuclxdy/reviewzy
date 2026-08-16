@@ -3,6 +3,7 @@ import type { Config } from "../config.ts";
 import type { Store } from "../db/store.ts";
 import { registerFileEntriesTool } from "./file-entries.ts";
 import { registerListEntriesTool } from "./list-entries.ts";
+import { registerStyleGuideResource } from "./style-guide-resource.ts";
 import { NAME, VERSION } from "../version.ts";
 
 /**
@@ -23,24 +24,29 @@ export function createMcpServer(config: Config, store: Store): McpServer {
   const server: McpServer = new McpServer(
     { name: NAME, version: VERSION },
     {
-      // Without `tools`, `McpServer` never registers `tools/list` at all. `listChanged` is explicit
-      // because the SDK fills it with `true`, and v1 has no notification stream to carry one: a
-      // client would register a handler that never fires, and the same flag is what makes the SDK
-      // accept a `toolsListChanged` subscription for a stream that does not exist.
-      capabilities: { tools: { listChanged: false } },
+      // The keys do not gate handler registration: `registerTool` and `registerResource` install
+      // the `tools/*` and `resources/*` handlers regardless, and merge a dropped key back in with
+      // `listChanged` defaulted to `true` (measured on this SDK). The keys' real job is pinning
+      // that `listChanged` to `false`: v1 has no notification stream to carry the change
+      // notification, and an advertised `true` is what makes the SDK honor a client's
+      // `toolsListChanged`/`resourcesListChanged` subscription request.
+      capabilities: { tools: { listChanged: false }, resources: { listChanged: false } },
       instructions: INSTRUCTIONS,
       // The SDK's own default is `ttlMs: 0`, which tells a client the answer is already stale. Both
       // of these are fixed for a running daemon, so they are good for as long as the process lives.
       // `private` because the endpoint can be bearer-guarded, and a `public` result may be served to
-      // any caller by a shared cache.
+      // any caller by a shared cache. `resources/templates/list` is pinned to 60s by the contract,
+      // and `resources/read` carries the same values from the resource's own cacheHint.
       cacheHints: {
         "server/discover": { ttlMs: 3_600_000, cacheScope: "private" },
         "tools/list": { ttlMs: 3_600_000, cacheScope: "private" },
+        "resources/templates/list": { ttlMs: 60_000, cacheScope: "private" },
       },
     },
   );
 
   registerFileEntriesTool(server, config.baseUrl, store);
   registerListEntriesTool(server, store);
+  registerStyleGuideResource(server, store);
   return server;
 }

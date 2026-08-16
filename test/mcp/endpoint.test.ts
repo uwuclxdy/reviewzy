@@ -155,7 +155,7 @@ async function probe(
 }
 
 describe("protocol conformance", () => {
-  test("server/discover names the daemon, its instructions, and a tools capability", async () => {
+  test("server/discover names the daemon, its instructions, and its capabilities", async () => {
     const { status, body } = await probe({ rpc: "server/discover" });
     expect(status).toBe(200);
 
@@ -163,10 +163,15 @@ describe("protocol conformance", () => {
     expect(result).toBeDefined();
     expect(result?.resultType).toBe("complete");
     expect(result?.supportedVersions).toEqual([REVISION]);
-    // `capabilities: {}` would still answer a forced `tools/list` while a real client shows no
-    // tools at all, so the key must be present. `listChanged` is asserted by value because the SDK
-    // fills it with `true`, and v1 has no stream to carry the notification it would promise.
-    expect(result?.capabilities).toEqual({ tools: { listChanged: false } });
+    // `capabilities: {}` would still answer a forced `tools/list`: registering a tool installs the
+    // handler regardless of the key. The key still must be present — a dropped key is merged back
+    // with `listChanged: true`, advertising a subscription v1 has no stream to carry — which is
+    // also why the flag is asserted by value, not by presence. `resources` joined the surface with
+    // the style-guide resource (queue task 7).
+    expect(result?.capabilities).toEqual({
+      tools: { listChanged: false },
+      resources: { listChanged: false },
+    });
     expect(result?.instructions).toBeString();
     expect(result?.instructions as string).toContain("reviewzy");
 

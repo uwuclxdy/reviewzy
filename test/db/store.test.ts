@@ -133,11 +133,11 @@ describe("openStore", () => {
     const store = openTempStore();
     const version = (store.db.query("PRAGMA user_version").get() as { user_version: number })
       .user_version;
-    expect(version).toBe(1);
+    expect(version).toBe(2);
     store.close();
   });
 
-  test("creates the five tables the contract specifies", () => {
+  test("creates the six tables the contract specifies", () => {
     const store = openTempStore();
     const tables = (
       store.db.query("SELECT name FROM sqlite_master WHERE type = 'table'").all() as {
@@ -152,6 +152,7 @@ describe("openStore", () => {
       "entry_revisions",
       "entry_revisions_archive",
       "projects",
+      "style_guides",
     ]);
     store.close();
   });
@@ -199,7 +200,7 @@ describe("openStore", () => {
     const second = openStore(configWithDb(dbPath));
     const version = (second.db.query("PRAGMA user_version").get() as { user_version: number })
       .user_version;
-    expect(version).toBe(1);
+    expect(version).toBe(2);
 
     const row = second.db.query("SELECT slug FROM projects WHERE id = ?").get(project.id) as {
       slug: string;
