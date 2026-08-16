@@ -1,5 +1,6 @@
 #!/usr/bin/env bun
 import { ConfigError, HOST, loadConfig, startupWarnings } from "../config.ts";
+import { SWEEP_INTERVAL_MS, sweepArchive } from "../db/sweep.ts";
 import { openStore } from "../db/store.ts";
 import { Notifier } from "../notify.ts";
 import { VERSION } from "../version.ts";
@@ -7,13 +8,15 @@ import { createApp } from "./app.ts";
 
 /**
  * Boots the daemon: opens the store first so a bad db fails before a port is bound, then serves.
- * Returns the server, store, and notifier so a caller (tests, the shim) can shut them down.
- * `hooks.onDrain` is what the `/drain` route hands off to; omitting it leaves the route refusing
- * new requests without ending the process, which is exactly what an in-process test wants.
+ * Returns the server, store, notifier, and sweep timer so a caller (tests, the shim) can shut
+ * them down. `hooks.onDrain` is what the `/drain` route hands off to; omitting it leaves the
+ * route refusing new requests without ending the process, which is exactly what an in-process
+ * test wants.
  */
 export function startDaemon(
   config = loadConfig(),
   hooks: { onDrain?: () => void | Promise<void> } = {},
+  sweepIntervalMs = SWEEP_INTERVAL_MS,
 ) {
   for (const warning of startupWarnings(config)) {
     console.error(`reviewzy: warning: ${warning}`);
@@ -25,8 +28,20 @@ export function startDaemon(
   // shutdown is cleaner than one racing the store's close.
   const notifier = new Notifier({ config, baseUrl: config.baseUrl });
 
+  // Unref'd like the notifier's timers, so a pending tick can never hold the daemon open. The
+  // stop path clears it before the store closes, so no tick fires on a closed database.
+  const sweepTimer = setInterval(
+    () => sweepArchive(store, Date.now(), config.ARCHIVE_AFTER_DAYS),
+    sweepIntervalMs,
+  );
+  sweepTimer.unref();
+
   let server: ReturnType<typeof Bun.serve>;
   try {
+    // One sweep before the port binds, so the dashboard never serves a queue the retention
+    // window has already retired. A failure lands in the same catch as a bind failure and
+    // closes the store either way, so neither leak.
+    sweepArchive(store, Date.now(), config.ARCHIVE_AFTER_DAYS);
     server = Bun.serve({
       hostname: HOST,
       port: config.REVIEWZY_PORT,
@@ -34,14 +49,15 @@ export function startDaemon(
     });
   } catch (error) {
     // A bind failure (e.g. a shim racing an already-running daemon on the same port) must not
-    // leak the store's open sqlite connection.
+    // leak the store's open sqlite connection, and the armed sweep timer must not outlive it.
+    clearInterval(sweepTimer);
     store.close();
     throw error;
   }
 
   // The bound port, not `config.baseUrl`: a port-0 boot resolves to something the config never held.
   console.error(`reviewzy ${VERSION} listening on http://${HOST}:${server.port} (pid ${process.pid})`);
-  return { server, store, notifier };
+  return { server, store, notifier, sweepTimer };
 }
 
 if (import.meta.main) {
@@ -72,6 +88,8 @@ if (import.meta.main) {
       // otherwise hold the daemon up for the whole remaining wait.
       daemon.store.resolveInFlightWaiters();
       await daemon.server.stop(false);
+      // Cleared before the store closes: an armed tick firing on a closed database would crash.
+      clearInterval(daemon.sweepTimer);
       // After the server stops, nothing can arm a new debounce, so this cancels exactly the set
       // in-flight filings left behind; an in-flight ping already past its window still races the
       // close, which is the accepted "dropped at exit" case.
