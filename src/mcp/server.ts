@@ -7,6 +7,7 @@ import { registerFileEntriesTool } from "./file-entries.ts";
 import { registerListEntriesTool } from "./list-entries.ts";
 import { registerMarkAppliedTool } from "./mark-applied.ts";
 import { registerStyleGuideResource } from "./style-guide-resource.ts";
+import type { Notifier } from "../notify.ts";
 import { NAME, VERSION } from "../version.ts";
 
 /**
@@ -23,7 +24,7 @@ File the strings you want to change as draft entries against a project. A human 
  * daemon opened at boot, so the write path never opens a connection of its own; later queue tasks
  * register theirs the same way.
  */
-export function createMcpServer(config: Config, store: Store): McpServer {
+export function createMcpServer(config: Config, store: Store, notifier: Notifier): McpServer {
   const server: McpServer = new McpServer(
     { name: NAME, version: VERSION },
     {
@@ -48,7 +49,7 @@ export function createMcpServer(config: Config, store: Store): McpServer {
     },
   );
 
-  registerFileEntriesTool(server, config.baseUrl, store);
+  registerFileEntriesTool(server, config.baseUrl, store, notifier);
   registerListEntriesTool(server, store);
   registerFetchApprovedTool(server, store);
   registerMarkAppliedTool(server, store);

@@ -3,6 +3,7 @@ import type { McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
 import { fileEntries, type NewEntry } from "../db/queries.ts";
 import type { Store } from "../db/store.ts";
+import type { Notifier } from "../notify.ts";
 
 /**
  * A project slug is 1-63 chars of lowercase letters, digits, and inner hyphens. Lowercase-only is
@@ -170,7 +171,7 @@ function validateEntry(index: number, raw: z.output<typeof FileEntryArgs>): NewE
  * overwritten in place, anything past `draft` comes back untouched — which is what silences a
  * re-file against a rejected anchor.
  */
-export function registerFileEntriesTool(server: McpServer, baseUrl: string, store: Store): void {
+export function registerFileEntriesTool(server: McpServer, baseUrl: string, store: Store, notifier: Notifier): void {
   server.registerTool(
     "file_entries",
     {
@@ -195,6 +196,12 @@ export function registerFileEntriesTool(server: McpServer, baseUrl: string, stor
 
       const entries = args.entries.map((raw, index) => validateEntry(index, raw));
       const batch = fileEntries(store, args.project, args.filed_by ?? null, entries);
+
+      // The ping announces work for the human, so only a batch that changed the store fires: an
+      // all-dedupe no-op re-file (the agent loop re-proposing known lines) stays silent, and a
+      // refused call throws before reaching this line.
+      const changed = batch.results.filter((r) => !r.deduped || r.updated).length;
+      if (changed > 0) notifier.notifyBatch(args.project, batch.batchId, changed);
 
       const output = {
         batch_id: batch.batchId,

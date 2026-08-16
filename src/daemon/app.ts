@@ -9,6 +9,7 @@ import type { Config } from "../config.ts";
 import type { Store } from "../db/store.ts";
 import { mountDashboard } from "../dashboard/mount.ts";
 import { mountMcp } from "../mcp/route.ts";
+import { Notifier } from "../notify.ts";
 import { originGate } from "./origin.ts";
 import { NAME, VERSION } from "../version.ts";
 
@@ -58,6 +59,7 @@ export function createApp(
   store: Store,
   startedAt: Date = new Date(),
   onDrain?: () => void | Promise<void>,
+  notifier: Notifier = new Notifier({ config, baseUrl: config.baseUrl }),
 ): Hono {
   const app = new Hono();
   let draining = false;
@@ -150,7 +152,7 @@ export function createApp(
     return c.json({ status: "draining" });
   });
 
-  mountMcp(app, config, store);
+  mountMcp(app, config, store, notifier);
   mountDashboard(app, config, store);
 
   return app;

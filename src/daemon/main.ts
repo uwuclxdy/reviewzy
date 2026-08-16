@@ -1,14 +1,15 @@
 #!/usr/bin/env bun
 import { ConfigError, HOST, loadConfig, startupWarnings } from "../config.ts";
 import { openStore } from "../db/store.ts";
+import { Notifier } from "../notify.ts";
 import { VERSION } from "../version.ts";
 import { createApp } from "./app.ts";
 
 /**
  * Boots the daemon: opens the store first so a bad db fails before a port is bound, then serves.
- * Returns both so a caller (tests, the shim) can shut them down. `hooks.onDrain` is what the
- * `/drain` route hands off to; omitting it leaves the route refusing new requests without ending
- * the process, which is exactly what an in-process test wants.
+ * Returns the server, store, and notifier so a caller (tests, the shim) can shut them down.
+ * `hooks.onDrain` is what the `/drain` route hands off to; omitting it leaves the route refusing
+ * new requests without ending the process, which is exactly what an in-process test wants.
  */
 export function startDaemon(
   config = loadConfig(),
@@ -19,13 +20,17 @@ export function startDaemon(
   }
 
   const store = openStore(config);
+  // Built here rather than inside `createApp` so the stop path below can dispose it: the debounce
+  // timers are unref'd and could never hold the daemon open, but a pending ping cancelled at
+  // shutdown is cleaner than one racing the store's close.
+  const notifier = new Notifier({ config, baseUrl: config.baseUrl });
 
   let server: ReturnType<typeof Bun.serve>;
   try {
     server = Bun.serve({
       hostname: HOST,
       port: config.REVIEWZY_PORT,
-      fetch: createApp(config, store, new Date(), hooks.onDrain).fetch,
+      fetch: createApp(config, store, new Date(), hooks.onDrain, notifier).fetch,
     });
   } catch (error) {
     // A bind failure (e.g. a shim racing an already-running daemon on the same port) must not
@@ -36,7 +41,7 @@ export function startDaemon(
 
   // The bound port, not `config.baseUrl`: a port-0 boot resolves to something the config never held.
   console.error(`reviewzy ${VERSION} listening on http://${HOST}:${server.port} (pid ${process.pid})`);
-  return { server, store };
+  return { server, store, notifier };
 }
 
 if (import.meta.main) {
@@ -67,6 +72,10 @@ if (import.meta.main) {
       // otherwise hold the daemon up for the whole remaining wait.
       daemon.store.resolveInFlightWaiters();
       await daemon.server.stop(false);
+      // After the server stops, nothing can arm a new debounce, so this cancels exactly the set
+      // in-flight filings left behind; an in-flight ping already past its window still races the
+      // close, which is the accepted "dropped at exit" case.
+      daemon.notifier.dispose();
       daemon.store.close();
       process.exit(0);
     })();

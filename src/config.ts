@@ -67,5 +67,10 @@ export function startupWarnings(config: Config): string[] {
       "DASHBOARD_PASSWORD is unset: the dashboard is open to any process on this machine. set it in .env to require a login.",
     );
   }
+  if (config.NTFY_URL !== undefined && config.NTFY_TOPIC === undefined) {
+    warnings.push(
+      "NTFY_TOPIC is unset: ntfy notifications stay off even though NTFY_URL is set. set NTFY_TOPIC in .env to arm them.",
+    );
+  }
   return warnings;
 }

@@ -8,6 +8,7 @@ import type { Hono } from "hono";
 import { timingSafeEqual } from "hono/utils/buffer";
 import type { Config } from "../config.ts";
 import type { Store } from "../db/store.ts";
+import { Notifier } from "../notify.ts";
 import { createMcpServer } from "./server.ts";
 
 /** One endpoint, POST only. `docs/mcp-contract.md` freezes the surface. */
@@ -49,7 +50,14 @@ function authRequired(description: string): Response {
  * passed. Everything past the gate is the SDK's: `_meta` validation, header-versus-body agreement,
  * revision negotiation, and the method registry.
  */
-export function mountMcp(app: Hono, config: Config, store: Store): void {
+// The default notifier serves direct mounts (tests): built over the same config `createApp` uses,
+// so a mount with no transports armed stays silent exactly like the daemon's.
+export function mountMcp(
+  app: Hono,
+  config: Config,
+  store: Store,
+  notifier: Notifier = new Notifier({ config, baseUrl: config.baseUrl }),
+): void {
   // `legacy: 'reject'` is the whole of the revision guard, so the endpoint serves only the one
   // revision `docs/mcp-contract.md` freezes. `supportedProtocolVersions` on the server cannot do
   // it and is deliberately unset: the SDK's `installDiscoverHandler` unions its served modern
@@ -60,7 +68,7 @@ export function mountMcp(app: Hono, config: Config, store: Store): void {
   // that hardcoded fallback, so narrowing it is what would serve one.
   // The store is the daemon's own open handle (`startDaemon` opens it before the port binds), so
   // every tool call writes through the one connection the daemon will close on shutdown.
-  const handler = createMcpHandler(() => createMcpServer(config, store), { legacy: "reject" });
+  const handler = createMcpHandler(() => createMcpServer(config, store, notifier), { legacy: "reject" });
 
   // The `Origin` rung is `originGate`, mounted app-wide in `createApp`; it runs before this
   // handler, so the pinned order (origin, then method, then credential) holds without a repeat of
