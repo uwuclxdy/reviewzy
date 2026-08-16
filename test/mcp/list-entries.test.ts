@@ -114,7 +114,7 @@ describe("the tool surface", () => {
   test("list_entries is advertised beside file_entries, with the filters, the limit bounds, and both schemas", async () => {
     const { body } = await first.call("tools/list", {});
     const tools = body.result?.tools ?? [];
-    expect(tools.map((t) => t.name)).toEqual(["file_entries", "list_entries"]);
+    expect(tools.map((t) => t.name)).toEqual(["file_entries", "list_entries", "fetch_approved"]);
 
     const tool = tools[1]!;
     const input = tool.inputSchema as {

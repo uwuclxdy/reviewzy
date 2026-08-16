@@ -90,6 +90,39 @@ export type ListEntriesResult = {
 };
 
 /**
+ * One approved row as `fetch_approved` returns it: the applying needs the contract's parenthetical
+ * "text + anchor + constraints" and nothing else — no `context`, no `status`, since everything here
+ * is approved by construction. `constraints` stays the stored string; the tool owns the parse.
+ */
+export type ApprovedEntryRow = {
+  readonly id: string;
+  readonly repo: string;
+  readonly file: string;
+  readonly anchor_text: string;
+  readonly anchor_before: string;
+  readonly anchor_after: string;
+  readonly anchor_hash: string;
+  readonly file_hash: string;
+  readonly human_text: string | null;
+  readonly constraints: string;
+};
+
+export type ApprovedEntriesFilter = {
+  readonly ids: readonly string[] | undefined;
+  readonly since: string | undefined;
+};
+
+export type ApprovedEntriesResult = {
+  readonly rows: readonly ApprovedEntryRow[];
+  /**
+   * The last returned id, present only when the page is full: `rows.length === 50` means more rows
+   * may exist beyond it. An absent `nextSince` means the walk is exhausted, and an empty page never
+   * carries one.
+   */
+  readonly nextSince: string | null;
+};
+
+/**
  * Resolves a slug to its project id. Read tools call this and refuse on `null`: the contract's
  * error table makes an unknown project a business refusal on reads, and only `ensureProject`
  * (the write path) may mint a project.
@@ -199,6 +232,9 @@ export function fileEntries(
   return { batchId, results: write() };
 }
 
+/** The `fetch_approved` page size `docs/mcp-contract.md` pins: 50, fixed server-side. */
+const APPROVED_PAGE_SIZE = 50;
+
 /** The columns `docs/mcp-contract.md`'s entry schema names; the one place the output row's shape is spelled out in SQL. */
 const ENTRY_COLUMNS = [
   "id", "project_id", "batch_id", "repo", "file", "anchor_text", "anchor_before",
@@ -249,4 +285,38 @@ export function listEntries(store: Store, filter: ListEntriesFilter): ListEntrie
   const rows = store.db.query(sql).all(...params) as EntryRow[];
   const nextCursor = rows.length === filter.limit ? rows[rows.length - 1]!.id : null;
   return { rows, nextCursor };
+}
+
+/**
+ * The `fetch_approved` read. The status is not a filter: the tool's invariant is `'approved'`
+ * (a draft, applied, or rejected row never leaves this query), and the page size is the contract's
+ * fixed 50 — the client has no limit param, so this number is the whole page contract. `ids` and
+ * `since` combine with AND, and `since` is the same keyset the list tool uses, so a resumed walk
+ * cannot duplicate or skip a row.
+ */
+export function approvedEntries(
+  store: Store,
+  projectId: string,
+  filter: ApprovedEntriesFilter,
+): ApprovedEntriesResult {
+  const where = ["project_id = ?", "status = 'approved'"];
+  const params: SQLQueryBindings[] = [projectId];
+
+  if (filter.ids !== undefined) {
+    // The zod boundary refuses an empty list, so this never emits `IN ()` — which sqlite would
+    // accept as a no-match, not an error: a direct call with `ids: []` returns no rows.
+    where.push(`id IN (${filter.ids.map(() => "?").join(", ")})`);
+    params.push(...filter.ids);
+  }
+  if (filter.since !== undefined) {
+    where.push("id > ?");
+    params.push(filter.since);
+  }
+
+  const sql = `SELECT id, repo, file, anchor_text, anchor_before, anchor_after, anchor_hash, file_hash, human_text, constraints FROM entries WHERE ${where.join(" AND ")} ORDER BY id LIMIT ?`;
+  params.push(APPROVED_PAGE_SIZE);
+
+  const rows = store.db.query(sql).all(...params) as ApprovedEntryRow[];
+  const nextSince = rows.length === APPROVED_PAGE_SIZE ? rows[rows.length - 1]!.id : null;
+  return { rows, nextSince };
 }
