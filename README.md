@@ -2,7 +2,7 @@
 
 # reviewzy
 
-**agents file the user-facing text they want to write, a human authors or approves it on a dashboard, and any later agent session fetches those words and applies them in place**
+**human-in-the-loop mcp review for user-facing text: agents file the strings they want to write, a human authors or approves them on a dashboard, and any later agent session applies the approved words in place**
 
 bulk-audit and rewrite user-facing copy across CLIs, TUIs, web UIs, and websites; prose authorship stays human
 
@@ -13,7 +13,7 @@ bulk-audit and rewrite user-facing copy across CLIs, TUIs, web UIs, and websites
 
 ---
 
-reviewzy is a self-hosted dashboard and mcp server for human-authored user-facing text. a coding agent files the exact strings it wants to write or rewrite (repo, file, current text, context lines), and a human authors or approves each one on the dashboard. any later agent session fetches the approved words back and applies them in place. no i18n keys, no content layer: each entry points at the string where it already lives.
+reviewzy is a self-hosted dashboard and mcp server for human-in-the-loop copy review. a coding agent files the exact strings it wants to write or rewrite (repo, file, current text, context lines), and a human authors or approves each one on the dashboard. any later agent session fetches the approved words back and applies them in place. no i18n keys, no content layer: each entry points at the string where it already lives.
 
 an agent files a batch, then a human signs off:
 
