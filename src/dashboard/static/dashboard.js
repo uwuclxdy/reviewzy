@@ -61,22 +61,28 @@
   }
 
   // --- Style guide save errors ---
-  // A failed save (HTTP error or network error) replaces the region with the error box from the
-  // page's #style-guide-error-box template; the retry button re-submits the save form. Delegated on
-  // document: a successful swap replaces the form element, so listeners bound to it would die.
+  // A failed save (HTTP error or network error) puts the error box from the page's
+  // #style-guide-error-box template above the form; the retry button re-submits the save form.
+  // Delegated on document: a successful swap replaces the form element, so listeners bound to it
+  // would die.
   const styleGuideErrorTemplate = document.getElementById("style-guide-error-box");
 
   function showStyleGuideError(event) {
     if (!(event.target instanceof Element) || event.target.id !== "style-guide-form") return;
     const region = document.getElementById("style-guide-region");
     if (!region || !styleGuideErrorTemplate) return;
+    // The box goes above the form, never replacing it: the retry re-submits the very form the
+    // failed request came from, and a replacement would leave nothing to re-submit. A success or
+    // refusal swap replaces the whole region and takes the box with it; a repeated error drops
+    // the previous box first so the notices cannot stack.
+    region.querySelector("[data-style-guide-error]")?.remove();
     const box = styleGuideErrorTemplate.content.cloneNode(true);
+    box.querySelector(".callout")?.setAttribute("data-style-guide-error", "");
     const retry = box.querySelector("[data-retry]");
     if (retry) {
       retry.addEventListener("click", () => {
-        // An error never swaps, so the form is still in the DOM; htmx listens for submit on the
-        // form it processed, so a native requestSubmit reaches it. The reload fallback covers the
-        // case where htmx did not load.
+        // htmx listens for submit directly on the form it processed, so a native requestSubmit
+        // reaches it; the reload fallback covers the case where htmx did not load.
         const target = document.getElementById("style-guide-form");
         if (target && typeof target.requestSubmit === "function") {
           target.requestSubmit();
@@ -85,7 +91,7 @@
         }
       });
     }
-    region.replaceChildren(box);
+    region.prepend(box);
   }
 
   document.addEventListener("htmx:responseError", showStyleGuideError);

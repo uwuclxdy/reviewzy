@@ -339,6 +339,10 @@ describe("save error wiring", () => {
     expect(js).toContain("style-guide-form");
     expect(js).toContain("htmx:responseError");
     expect(js).toContain("htmx:sendError");
+    // The error box prepends above the form (a revert to replaceChildren would destroy the form
+    // the retry must re-submit) and a repeated error drops the previous box first.
+    expect(js).toContain("region.prepend(box)");
+    expect(js).toContain("data-style-guide-error");
     env.close();
   });
 });
