@@ -173,3 +173,10 @@
 .login-main .page-header, .login-card { width: 100%; max-width: 400px; }
 .login-card .card-content { display: flex; flex-direction: column; gap: var(--space-4); }
 .login-actions { display: flex; justify-content: flex-end; }
+
+/* ---- Style guide editor: the section selector, then the one card ---- */
+.style-guide-projects { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-bottom: var(--space-8); }
+#style-guide-region > .callout { margin-bottom: var(--space-4); }
+#style-guide-region > .btn { margin-top: var(--space-4); }
+.style-guide-card .card-content { display: flex; flex-direction: column; gap: var(--space-5); }
+.style-guide-card .editor-actions { margin-top: 0; }

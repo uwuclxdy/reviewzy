@@ -4,6 +4,9 @@ import { html } from "hono/html";
 import type { Config } from "../config.ts";
 import { approveEntry, batchApproveEntries, rejectEntry, saveHumanText } from "../db/human-save.ts";
 import type { ApproveOutcome, BatchApproveResult, RejectOutcome, TransitionRefusal } from "../db/human-save.ts";
+import { projectIdBySlug } from "../db/queries.ts";
+import { parseStyleGuideForm, upsertStyleGuide } from "../db/style-guide.ts";
+import type { StyleGuideForm } from "../db/style-guide.ts";
 import type { Store } from "../db/store.ts";
 import {
   dashboardPage,
@@ -14,13 +17,17 @@ import {
   entriesFragment,
   entryGoneFragment,
   formatSaveRefusal,
+  formatStyleGuideRefusal,
   formatTransitionRefusal,
   getEntry,
   loadEditor,
+  loadStyleGuide,
   loginPage,
   notFoundPage,
+  styleGuidePage,
+  styleGuideRegionFragment,
 } from "./views.tsx";
-import type { EditorState, ListNotice, ListParams } from "./views.tsx";
+import type { EditorState, ListNotice, ListParams, StyleGuideEditorState } from "./views.tsx";
 import { createSessionAuth, safeNext } from "./auth.ts";
 
 /** The directory the vendored assets live in, resolved from this module's own location, so the mount works from any cwd. */
@@ -28,10 +35,11 @@ const STATIC_ROOT = new URL("./static/", import.meta.url).pathname;
 
 /**
  * Mounts the dashboard: the entry list at `/`, the entry editor at `/entries/:id`, its save at
- * `/entries/:id/save`, the approve and reject transitions, the batch approve, and the vendored
- * assets under `/static/`. The Origin gate is app-wide in `createApp`, so no route here re-adds
- * it. A set `DASHBOARD_PASSWORD` gates every dashboard route behind a signed session cookie and
- * mounts the login surface; unset, the dashboard stays open and the auth surface does not exist.
+ * `/entries/:id/save`, the approve and reject transitions, the batch approve, the style guide
+ * editor at `/style-guide` with its save at `/style-guide/save`, and the vendored assets under
+ * `/static/`. The Origin gate is app-wide in `createApp`, so no route here re-adds it. A set
+ * `DASHBOARD_PASSWORD` gates every dashboard route behind a signed session cookie and mounts the
+ * login surface; unset, the dashboard stays open and the auth surface does not exist.
  */
 export function mountDashboard(app: Hono, config: Config, store: Store): void {
   const auth = createSessionAuth(config.DASHBOARD_PASSWORD);
@@ -222,6 +230,59 @@ export function mountDashboard(app: Hono, config: Config, store: Store): void {
     const results = batchApproveEntries(store, ids);
     const notice = batchNotice(store, results);
     return listReply(c, store, form, notice, false, auth.enabled);
+  });
+
+  // The style guide editor: one section per page, the global guide at `/style-guide` and a
+  // project's at `?project=<slug>`. The selector is a list of links; a slug that resolves to
+  // nothing renders the editor with a notice, never a 500 and never a row (the store never mints a
+  // project). The guard above covers both routes like every other dashboard route.
+  app.get("/style-guide", (c) => {
+    const vm = loadStyleGuide(store, c.req.query("project"));
+    return c.html(html`<!doctype html>${styleGuidePage(vm, undefined, auth.enabled)}`);
+  });
+
+  app.post("/style-guide/save", async (c) => {
+    const form = await c.req.formData();
+    const projectValue = form.get("project");
+    // `project` empty or missing means the global section, exactly as the hidden input renders it.
+    const projectSlug = typeof projectValue === "string" && projectValue !== "" ? projectValue : null;
+    // The boundary parse types the three fields. A non-string part (a crafted multipart file) is
+    // treated as missing, and markdown stays raw: the merge trims at render, and trimming here
+    // would store bytes the author never saw.
+    const field = (key: string) => {
+      const value = form.get(key);
+      return typeof value === "string" ? value : "";
+    };
+    const raw: StyleGuideForm = {
+      markdown: field("markdown"),
+      bannedWordsCsv: field("banned_words"),
+      glossaryText: field("glossary"),
+    };
+
+    // The store owns the write; this route owns the two refusals the parse cannot name: the
+    // malformed glossary line (nothing written) and the vanished project (the store's upsert would
+    // throw, and the editor never mints one).
+    const parsed = parseStyleGuideForm(raw);
+    let notice: StyleGuideEditorState["notice"];
+    if (!parsed.ok) {
+      const formatted = formatStyleGuideRefusal(parsed.refusal);
+      notice = { kind: "refusal", title: formatted.title, body: formatted.body };
+    } else if (projectSlug !== null && projectIdBySlug(store, projectSlug) === null) {
+      notice = { kind: "unknown_project" };
+    } else {
+      upsertStyleGuide(store, projectSlug, parsed.input);
+      notice = { kind: "saved" };
+    }
+
+    const vm = loadStyleGuide(store, projectSlug ?? undefined);
+    const state: StyleGuideEditorState = { submitted: raw, notice };
+    if (c.req.header("HX-Request") === undefined) {
+      if (notice.kind === "saved") {
+        return c.redirect(projectSlug === null ? "/style-guide" : `/style-guide?project=${encodeURIComponent(projectSlug)}`, 303);
+      }
+      return c.html(html`<!doctype html>${styleGuidePage(vm, state, auth.enabled)}`);
+    }
+    return c.html(styleGuideRegionFragment(vm, state));
   });
 }
 

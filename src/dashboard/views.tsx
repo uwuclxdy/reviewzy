@@ -8,6 +8,8 @@ import {
   projectIdBySlug,
 } from "../db/queries.ts";
 import type { EntryRow, EntryStatus } from "../db/queries.ts";
+import { readStyleGuideSection } from "../db/style-guide.ts";
+import type { StyleGuideForm, StyleGuideFormRefusal, StyleGuideInput } from "../db/style-guide.ts";
 import type { Store } from "../db/store.ts";
 import { NAME, VERSION } from "../version.ts";
 
@@ -151,7 +153,10 @@ function constraintSummary(constraintsJson: string): string[] {
   return parts;
 }
 
-function Navbar({ signedIn }: { signedIn: boolean }) {
+/** The section the current page belongs to, marking the matching navbar link. */
+type NavSection = "entries" | "style-guide" | "none";
+
+function Navbar({ signedIn, active }: { signedIn: boolean; active: NavSection }) {
   return (
     <nav class="navbar">
       <div class="navbar-brand">
@@ -159,7 +164,8 @@ function Navbar({ signedIn }: { signedIn: boolean }) {
         <div class="logo-version">v{VERSION}</div>
       </div>
       <div class="navbar-nav" id="navbar-nav">
-        <a class="navbar-link active" href="/">Entries</a>
+        <a class={`navbar-link${active === "entries" ? " active" : ""}`} href="/">Entries</a>
+        <a class={`navbar-link${active === "style-guide" ? " active" : ""}`} href="/style-guide">Style guide</a>
         <div class="navbar-ink" id="navbar-ink"></div>
       </div>
       {signedIn ? (
@@ -548,7 +554,7 @@ export function dashboardPage(
       </head>
       <body>
         <div class="app-shell">
-          <Navbar signedIn={signedIn} />
+          <Navbar signedIn={signedIn} active="entries" />
           <main class="main">
             <PageHeader />
             <FilterForm vm={vm} />
@@ -592,7 +598,7 @@ export function loginPage(next: string | undefined, error: string | undefined = 
       </head>
       <body>
         <div class="app-shell">
-          <Navbar signedIn={false} />
+          <Navbar signedIn={false} active="none" />
           <main class="main login-main">
             <header class="page-header">
               <div class="label page-eyebrow">Dashboard</div>
@@ -1034,7 +1040,7 @@ export function editorPage(vm: EditorViewModel, state: EditorState | undefined =
       </head>
       <body>
         <div class="app-shell">
-          <Navbar signedIn={signedIn} />
+          <Navbar signedIn={signedIn} active="entries" />
           <main class="main">
             <header class="page-header">
               <div class="label page-eyebrow">Entry review</div>
@@ -1080,7 +1086,7 @@ export function notFoundPage(signedIn = false): JSX.Element {
       </head>
       <body>
         <div class="app-shell">
-          <Navbar signedIn={signedIn} />
+          <Navbar signedIn={signedIn} active="entries" />
           <main class="main">
             <header class="page-header">
               <div class="label page-eyebrow">Entry review</div>
@@ -1108,4 +1114,274 @@ export function entryGoneFragment(): JSX.Element {
 /** The save swap targets the whole editor view, so a vanished id answers in that same wrapper shape. */
 export function editorViewGoneFragment(): JSX.Element {
   return <div id="editor-view">{entryGoneFragment()}</div>;
+}
+
+// ---- Style guide editor ----
+
+/** The page's settled read: which section is being edited, the selector's projects, and whether the section has a row. */
+export type StyleGuideViewModel = {
+  /** null is the global section; a slug its project section. */
+  readonly projectSlug: string | null;
+  readonly projects: readonly { id: string; slug: string }[];
+  /** The slug resolved to nothing: the region renders the notice instead of a form, and no row is ever created. */
+  readonly unknown: boolean;
+  /** Whether a row exists for this section: the empty state (no row) differs from the partial one (a row with missing fields). */
+  readonly hasRow: boolean;
+  /** The stored section, or the empty defaults when there is no row yet. */
+  readonly section: StyleGuideInput;
+};
+
+/** What the last save round settled into, rendered by the swap: the saved notice, the unknown-project notice, or the refusal with its message. The submitted form is kept so a refusal re-renders what the user typed. */
+export type StyleGuideEditorState = {
+  readonly submitted: StyleGuideForm;
+  readonly notice:
+    | { readonly kind: "saved" }
+    | { readonly kind: "unknown_project" }
+    | { readonly kind: "refusal"; readonly title: string; readonly body: string };
+};
+
+/** The global and project sections: `project` empty means global, and the slug is checked against the projects list, never minted. */
+export function loadStyleGuide(store: Store, projectQuery: string | undefined): StyleGuideViewModel {
+  const projectSlug = projectQuery !== undefined && projectQuery !== "" ? projectQuery : null;
+  const projects = listProjects(store);
+  const unknown = projectSlug !== null && !projects.some((project) => project.slug === projectSlug);
+  const section = readStyleGuideSection(store, projectSlug);
+  return {
+    projectSlug,
+    projects,
+    unknown,
+    hasRow: section !== null,
+    section: section ?? { markdown: "", bannedWords: [], glossary: {} },
+  };
+}
+
+/** The user-facing refusal message for a style guide save, in the dashboard's own voice: name the line and offer the fix. The unknown project is its own notice kind with its own region, so it never formats as a refusal. */
+export function formatStyleGuideRefusal(refusal: StyleGuideFormRefusal): { title: string; body: string } {
+  return {
+    title: "Guide not saved",
+    body:
+      refusal.reason === "no_colon"
+        ? `Glossary line ${refusal.lineNumber} ("${refusal.line}") has no colon. Write it as key: value.`
+        : `Glossary line ${refusal.lineNumber} ("${refusal.line}") has no key. Write it as key: value.`,
+  };
+}
+
+/** The stored section as the form's raw strings. A stored item can hold a line break (a foreign row), and the form would refuse that on re-save, so the display collapses the break the way the merge's render does. */
+function sectionToForm(section: StyleGuideInput): StyleGuideForm {
+  const oneLine = (value: string) => value.replace(/[\r\n]+/g, " ");
+  return {
+    markdown: section.markdown,
+    bannedWordsCsv: section.bannedWords.join(", "),
+    glossaryText: Object.entries(section.glossary)
+      .map(([key, value]) => `${oneLine(key)}: ${oneLine(value)}`)
+      .join("\n"),
+  };
+}
+
+function InfoCallout({ title, body }: { title: string; body?: string }) {
+  return (
+    <div class="callout callout-info">
+      <div class="callout-icon" style="color: var(--info)">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+          <circle cx="8" cy="8" r="6.5" />
+          <path d="M8 7.5v3.5M8 5.5v.01" />
+        </svg>
+      </div>
+      <div class="callout-content">
+        <div class="callout-title">{title}</div>
+        {body !== undefined ? <div class="callout-body">{body}</div> : null}
+      </div>
+    </div>
+  );
+}
+
+/** The project selector: the global section plus every known project, as links, with the current one marked. A link list is the whole mechanism; the section never auto-creates a project. */
+function StyleGuideProjects({ vm }: { vm: StyleGuideViewModel }) {
+  const activeSlug = vm.unknown ? null : vm.projectSlug;
+  return (
+    <nav class="style-guide-projects" aria-label="Style guide sections">
+      <ProjectSectionLink href="/style-guide" label="Global" active={activeSlug === null} />
+      {vm.projects.map((project) => (
+        <ProjectSectionLink
+          key={project.slug}
+          href={`/style-guide?project=${project.slug}`}
+          label={project.slug}
+          active={activeSlug === project.slug}
+        />
+      ))}
+    </nav>
+  );
+}
+
+function ProjectSectionLink({ href, label, active }: { href: string; label: string; active: boolean }) {
+  return (
+    <a
+      class={`btn btn-sm ${active ? "btn-primary" : "btn-secondary"}`}
+      href={href}
+      aria-current={active ? "page" : undefined}
+    >
+      {label}
+    </a>
+  );
+}
+
+/** The unknown section: the notice and the way onward, no form. An unknown slug must never re-target the save at the global section by accident, so the editor form does not render at all. */
+function StyleGuideUnknownRegion({ slug }: { slug: string }) {
+  return (
+    <div id="style-guide-region">
+      <DangerCallout title={`Project ${slug} doesn't exist`} body="A project section appears once the project has entries." />
+      <a href="/style-guide" class="btn btn-secondary">Edit the global guide</a>
+    </div>
+  );
+}
+
+/** The region htmx swaps: the settled notice on top, then the editor form. A save re-renders the stored values (normalized), a refusal keeps the submitted ones. */
+function StyleGuideRegion({ vm, state }: { vm: StyleGuideViewModel; state: StyleGuideEditorState | undefined }) {
+  if (vm.unknown || state?.notice.kind === "unknown_project") {
+    return <StyleGuideUnknownRegion slug={vm.projectSlug ?? ""} />;
+  }
+  const formValues = state !== undefined && state.notice.kind === "refusal" ? state.submitted : sectionToForm(vm.section);
+  return (
+    <div id="style-guide-region">
+      {state?.notice.kind === "saved" ? (
+        <div class="callout callout-success" role="status">
+          <div class="callout-icon" style="color: var(--success)">
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+              <circle cx="8" cy="8" r="6.5" />
+              <path d="M5 8l2 2 4-4" />
+            </svg>
+          </div>
+          <div class="callout-content">
+            <div class="callout-title">Guide saved</div>
+            <div class="callout-body">
+              {vm.projectSlug === null
+                ? "The global guide now applies to every project."
+                : `The ${vm.projectSlug} section now applies below the global guide.`}
+            </div>
+          </div>
+        </div>
+      ) : null}
+      {state?.notice.kind === "refusal" ? <DangerCallout title={state.notice.title} body={state.notice.body} /> : null}
+      {!vm.hasRow ? (
+        <InfoCallout
+          title={vm.projectSlug === null ? "No guide yet" : "No guide for this project yet"}
+          body="Your save creates it."
+        />
+      ) : null}
+      <form
+        id="style-guide-form"
+        class="card style-guide-card"
+        method="post"
+        action="/style-guide/save"
+        hx-post="/style-guide/save"
+        hx-target="#style-guide-region"
+        hx-swap="outerHTML"
+        hx-indicator="#style-guide-loading"
+      >
+        <input type="hidden" name="project" value={vm.projectSlug ?? ""} />
+        <div class="card-header">
+          <div class="card-title">{vm.projectSlug === null ? "Global guide" : `${vm.projectSlug} guide`}</div>
+        </div>
+        <div class="card-content">
+          <div class="field">
+            <label class="field-label" for="style-guide-markdown">Markdown</label>
+            <textarea class="input" id="style-guide-markdown" name="markdown" rows={10} aria-label="Guide markdown">
+              {formValues.markdown}
+            </textarea>
+            {vm.hasRow && vm.section.markdown === "" ? <p class="field-hint">No markdown yet.</p> : null}
+          </div>
+          <div class="field">
+            <label class="field-label" for="style-guide-banned">Banned words</label>
+            <input class="input" id="style-guide-banned" name="banned_words" type="text" value={formValues.bannedWordsCsv} />
+            <p class="field-hint">Comma-separated. Extra whitespace and duplicates are dropped.</p>
+            {vm.hasRow && vm.section.bannedWords.length === 0 ? <p class="field-hint">No banned words yet.</p> : null}
+          </div>
+          <div class="field">
+            <label class="field-label" for="style-guide-glossary">Glossary</label>
+            <textarea class="input" id="style-guide-glossary" name="glossary" rows={6} aria-label="Glossary entries">
+              {formValues.glossaryText}
+            </textarea>
+            <p class="field-hint">One key: value pair per line. A line without a colon is refused.</p>
+            {vm.hasRow && Object.keys(vm.section.glossary).length === 0 ? (
+              <p class="field-hint">No glossary entries yet.</p>
+            ) : null}
+          </div>
+          <div class="editor-actions">
+            <button class="btn btn-primary" type="submit" hx-disabled-elt="this">Save guide</button>
+            <span id="style-guide-loading" class="htmx-indicator" role="status">
+              <span class="spinner" aria-hidden="true"></span>
+              Saving guide
+            </span>
+          </div>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+/** The error box htmx failures clone into the style guide region; the retry button re-submits the save form. */
+function StyleGuideErrorBoxTemplate() {
+  return (
+    <template id="style-guide-error-box">
+      <div class="callout callout-danger" role="alert">
+        <div class="callout-icon" style="color: var(--danger)">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+            <circle cx="8" cy="8" r="6.5" />
+            <path d="M10 6L6 10M6 6l4 4" />
+          </svg>
+        </div>
+        <div class="callout-content">
+          <div class="callout-title">The guide could not be saved</div>
+          <div class="callout-body">The save request failed. Try it again.</div>
+          <div class="callout-actions">
+            <button class="btn btn-secondary btn-sm" type="button" data-retry>Retry</button>
+          </div>
+        </div>
+      </div>
+    </template>
+  );
+}
+
+/** The full style guide page; the mount wraps it in the doctype. `signedIn` is whether the navbar offers sign-out. */
+export function styleGuidePage(
+  vm: StyleGuideViewModel,
+  state: StyleGuideEditorState | undefined = undefined,
+  signedIn = false,
+): JSX.Element {
+  return (
+    <html lang="en" data-theme="dark">
+      <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        {/* The empty data: URL kills the browser's /favicon.ico probe, which would 404 under /static. */}
+        <link rel="icon" href="data:," />
+        <title>Style guide · {NAME}</title>
+        <link rel="stylesheet" href="/static/tokens.css" />
+        <link rel="stylesheet" href="/static/components.css" />
+        <link rel="stylesheet" href="/static/dashboard.css" />
+        <script src="/static/htmx.min.js"></script>
+        <script src="/static/dashboard.js" defer></script>
+      </head>
+      <body>
+        <div class="app-shell">
+          <Navbar signedIn={signedIn} active="style-guide" />
+          <main class="main">
+            <header class="page-header">
+              <div class="label page-eyebrow">Voice</div>
+              <h1 class="page-title">Style guide</h1>
+              <p class="page-lede">The voice agents read before drafting, starting with the global guide and adding each project's own rules below.</p>
+            </header>
+            <StyleGuideProjects vm={vm} />
+            <StyleGuideRegion vm={vm} state={state} />
+            <StyleGuideErrorBoxTemplate />
+          </main>
+        </div>
+      </body>
+    </html>
+  );
+}
+
+/** The style guide region only, for htmx responses; the selector, the page shell, and the error template stay put. */
+export function styleGuideRegionFragment(vm: StyleGuideViewModel, state: StyleGuideEditorState | undefined = undefined): JSX.Element {
+  return <StyleGuideRegion vm={vm} state={state} />;
 }

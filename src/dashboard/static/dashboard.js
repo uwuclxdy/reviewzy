@@ -60,6 +60,37 @@
     form.addEventListener("htmx:sendError", showFilterError);
   }
 
+  // --- Style guide save errors ---
+  // A failed save (HTTP error or network error) replaces the region with the error box from the
+  // page's #style-guide-error-box template; the retry button re-submits the save form. Delegated on
+  // document: a successful swap replaces the form element, so listeners bound to it would die.
+  const styleGuideErrorTemplate = document.getElementById("style-guide-error-box");
+
+  function showStyleGuideError(event) {
+    if (!(event.target instanceof Element) || event.target.id !== "style-guide-form") return;
+    const region = document.getElementById("style-guide-region");
+    if (!region || !styleGuideErrorTemplate) return;
+    const box = styleGuideErrorTemplate.content.cloneNode(true);
+    const retry = box.querySelector("[data-retry]");
+    if (retry) {
+      retry.addEventListener("click", () => {
+        // An error never swaps, so the form is still in the DOM; htmx listens for submit on the
+        // form it processed, so a native requestSubmit reaches it. The reload fallback covers the
+        // case where htmx did not load.
+        const target = document.getElementById("style-guide-form");
+        if (target && typeof target.requestSubmit === "function") {
+          target.requestSubmit();
+        } else {
+          window.location.reload();
+        }
+      });
+    }
+    region.replaceChildren(box);
+  }
+
+  document.addEventListener("htmx:responseError", showStyleGuideError);
+  document.addEventListener("htmx:sendError", showStyleGuideError);
+
   // --- Editor live metrics ---
   // The constraint panel lives outside the htmx swap region, so the char count and the placeholder
   // checklist track the textarea as the user types. This is a convenience preview only: the server

@@ -18,6 +18,64 @@ export type StyleGuideInput = {
   readonly glossary: Readonly<Record<string, string>>;
 };
 
+/** The save form at the boundary: the raw strings straight off the POST body, before any typing. */
+export type StyleGuideForm = {
+  readonly markdown: string;
+  readonly bannedWordsCsv: string;
+  readonly glossaryText: string;
+};
+
+/**
+ * The one refusal the parse knows: a glossary line that cannot become an entry. The line is named
+ * by number and content, and the reason tells the message which fix to offer. A line with a colon
+ * but an empty key refuses too: the merge renders an empty key as no item, so accepting it would
+ * silently drop what the author typed.
+ */
+export type StyleGuideFormRefusal = {
+  readonly kind: "glossary_line";
+  readonly lineNumber: number;
+  readonly line: string;
+  readonly reason: "no_colon" | "empty_key";
+};
+
+export type StyleGuideFormParse =
+  | { readonly ok: true; readonly input: StyleGuideInput }
+  | { readonly ok: false; readonly refusal: StyleGuideFormRefusal };
+
+/**
+ * Types the three form fields at the boundary. Banned words split on commas, trimmed, empties
+ * dropped, duplicates dropped at first occurrence (the merge's union keeps first occurrence too,
+ * so what the form shows after a save is what the merge would list). Glossary lines split on the
+ * first colon, both sides trimmed; blank lines are no entries (a textarea naturally ends in a
+ * newline); an empty value is a deliberate override, matching the merge's project-wins semantics.
+ * Markdown stays raw, never trimmed: the merge trims at render, and trimming here would store
+ * bytes the author never saw.
+ */
+export function parseStyleGuideForm(form: StyleGuideForm): StyleGuideFormParse {
+  const bannedWords: string[] = [];
+  for (const raw of form.bannedWordsCsv.split(",")) {
+    const word = raw.trim();
+    if (word !== "" && !bannedWords.includes(word)) bannedWords.push(word);
+  }
+
+  const glossary: Record<string, string> = {};
+  const lines = form.glossaryText.split(/\r?\n/);
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]!;
+    if (line.trim() === "") continue;
+    const colon = line.indexOf(":");
+    if (colon === -1) {
+      return { ok: false, refusal: { kind: "glossary_line", lineNumber: i + 1, line, reason: "no_colon" } };
+    }
+    const key = line.slice(0, colon).trim();
+    if (key === "") {
+      return { ok: false, refusal: { kind: "glossary_line", lineNumber: i + 1, line, reason: "empty_key" } };
+    }
+    glossary[key] = line.slice(colon + 1).trim();
+  }
+  return { ok: true, input: { markdown: form.markdown, bannedWords, glossary } };
+}
+
 /**
  * Upserts one guide row: `projectSlug` null addresses the single global row, a slug its project
  * row. The project must already exist — the dashboard editor (queue task 15) only ever edits
@@ -92,6 +150,26 @@ function renderItem(item: string): string {
   return item.replace(/[\r\n]+/g, " ");
 }
 
+/** The one row a section addresses: `projectSlug` null is the single global row, a slug its project row. Null when the section has no row yet. */
+function guideRow(store: Store, projectSlug: string | null): StyleGuideRow | null {
+  if (projectSlug === null) {
+    return store.db.query(
+      "SELECT id, project_id, markdown, banned_words, glossary FROM style_guides WHERE project_id IS NULL",
+    ).get() as StyleGuideRow | null;
+  }
+  return store.db.query(
+    `SELECT s.id, s.project_id, s.markdown, s.banned_words, s.glossary
+     FROM style_guides s JOIN projects p ON p.id = s.project_id WHERE p.slug = ?`,
+  ).get(projectSlug) as StyleGuideRow | null;
+}
+
+/** The stored section read back typed, the read side of `parseStyleGuideForm`: the editor renders it, and a store row the editor never wrote (a foreign or hand-edited row) reads as empty values, never crashes. Null when the section has no row. */
+export function readStyleGuideSection(store: Store, projectSlug: string | null): StyleGuideInput | null {
+  const row = guideRow(store, projectSlug);
+  if (row === null) return null;
+  return { markdown: row.markdown, bannedWords: parseBannedWords(row.banned_words), glossary: parseGlossary(row.glossary) };
+}
+
 /**
  * The merged style guide `docs/mcp-contract.md`'s resource section pins: the global row's markdown,
  * a blank line, the project row's markdown, then the union of banned words (global items first,
@@ -105,13 +183,8 @@ function renderItem(item: string): string {
  * spelled out.
  */
 export function mergedStyleGuide(store: Store, projectSlug: string): string {
-  const globalRow = store.db.query(
-    "SELECT id, project_id, markdown, banned_words, glossary FROM style_guides WHERE project_id IS NULL",
-  ).get() as StyleGuideRow | null;
-  const projectRow = store.db.query(
-    `SELECT s.id, s.project_id, s.markdown, s.banned_words, s.glossary
-     FROM style_guides s JOIN projects p ON p.id = s.project_id WHERE p.slug = ?`,
-  ).get(projectSlug) as StyleGuideRow | null;
+  const globalRow = guideRow(store, null);
+  const projectRow = guideRow(store, projectSlug);
 
   const blocks: string[] = [];
   for (const markdown of [globalRow?.markdown, projectRow?.markdown]) {

@@ -4,7 +4,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ulid } from "ulid";
 import { loadConfig } from "../../src/config.ts";
-import { mergedStyleGuide, upsertStyleGuide } from "../../src/db/style-guide.ts";
+import {
+  mergedStyleGuide,
+  parseStyleGuideForm,
+  readStyleGuideSection,
+  upsertStyleGuide,
+} from "../../src/db/style-guide.ts";
 import { openStore } from "../../src/db/store.ts";
 import type { Store } from "../../src/db/store.ts";
 
@@ -254,5 +259,149 @@ describe("mergedStyleGuide", () => {
         "- cta: call to action",
       ].join("\n"),
     );
+  });
+});
+
+describe("parseStyleGuideForm", () => {
+  test("banned words parse comma-separated, trimmed, empties and duplicates dropped", () => {
+    expect(
+      parseStyleGuideForm({
+        markdown: "Be plain.",
+        bannedWordsCsv: " leverage , awesome, , leverage",
+        glossaryText: "",
+      }),
+    ).toEqual({ ok: true, input: { markdown: "Be plain.", bannedWords: ["leverage", "awesome"], glossary: {} } });
+  });
+
+  test("glossary parses one entry per line, split on the first colon, both sides trimmed", () => {
+    expect(
+      parseStyleGuideForm({
+        markdown: "",
+        bannedWordsCsv: "",
+        glossaryText: " widget: a screen element \nbanner: hero: image",
+      }),
+    ).toEqual({
+      ok: true,
+      input: { markdown: "", bannedWords: [], glossary: { widget: "a screen element", banner: "hero: image" } },
+    });
+  });
+
+  test("a line without a colon refuses, naming the line's number and content", () => {
+    expect(
+      parseStyleGuideForm({ markdown: "", bannedWordsCsv: "", glossaryText: "widget: a screen element\njust words" }),
+    ).toEqual({
+      ok: false,
+      refusal: { kind: "glossary_line", lineNumber: 2, line: "just words", reason: "no_colon" },
+    });
+  });
+
+  test("a line with a colon but no key refuses, naming the line", () => {
+    expect(
+      parseStyleGuideForm({ markdown: "", bannedWordsCsv: "", glossaryText: "widget: a screen element\n: just words" }),
+    ).toEqual({
+      ok: false,
+      refusal: { kind: "glossary_line", lineNumber: 2, line: ": just words", reason: "empty_key" },
+    });
+  });
+
+  test("an empty value is a deliberate definition, not a refusal", () => {
+    expect(parseStyleGuideForm({ markdown: "", bannedWordsCsv: "", glossaryText: "widget:" })).toEqual({
+      ok: true,
+      input: { markdown: "", bannedWords: [], glossary: { widget: "" } },
+    });
+  });
+
+  test("blank lines are no entries, not a refusal", () => {
+    expect(
+      parseStyleGuideForm({
+        markdown: "",
+        bannedWordsCsv: "",
+        glossaryText: "widget: a screen element\n\nbanner: top strip\n",
+      }),
+    ).toEqual({
+      ok: true,
+      input: { markdown: "", bannedWords: [], glossary: { widget: "a screen element", banner: "top strip" } },
+    });
+  });
+
+  test("a crlf glossary parses like an lf one", () => {
+    expect(
+      parseStyleGuideForm({ markdown: "", bannedWordsCsv: "", glossaryText: "widget: a screen element\r\nbanner: top strip" }),
+    ).toEqual({
+      ok: true,
+      input: { markdown: "", bannedWords: [], glossary: { widget: "a screen element", banner: "top strip" } },
+    });
+  });
+
+  test("markdown is kept raw, never trimmed", () => {
+    expect(parseStyleGuideForm({ markdown: "  padded  \n", bannedWordsCsv: "", glossaryText: "" })).toEqual({
+      ok: true,
+      input: { markdown: "  padded  \n", bannedWords: [], glossary: {} },
+    });
+  });
+});
+
+describe("readStyleGuideSection", () => {
+  test("reads the stored section back typed, for the global row and a project row", () => {
+    const store = openTempStore();
+    upsertStyleGuide(store, null, {
+      markdown: "Be plain.",
+      bannedWords: ["leverage", "awesome"],
+      glossary: { widget: "a screen element" },
+    });
+    insertProject(store, "app");
+    upsertStyleGuide(store, "app", {
+      markdown: "App voice.",
+      bannedWords: ["utilize"],
+      glossary: { banner: "hero image" },
+    });
+
+    expect(readStyleGuideSection(store, null)).toEqual({
+      markdown: "Be plain.",
+      bannedWords: ["leverage", "awesome"],
+      glossary: { widget: "a screen element" },
+    });
+    expect(readStyleGuideSection(store, "app")).toEqual({
+      markdown: "App voice.",
+      bannedWords: ["utilize"],
+      glossary: { banner: "hero image" },
+    });
+  });
+
+  test("a section with no row reads null", () => {
+    const store = openTempStore();
+    expect(readStyleGuideSection(store, null)).toBeNull();
+    insertProject(store, "app");
+    expect(readStyleGuideSection(store, "app")).toBeNull();
+  });
+
+  test("malformed json columns read as empty values, never throwing", () => {
+    const store = openTempStore();
+    insertRawGuide(store, null, { markdown: "Global.", banned_words: "not json", glossary: "[1,2]" });
+
+    expect(readStyleGuideSection(store, null)).toEqual({ markdown: "Global.", bannedWords: [], glossary: {} });
+  });
+});
+
+describe("upsertStyleGuide timestamps", () => {
+  test("an update preserves created_at and stamps a newer updated_at", () => {
+    const store = openTempStore();
+    upsertStyleGuide(store, null, { markdown: "First.", bannedWords: [], glossary: {} });
+    // Pin the insert's created_at far in the past, so the update cannot land in the same millisecond.
+    store.db.run("UPDATE style_guides SET created_at = 1 WHERE project_id IS NULL");
+    upsertStyleGuide(store, null, {
+      markdown: "Second.",
+      bannedWords: ["leverage"],
+      glossary: { widget: "a screen element" },
+    });
+
+    const row = store.db
+      .query("SELECT created_at, updated_at, markdown, banned_words, glossary FROM style_guides WHERE project_id IS NULL")
+      .get() as { created_at: number; updated_at: number; markdown: string; banned_words: string; glossary: string };
+    expect(row.created_at).toBe(1);
+    expect(row.updated_at).toBeGreaterThan(row.created_at);
+    expect(row.markdown).toBe("Second.");
+    expect(row.banned_words).toBe('["leverage"]');
+    expect(row.glossary).toBe('{"widget":"a screen element"}');
   });
 });
