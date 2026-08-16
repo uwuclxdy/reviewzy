@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { loadConfig } from "../../src/config.ts";
 import { createApp } from "../../src/daemon/app.ts";
-import { fileEntries } from "../../src/db/queries.ts";
+import { fileEntries, listEntries } from "../../src/db/queries.ts";
 import type { NewEntry } from "../../src/db/queries.ts";
 import { openStore } from "../../src/db/store.ts";
 import type { Store } from "../../src/db/store.ts";
@@ -398,5 +398,76 @@ describe("dashboard entry list", () => {
     } finally {
       xs.close();
     }
+  });
+
+  test("walks past one page of the list query", async () => {
+    const big = serveApp();
+    try {
+      const drafts: NewEntry[] = [];
+      for (let i = 1; i <= 200; i++) {
+        drafts.push(
+          draft({
+            file: "docs/common.md",
+            anchorText: `common anchor ${i}`,
+            anchorHash: `h-common-${i}`,
+            fileHash: `f-common-${i}`,
+            agentDraft: `Entry ${i} of the walk fixture.`,
+          }),
+        );
+      }
+      // The 201st entry can only render if the dashboard continues past the first page of 200.
+      drafts.push(
+        draft({
+          file: "docs/other.md",
+          anchorText: "the odd one out",
+          anchorHash: "h-odd",
+          fileHash: "f-odd",
+          agentDraft: "The 201st entry, on page two of the walk.",
+        }),
+      );
+      fileEntries(big.store, "alpha", "probe-agent", drafts);
+
+      // Page 1 is the first 200 rows by id — which rows those are depends on the batch's ulid
+      // order, not on filing order — so the walk's second page is found by the same keyset walk.
+      const page1 = listEntries(big.store, {
+        projectId: undefined,
+        status: undefined,
+        ids: undefined,
+        q: undefined,
+        cursor: undefined,
+        limit: 200,
+      });
+      const page2 = listEntries(big.store, {
+        projectId: undefined,
+        status: undefined,
+        ids: undefined,
+        q: undefined,
+        cursor: page1.nextCursor ?? undefined,
+        limit: 200,
+      });
+      expect(page2.rows).toHaveLength(1);
+
+      const html = await (await big.get("/")).text();
+      // The whole walk renders: all 201 rows (one entry row each), page 2's row included. A walk
+      // that stops after the first page renders exactly one row short, whatever the id order.
+      expect(html.match(/class="cell-filedby"/g) ?? []).toHaveLength(201);
+      const page2Text = page2.rows[0]!.agent_draft;
+      expect(page2Text).not.toBeNull();
+      expect(html).toContain(page2Text!);
+
+      // A filter matching exactly one page reports the walk's full count, not the page's.
+      const filtered = await (await big.get("/?q=common")).text();
+      expect(filtered).toContain("Showing 200 of 201 entries");
+      expect(filtered).not.toContain("The 201st entry");
+    } finally {
+      big.close();
+    }
+  });
+
+  test("a whitespace-only search is no filter at all", async () => {
+    const html = await (await env.get("/?q=%20%20")).text();
+    expect(html).toContain("Fix the wording of the setup section.");
+    expect(html).toContain("Update the FAQ.");
+    expect(html).not.toContain("Showing ");
   });
 });
