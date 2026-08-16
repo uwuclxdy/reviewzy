@@ -1,0 +1,79 @@
+/* ============================================================
+   reviewzy — dashboard page styles
+   ============================================================ */
+
+/* ---- Page shell (navbar shell per cloudy-ui) ---- */
+.app-shell { min-height: 100vh; display: flex; flex-direction: column; }
+.main { padding: var(--space-10) var(--space-12); max-width: 1400px; margin: 0 auto; width: 100%; }
+
+/* ---- Page header: the eyebrow / title / lede triplet ---- */
+.page-header { margin-bottom: var(--space-8); padding-bottom: var(--space-5); border-bottom: 1px solid var(--line); }
+.page-eyebrow { color: var(--accent); margin-bottom: var(--space-2); }
+.page-title { font: 550 var(--text-2xl)/1.15 var(--font-sans); color: var(--text); letter-spacing: -0.02em; margin-bottom: var(--space-3); }
+.page-lede { font-size: var(--text-base); color: var(--text-dim); max-width: 540px; }
+
+/* ---- Filter form ---- */
+.filters { display: grid; grid-template-columns: minmax(0, 2fr) 200px 200px auto; gap: var(--space-3); align-items: end; margin-bottom: var(--space-8); }
+@media (max-width: 768px) { .filters { grid-template-columns: 1fr; } }
+
+/* ---- Entries region ---- */
+/* The loading strip is hidden until htmx marks the request in flight (hx-indicator adds the
+   .htmx-request class); it sits beside the swap target, so a swap never removes it. */
+#entries-loading { display: none; align-items: center; gap: var(--space-2); font-size: var(--text-sm); color: var(--text-dim); padding: var(--space-2) 0; }
+#entries-loading.htmx-request { display: flex; }
+/* The spinner reuses the @keyframes spin components.css ships for .btn-loading. */
+.spinner {
+  width: 12px; height: 12px;
+  border: 2px solid var(--line-strong);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.6s linear infinite;
+  flex-shrink: 0;
+}
+
+/* ---- Partial state ---- */
+.partial-header { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); margin-bottom: var(--space-4); }
+.partial-count { font-size: var(--text-sm); color: var(--text-dim); }
+
+/* ---- Project groups ---- */
+.project-group { margin-bottom: var(--space-10); }
+.project-header { display: flex; align-items: center; gap: var(--space-3); margin-bottom: var(--space-4); }
+.project-name { font: 500 var(--text-lg)/1.2 var(--font-mono); color: var(--text); letter-spacing: -0.01em; }
+.batch { margin-bottom: var(--space-6); }
+.batch-header { display: flex; align-items: baseline; gap: var(--space-3); margin-bottom: var(--space-2); }
+.batch-id { font: 400 var(--text-xs)/1 var(--font-mono); color: var(--text-faint); }
+
+/* ---- Entry table cells ----
+   Paths, anchors, and constraint summaries are machine data, so they set the mono face;
+   long values ellipsize in place and keep the full value in the title attribute. */
+.cell-file { max-width: 380px; }
+.cell-anchor { max-width: 320px; }
+.cell-text { max-width: 560px; }
+.file-path, .anchor-text {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  line-height: 1.4;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.entry-text {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.cell-filedby { color: var(--text-dim); white-space: nowrap; }
+.constraint-summary { font-family: var(--font-mono); font-size: var(--text-xs); color: var(--text-dim); white-space: nowrap; }
+
+/* ---- Empty states ---- */
+.empty-state { text-align: center; padding: var(--space-12) var(--space-6); }
+.empty-icon { margin: 0 auto var(--space-4); width: 32px; height: 32px; color: var(--text-faint); display: flex; align-items: center; justify-content: center; }
+.empty-state h3 { font: 500 var(--text-lg)/1.3 var(--font-sans); color: var(--text); margin-bottom: var(--space-2); }
+.empty-state p { font-size: var(--text-sm); color: var(--text-dim); max-width: 420px; margin: 0 auto var(--space-4); }
+
+/* ---- Error box (cloned from #error-box by dashboard.js) ---- */
+.callout-content { min-width: 0; }
+.callout-actions { margin-top: var(--space-2); }

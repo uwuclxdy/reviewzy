@@ -133,6 +133,22 @@ export function projectIdBySlug(store: Store, slug: string): string | null {
   return row?.id ?? null;
 }
 
+type ProjectSlugRow = { id: string; slug: string };
+
+/**
+ * Every known project, ordered by slug. The dashboard reads this for the project filter dropdown
+ * and to resolve the `project_id` on entry rows back to the slug its groups are labelled with.
+ */
+export function listProjects(store: Store): { id: string; slug: string }[] {
+  return store.db.query("SELECT id, slug FROM projects ORDER BY slug").all() as ProjectSlugRow[];
+}
+
+/** The number of entries in the store, whatever their status; the dashboard's "showing X of Y" count. */
+export function countEntries(store: Store): number {
+  const row = store.db.query("SELECT COUNT(*) AS n FROM entries").get() as { n: number };
+  return row.n;
+}
+
 /**
  * `INSERT ... ON CONFLICT DO NOTHING` followed by the read: two calls racing to auto-create the
  * same slug both succeed, and the second takes the first's id rather than dying on `UNIQUE(slug)`.

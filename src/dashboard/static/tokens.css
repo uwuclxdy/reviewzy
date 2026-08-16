@@ -1,0 +1,213 @@
+/* ============================================================
+   reviewzy — design tokens
+   ============================================================ */
+
+/* Self-hosted variable fonts — ship the woff2 subsets in fonts/ alongside these
+   @font-face blocks. No CDN dependency; faster, private, offline-safe. Subsets:
+   latin / latin-ext / cyrillic. Subset your own with fonttools/glyphhanger. */
+@font-face {
+  font-family: Onest;
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: swap;
+  src: url("fonts/onest-latin.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: Onest;
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: swap;
+  src: url("fonts/onest-latin-ext.woff2") format("woff2");
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+  font-family: Onest;
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: swap;
+  src: url("fonts/onest-cyrillic.woff2") format("woff2");
+  unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;
+}
+@font-face {
+  font-family: "JetBrains Mono";
+  font-style: normal;
+  font-weight: 400 600;
+  font-display: swap;
+  src: url("fonts/jetbrainsmono-latin.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: "JetBrains Mono";
+  font-style: normal;
+  font-weight: 400 600;
+  font-display: swap;
+  src: url("fonts/jetbrainsmono-latin-ext.woff2") format("woff2");
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
+:root {
+  /* Accents */
+  --accent:          #43ABE5;
+  --accent-hover:    #3FA9CC;
+  --accent-press:    #2E93B5;
+  --accent-soft:     color-mix(in srgb, #43ABE5 10%, transparent);
+  --accent-ring:     color-mix(in srgb, #43ABE5 42%, transparent);
+
+  --accent-2:        #D97757;
+  --accent-2-soft:   color-mix(in srgb, #D97757 18%, transparent);
+
+  --info:            #74C7EC;
+  --success:         #A6E3A1;
+  --warning:         #F9E2AF;
+  --danger:          #F38BA8;
+
+  /* Typography */
+  --font-sans: "Onest", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  /* Type scale */
+  --text-xs:    12px;
+  --text-sm:    13px;
+  --text-base:  14px;
+  --text-md:    16px;
+  --text-lg:    18px;
+  --text-xl:    22px;
+  --text-2xl:   28px;
+  --text-3xl:   36px;
+
+  /* Spacing (4px scale) */
+  --space-0:  0;
+  --space-1:  4px;
+  --space-2:  8px;
+  --space-3:  12px;
+  --space-4:  16px;
+  --space-5:  20px;
+  --space-6:  24px;
+  --space-8:  32px;
+  --space-10: 40px;
+  --space-12: 48px;
+  --space-16: 64px;
+  --space-20: 80px;
+
+  /* Radius — hairline 1px is the canonical default; 0 sharp / 6px rounded are opt-in */
+  --radius:      1px;
+  --radius-pill: 999px;
+
+  /* Elevation — only one shadow exists in the system */
+  --shadow-float: 0 1px 2px rgb(0 0 0 / 0.08), 0 8px 24px rgb(0 0 0 / 0.24);
+
+  /* Motion */
+  --ease:       cubic-bezier(0.2, 0, 0, 1);
+  --ease-out:   cubic-bezier(0.16, 1, 0.3, 1);
+  --dur-fast:   120ms;
+  --dur-base:   180ms;
+  --dur-slow:   240ms;
+}
+
+/* Radius presets — base is 1px hairline; override per project */
+[data-radius="sharp"]   { --radius: 0px; }
+[data-radius="soft"]    { --radius: 1px; }
+[data-radius="rounded"] { --radius: 6px; }
+
+/* ---- Dark mode (default) — Mocha ---- */
+[data-theme="dark"], :root {
+  --bg:          #1E1E2E;
+  --bg-raised:   #181825;
+  --bg-sunken:   #11111B;
+  --bg-hover:    #282838;
+
+  --line:        #313244;
+  --line-strong: #45475A;
+  --line-soft:   #26263A;
+
+  --text:        #CDD6F4;
+  --text-muted:  #BAC2DE;
+  --text-dim:    #A6ADC8;
+  --text-faint:  #7F849C;
+  --text-on-accent: #11111B;
+}
+
+/* ---- Light mode — Latte ---- */
+[data-theme="light"] {
+  --bg:          #EFF1F5;
+  --bg-raised:   #FFFFFF;
+  --bg-sunken:   #E6E9EF;
+  --bg-hover:    #DCE0E8;
+
+  --line:        #CCD0DA;
+  --line-strong: #BCC0CC;
+  --line-soft:   #E6E9EF;
+
+  --text:        #1E1E2E;
+  --text-muted:  #4C4F69;
+  --text-dim:    #6C6F85;
+  --text-faint:  #9CA0B0;
+  --text-on-accent: #FFFFFF;
+
+  --accent:      #2E93B5;
+  --accent-hover:#1F7F9F;
+  --accent-press:#166D8A;
+
+  --success:     #40A02B;
+  --warning:     #DF8E1D;
+  --danger:      #D20F39;
+  --info:        #209FB5;
+
+  --shadow-float: 0 1px 2px rgb(0 0 0 / 0.04), 0 8px 24px rgb(0 0 0 / 0.12);
+}
+
+/* ---- Optional categorical palette (full Catppuccin accent ramp) ----
+   For category coding only: per-language dots, syntax, tags, multi-series charts.
+   NOT for status (use --success / --warning / --danger / --info) and NOT for
+   chrome. Opt-in — drop this block only when two brand accents aren't enough. */
+[data-theme="dark"], :root {
+  --cat-rosewater:#F5E0DC; --cat-flamingo:#F2CDCD; --cat-pink:#F5C2E7;
+  --cat-mauve:#CBA6F7;     --cat-red:#F38BA8;      --cat-maroon:#EBA0AC;
+  --cat-peach:#FAB387;     --cat-yellow:#F9E2AF;   --cat-green:#A6E3A1;
+  --cat-teal:#94E2D5;      --cat-sky:#89DCEB;      --cat-sapphire:#74C7EC;
+  --cat-blue:#89B4FA;      --cat-lavender:#B4BEFE;
+}
+[data-theme="light"] {
+  --cat-rosewater:#DC8A78; --cat-flamingo:#DD7878; --cat-pink:#EA76CB;
+  --cat-mauve:#8839EF;     --cat-red:#D20F39;      --cat-maroon:#E64553;
+  --cat-peach:#FE640B;     --cat-yellow:#DF8E1D;   --cat-green:#40A02B;
+  --cat-teal:#179299;      --cat-sky:#04A5E5;      --cat-sapphire:#209FB5;
+  --cat-blue:#1E66F5;      --cat-lavender:#7287FD;
+}
+
+/* ---- Base reset ---- */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { font-size: 16px; }
+body {
+  font-family: var(--font-sans);
+  font-size: var(--text-base);
+  line-height: 1.55;
+  font-weight: 400;
+  color: var(--text);
+  background: var(--bg);
+  -webkit-font-smoothing: antialiased;
+  text-wrap: pretty;
+}
+::selection { background: var(--accent-soft); color: var(--text); }
+:focus-visible { outline: 2px solid var(--accent-ring); outline-offset: 2px; }
+
+/* ---- Utilities ---- */
+.label {
+  font: 450 11px/1.4 var(--font-sans);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+.num {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+}
+
+/* ---- Reduced motion ---- */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

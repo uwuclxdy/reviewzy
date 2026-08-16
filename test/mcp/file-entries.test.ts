@@ -7,7 +7,8 @@ import { Hono } from "hono";
 import { loadConfig } from "../../src/config.ts";
 import { openStore } from "../../src/db/store.ts";
 import type { Store } from "../../src/db/store.ts";
-import { mountMcp, originGate } from "../../src/mcp/route.ts";
+import { originGate } from "../../src/daemon/origin.ts";
+import { mountMcp } from "../../src/mcp/route.ts";
 
 const REVISION = "2026-07-28";
 
@@ -54,7 +55,8 @@ function serveApp() {
   const config = loadConfig({ REVIEWZY_DB: dbPath, REVIEWZY_PORT: String(PORT) });
   const store = openStore(config);
 
-  // The same mounting `createApp` performs, minus the sibling-owned file: origin gate then mcp.
+  // The same mounting `createApp` performs, minus the daemon's own routes (/health, /drain, the
+  // dashboard): origin gate then mcp.
   const app = new Hono();
   app.use(originGate(config));
   mountMcp(app, config, store);

@@ -6,7 +6,8 @@ import { Hono } from "hono";
 import { loadConfig } from "../../src/config.ts";
 import { openStore } from "../../src/db/store.ts";
 import type { Store } from "../../src/db/store.ts";
-import { mountMcp, originGate } from "../../src/mcp/route.ts";
+import { originGate } from "../../src/daemon/origin.ts";
+import { mountMcp } from "../../src/mcp/route.ts";
 
 const REVISION = "2026-07-28";
 

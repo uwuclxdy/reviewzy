@@ -7,7 +7,9 @@ import { Hono } from "hono";
 import { timingSafeEqual } from "hono/utils/buffer";
 import type { Config } from "../config.ts";
 import type { Store } from "../db/store.ts";
-import { mountMcp, originGate } from "../mcp/route.ts";
+import { mountDashboard } from "../dashboard/mount.ts";
+import { mountMcp } from "../mcp/route.ts";
+import { originGate } from "./origin.ts";
 import { NAME, VERSION } from "../version.ts";
 
 export type HealthBody = {
@@ -62,8 +64,8 @@ export function createApp(
   const nonce = crypto.randomUUID();
 
   // App-wide because `docs/design.md` makes Origin validation unconditional rather than per-route:
-  // `/health` hands out a pid and a version, and the dashboard mounts on this app later. An absent
-  // `Origin` passes, so the shim's liveness probe is unaffected; only a browser sends one at all.
+  // `/health` hands out a pid and a version, and the dashboard serves a browser. An absent `Origin`
+  // passes, so the shim's liveness probe is unaffected; only a browser sends one at all.
   app.use(originGate(config));
 
   // Mounted ahead of the mcp endpoint so a refusal here never reaches the SDK: once draining has
@@ -149,6 +151,7 @@ export function createApp(
   });
 
   mountMcp(app, config, store);
+  mountDashboard(app, config, store);
 
   return app;
 }
