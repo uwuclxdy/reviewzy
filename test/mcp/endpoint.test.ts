@@ -177,13 +177,14 @@ describe("protocol conformance", () => {
     });
   });
 
-  // Task 5 registered `file_entries`, so the pin is "exactly the registered set" rather than the
-  // empty list it was. `test/mcp/file-entries.test.ts` owns the tool's own behavior.
-  test("tools/list answers exactly the registered tool, file_entries", async () => {
+  // Task 6 registered `list_entries`, so the pin is "exactly the registered set" rather than the
+  // empty list it was. `test/mcp/file-entries.test.ts` and `test/mcp/list-entries.test.ts` own the
+  // tools' own behavior.
+  test("tools/list answers exactly the registered tools, file_entries and list_entries", async () => {
     const { status, body } = await probe({ rpc: "tools/list" });
     expect(status).toBe(200);
     const tools = (body?.result?.tools ?? []) as { name: string }[];
-    expect(tools.map((tool) => tool.name)).toEqual(["file_entries"]);
+    expect(tools.map((tool) => tool.name)).toEqual(["file_entries", "list_entries"]);
     expect(body?.result?.resultType).toBe("complete");
   });
 

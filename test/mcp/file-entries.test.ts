@@ -120,11 +120,11 @@ function rows(store: Store, project: string) {
 }
 
 describe("the tool surface", () => {
-  test("file_entries is the one advertised tool, with an input and an output schema", async () => {
+  test("file_entries is advertised beside list_entries, with an input and an output schema", async () => {
     const { status, body } = await first.call("tools/list", {});
     expect(status).toBe(200);
     const tools = body.result?.tools ?? [];
-    expect(tools.map((t) => t.name)).toEqual(["file_entries"]);
+    expect(tools.map((t) => t.name)).toEqual(["file_entries", "list_entries"]);
     expect((tools[0]?.inputSchema as { type?: string }).type).toBe("object");
     expect(Object.keys(tools[0]?.outputSchema as object).length).toBeGreaterThan(0);
   });

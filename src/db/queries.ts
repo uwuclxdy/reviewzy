@@ -1,3 +1,4 @@
+import type { SQLQueryBindings } from "bun:sqlite";
 import { ulid } from "ulid";
 import type { Store } from "./store.ts";
 
@@ -40,6 +41,64 @@ export type FiledBatch = {
 type ProjectRow = { id: string };
 type IdentityRow = { id: string; status: EntryStatus };
 
+/** One entry row as `list_entries` returns it: the columns `docs/mcp-contract.md`'s entry schema lists, `archived_at` included (every v1 row carries null — the archive sweep is not built yet). */
+export type EntryRow = {
+  readonly id: string;
+  readonly project_id: string;
+  readonly batch_id: string;
+  readonly repo: string;
+  readonly file: string;
+  readonly anchor_text: string;
+  readonly anchor_before: string;
+  readonly anchor_after: string;
+  readonly anchor_hash: string;
+  readonly file_hash: string;
+  readonly agent_draft: string | null;
+  readonly human_text: string | null;
+  readonly status: EntryStatus;
+  readonly context: string;
+  readonly constraints: string;
+  readonly filed_by: string | null;
+  readonly stale_note: string | null;
+  readonly created_at: number;
+  readonly updated_at: number;
+  readonly applied_at: number | null;
+  readonly archived_at: number | null;
+};
+
+/**
+ * Every filter is `| undefined`, never optional: the tool always passes all of them, so the query
+ * builder can test presence with `!== undefined` and the caller never wonders which keys exist.
+ */
+export type ListEntriesFilter = {
+  readonly projectId: string | undefined;
+  readonly status: EntryStatus | undefined;
+  readonly ids: readonly string[] | undefined;
+  readonly q: string | undefined;
+  readonly limit: number;
+  readonly cursor: string | undefined;
+};
+
+export type ListEntriesResult = {
+  readonly rows: readonly EntryRow[];
+  /**
+   * The next page's cursor, present only when the page is full: `rows.length === limit` means more
+   * rows may exist beyond the last id. An absent cursor means the walk is exhausted, and an empty
+   * page never carries one.
+   */
+  readonly nextCursor: string | null;
+};
+
+/**
+ * Resolves a slug to its project id. Read tools call this and refuse on `null`: the contract's
+ * error table makes an unknown project a business refusal on reads, and only `ensureProject`
+ * (the write path) may mint a project.
+ */
+export function projectIdBySlug(store: Store, slug: string): string | null {
+  const row = store.db.query("SELECT id FROM projects WHERE slug = ?").get(slug) as ProjectRow | null;
+  return row?.id ?? null;
+}
+
 /**
  * `INSERT ... ON CONFLICT DO NOTHING` followed by the read: two calls racing to auto-create the
  * same slug both succeed, and the second takes the first's id rather than dying on `UNIQUE(slug)`.
@@ -47,15 +106,15 @@ type IdentityRow = { id: string; status: EntryStatus };
  * competing write can land between the insert and its select. Concurrent readers under WAL see
  * pre-commit state and are unaffected either way.
  */
-function ensureProject(db: Store["db"], slug: string): string {
-  db.run("INSERT INTO projects (id, slug, created_at) VALUES (?, ?, ?) ON CONFLICT (slug) DO NOTHING", [
+function ensureProject(store: Store, slug: string): string {
+  store.db.run("INSERT INTO projects (id, slug, created_at) VALUES (?, ?, ?) ON CONFLICT (slug) DO NOTHING", [
     ulid(),
     slug,
     Date.now(),
   ]);
-  const row = db.query("SELECT id FROM projects WHERE slug = ?").get(slug) as ProjectRow | null;
+  const row = projectIdBySlug(store, slug);
   if (row === null) throw new Error(`reviewzy: project "${slug}" missing right after its own insert`);
-  return row.id;
+  return row;
 }
 
 /**
@@ -134,8 +193,60 @@ export function fileEntries(
 ): FiledBatch {
   const batchId = ulid();
   const write = store.db.transaction(() => {
-    const projectId = ensureProject(store.db, projectSlug);
+    const projectId = ensureProject(store, projectSlug);
     return entries.map((entry) => fileOneEntry(store.db, projectId, batchId, filedBy, entry));
   });
   return { batchId, results: write() };
+}
+
+/** The columns `docs/mcp-contract.md`'s entry schema names; the one place the output row's shape is spelled out in SQL. */
+const ENTRY_COLUMNS = [
+  "id", "project_id", "batch_id", "repo", "file", "anchor_text", "anchor_before",
+  "anchor_after", "anchor_hash", "file_hash", "agent_draft", "human_text", "status",
+  "context", "constraints", "filed_by", "stale_note", "created_at", "updated_at", "applied_at", "archived_at",
+] as const;
+
+/**
+ * The `list_entries` read. Every filter is optional and combines with AND; rows come back in
+ * ascending id order (ulids sort chronologically), and `cursor` continues the walk from after that
+ * id — keyset pagination, so a page is exactly the rows between the cursor and the limit, with no
+ * way to duplicate or skip one.
+ */
+export function listEntries(store: Store, filter: ListEntriesFilter): ListEntriesResult {
+  const where: string[] = [];
+  const params: SQLQueryBindings[] = [];
+
+  if (filter.projectId !== undefined) {
+    where.push("project_id = ?");
+    params.push(filter.projectId);
+  }
+  if (filter.status !== undefined) {
+    where.push("status = ?");
+    params.push(filter.status);
+  }
+  if (filter.ids !== undefined) {
+    // The zod boundary refuses an empty list, so this never emits `IN ()` — which sqlite would
+    // accept as a no-match, not an error: a direct call with `ids: []` returns no rows.
+    where.push(`id IN (${filter.ids.map(() => "?").join(", ")})`);
+    params.push(...filter.ids);
+  }
+  if (filter.q !== undefined) {
+    // `instr(lower(...), lower(?)) > 0` is a literal substring: `%` and `_` in the query match
+    // themselves, unlike a LIKE pattern. `lower` folds ASCII case only — the same fold LIKE does.
+    where.push(
+      `(instr(lower(file), lower(?)) > 0 OR instr(lower(anchor_text), lower(?)) > 0 OR instr(lower(agent_draft), lower(?)) > 0 OR instr(lower(human_text), lower(?)) > 0)`,
+    );
+    params.push(filter.q, filter.q, filter.q, filter.q);
+  }
+  if (filter.cursor !== undefined) {
+    where.push("id > ?");
+    params.push(filter.cursor);
+  }
+
+  const sql = `SELECT ${ENTRY_COLUMNS.join(", ")} FROM entries${where.length > 0 ? ` WHERE ${where.join(" AND ")}` : ""} ORDER BY id LIMIT ?`;
+  params.push(filter.limit);
+
+  const rows = store.db.query(sql).all(...params) as EntryRow[];
+  const nextCursor = rows.length === filter.limit ? rows[rows.length - 1]!.id : null;
+  return { rows, nextCursor };
 }

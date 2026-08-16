@@ -2,6 +2,7 @@ import { McpServer } from "@modelcontextprotocol/server";
 import type { Config } from "../config.ts";
 import type { Store } from "../db/store.ts";
 import { registerFileEntriesTool } from "./file-entries.ts";
+import { registerListEntriesTool } from "./list-entries.ts";
 import { NAME, VERSION } from "../version.ts";
 
 /**
@@ -40,5 +41,6 @@ export function createMcpServer(config: Config, store: Store): McpServer {
   );
 
   registerFileEntriesTool(server, config.baseUrl, store);
+  registerListEntriesTool(server, store);
   return server;
 }
