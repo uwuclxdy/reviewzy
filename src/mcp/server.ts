@@ -1,6 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/server";
 import type { Config } from "../config.ts";
 import type { Store } from "../db/store.ts";
+import { registerAwaitApprovedTool } from "./await-approved.ts";
 import { registerFetchApprovedTool } from "./fetch-approved.ts";
 import { registerFileEntriesTool } from "./file-entries.ts";
 import { registerListEntriesTool } from "./list-entries.ts";
@@ -51,6 +52,7 @@ export function createMcpServer(config: Config, store: Store): McpServer {
   registerListEntriesTool(server, store);
   registerFetchApprovedTool(server, store);
   registerMarkAppliedTool(server, store);
+  registerAwaitApprovedTool(server, store);
   registerStyleGuideResource(server, store);
   return server;
 }

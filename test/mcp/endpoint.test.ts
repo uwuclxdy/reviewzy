@@ -183,10 +183,10 @@ describe("protocol conformance", () => {
   });
 
   // Task 6 registered `list_entries`, so the pin is "exactly the registered set" rather than the
-  // empty list it was. Tasks 8 and 9 added `fetch_approved` and `mark_applied` the same way.
-  // `test/mcp/file-entries.test.ts`, `test/mcp/list-entries.test.ts`, and
-  // `test/mcp/fetch-approved.test.ts` own the tools' own behavior.
-  test("tools/list answers exactly the registered tools, file_entries, list_entries, fetch_approved, and mark_applied", async () => {
+  // empty list it was. Tasks 8, 9, and 10 added `fetch_approved`, `mark_applied`, and
+  // `await_approved` the same way. `test/mcp/file-entries.test.ts`, `test/mcp/list-entries.test.ts`,
+  // and `test/mcp/fetch-approved.test.ts` own the tools' own behavior.
+  test("tools/list answers exactly the registered tools, file_entries, list_entries, fetch_approved, mark_applied, and await_approved", async () => {
     const { status, body } = await probe({ rpc: "tools/list" });
     expect(status).toBe(200);
     const tools = (body?.result?.tools ?? []) as { name: string }[];
@@ -195,6 +195,7 @@ describe("protocol conformance", () => {
       "list_entries",
       "fetch_approved",
       "mark_applied",
+      "await_approved",
     ]);
     expect(body?.result?.resultType).toBe("complete");
   });

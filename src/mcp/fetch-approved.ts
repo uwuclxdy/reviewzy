@@ -1,6 +1,6 @@
 import type { McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
-import { approvedEntries, projectIdBySlug } from "../db/queries.ts";
+import { approvedEntries, projectIdBySlug, type ApprovedEntryRow } from "../db/queries.ts";
 import { mergedStyleGuide } from "../db/style-guide.ts";
 import type { Store } from "../db/store.ts";
 
@@ -27,7 +27,7 @@ const ParsedConstraints = z.strictObject({
 });
 
 /** The wire entry the contract's parenthetical names: text + anchor + constraints, no status (everything here is approved) and no context. */
-const ApprovedEntry = z.object({
+export const ApprovedEntry = z.object({
   id: z.string(),
   repo: z.string(),
   file: z.string(),
@@ -70,6 +70,25 @@ function parseConstraints(json: string): z.infer<typeof ParsedConstraints> {
 }
 
 /**
+ * The one mapping from approved store rows to the wire shape; fetch_approved and await_approved
+ * share it, so the two tools' entries arrays cannot drift.
+ */
+export function approvedRowsToWire(rows: readonly ApprovedEntryRow[]): z.infer<typeof ApprovedEntry>[] {
+  return rows.map((row) => ({
+    id: row.id,
+    repo: row.repo,
+    file: row.file,
+    anchor_text: row.anchor_text,
+    anchor_before: row.anchor_before,
+    anchor_after: row.anchor_after,
+    anchor_hash: row.anchor_hash,
+    file_hash: row.file_hash,
+    text: row.human_text,
+    constraints: parseConstraints(row.constraints),
+  }));
+}
+
+/**
  * Registers the contract's apply-back tool: approved prose, anchors, and constraints, with the
  * merged style guide embedded so a bulk rewrite shares one voice. The project lookup and the
  * refusal sit here, not in the query: reads never auto-create a project, so an unknown slug must
@@ -98,18 +117,7 @@ export function registerFetchApprovedTool(server: McpServer, store: Store): void
       const { rows, nextSince } = approvedEntries(store, projectId, { ids: args.ids, since: args.since });
 
       const output = {
-        entries: rows.map((row) => ({
-          id: row.id,
-          repo: row.repo,
-          file: row.file,
-          anchor_text: row.anchor_text,
-          anchor_before: row.anchor_before,
-          anchor_after: row.anchor_after,
-          anchor_hash: row.anchor_hash,
-          file_hash: row.file_hash,
-          text: row.human_text,
-          constraints: parseConstraints(row.constraints),
-        })),
+        entries: approvedRowsToWire(rows),
         style_guide: mergedStyleGuide(store, args.project),
         // An exhausted walk carries no `next_since` key at all: absent is the signal to stop, so an
         // empty page must never smuggle one in.

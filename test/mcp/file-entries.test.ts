@@ -124,7 +124,7 @@ describe("the tool surface", () => {
     const { status, body } = await first.call("tools/list", {});
     expect(status).toBe(200);
     const tools = body.result?.tools ?? [];
-    expect(tools.map((t) => t.name)).toEqual(["file_entries", "list_entries", "fetch_approved", "mark_applied"]);
+    expect(tools.map((t) => t.name)).toEqual(["file_entries", "list_entries", "fetch_approved", "mark_applied", "await_approved"]);
     expect((tools[0]?.inputSchema as { type?: string }).type).toBe("object");
     expect(Object.keys(tools[0]?.outputSchema as object).length).toBeGreaterThan(0);
   });

@@ -132,6 +132,10 @@ export function createApp(
 
     if (!draining) {
       draining = true;
+      // Long-poll responses must flush while the server still serves: an in-flight `await_approved`
+      // would otherwise hold this response open past `stop(false)`'s patience and get killed with
+      // nothing to show the caller, which then waits out its whole timeout against a dead daemon.
+      store.resolveInFlightWaiters();
       if (onDrain !== undefined) {
         setTimeout(() => {
           void Promise.resolve(onDrain()).catch((error: unknown) => {

@@ -62,6 +62,10 @@ if (import.meta.main) {
     if (stopping) return;
     stopping = true;
     void (async () => {
+      // An in-flight await_approved long-poll must flush before the graceful stop waits it out:
+      // the /drain route resolves waiters for the same reason, and an operator's Ctrl-C would
+      // otherwise hold the daemon up for the whole remaining wait.
+      daemon.store.resolveInFlightWaiters();
       await daemon.server.stop(false);
       daemon.store.close();
       process.exit(0);

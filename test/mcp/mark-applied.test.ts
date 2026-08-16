@@ -140,7 +140,7 @@ describe("the tool surface", () => {
   test("mark_applied is advertised beside the other three tools, with the loop-close schemas and the boundary rules in the description", async () => {
     const { body } = await first.call("tools/list", {});
     const tools = body.result?.tools ?? [];
-    expect(tools.map((t) => t.name)).toEqual(["file_entries", "list_entries", "fetch_approved", "mark_applied"]);
+    expect(tools.map((t) => t.name)).toEqual(["file_entries", "list_entries", "fetch_approved", "mark_applied", "await_approved"]);
 
     const tool = tools[3]!;
     const input = tool.inputSchema as {

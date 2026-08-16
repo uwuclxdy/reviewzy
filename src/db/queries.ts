@@ -322,6 +322,20 @@ export function approvedEntries(
   return { rows, nextSince };
 }
 
+/**
+ * The `await_approved` read: every named id's row in the fetch_approved column shape plus status,
+ * so one query answers both the status map and the approved slice a resolve carries. The caller
+ * (the tool) dedupes ids and zod refuses an empty list, so this never emits `IN ()` — which sqlite
+ * would accept as a no-match, not an error: a direct call with `ids: []` returns no rows.
+ */
+export function entriesByIds(
+  store: Store,
+  ids: readonly string[],
+): readonly (ApprovedEntryRow & { readonly status: EntryStatus })[] {
+  const sql = `SELECT id, status, repo, file, anchor_text, anchor_before, anchor_after, anchor_hash, file_hash, human_text, constraints FROM entries WHERE id IN (${ids.map(() => "?").join(", ")})`;
+  return store.db.query(sql).all(...ids) as (ApprovedEntryRow & { readonly status: EntryStatus })[];
+}
+
 /** The two outcomes `mark_applied` may report: the text was applied, or the anchor no longer matches. */
 export type ApplyResult = "applied" | "anchor_stale";
 
@@ -368,6 +382,9 @@ export function markApplied(store: Store, input: MarkAppliedInput): MarkAppliedO
       "UPDATE entries SET status = 'applied', applied_at = ?, updated_at = ?, applied_hash = COALESCE(?, applied_hash) WHERE id = ?",
       [now, now, input.appliedHash, input.id],
     );
+    // The store-scoped event bus, after the write so a waiter's re-read sees the new status:
+    // await_approved waiters on this entry re-check immediately instead of waiting out a poll.
+    store.notifyStatusChange(input.id, "applied");
     return { ok: true, status: "applied" };
   }
 
@@ -384,5 +401,9 @@ export function markApplied(store: Store, input: MarkAppliedInput): MarkAppliedO
     now,
     input.id,
   ]);
+  // The status does not always move (approved + anchor_stale stays approved), but the write is a
+  // successful transition either way: the event means "statuses may have changed", and a waiter's
+  // re-check is the decision, so a false positive costs one read.
+  store.notifyStatusChange(input.id, "approved");
   return { ok: true, status: "approved" };
 }

@@ -2,12 +2,30 @@ import { Database } from "bun:sqlite";
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import type { Config } from "../config.ts";
+import type { EntryStatus } from "./queries.ts";
 import { runMigrations } from "./migrate.ts";
 
 export type Store = {
   readonly db: Database;
+  /**
+   * The store-scoped status-change bus, one per `openStore`: `await_approved` waits on it, and the
+   * write paths dispatch on it. Never module-global — tests run several apps in one process, and a
+   * shared bus would cross-talk between stores.
+   */
+  readonly events: EventTarget;
+  /** Dispatches a status change on the bus; every status-writing path calls it after a successful transition. */
+  notifyStatusChange(id: string, status: EntryStatus): void;
+  /** Registers an in-flight `await_approved` waiter for the drain path; returns the unregister call. */
+  registerWaiter(resolve: () => void): () => void;
+  /** Resolves every registered waiter; the `/drain` route calls it before shutdown, so long-poll responses flush while the server still serves. */
+  resolveInFlightWaiters(): void;
+  /** The number of registered waiters; the teardown pins read it to prove a settled wait unregistered itself. */
+  waiterCount(): number;
   close(): void;
 };
+
+/** The one bus event: an entry's status changed. The detail carries {id, status}; a listener that only cares that something changed may ignore it. */
+export const STATUS_CHANGE_EVENT = "entry-status-changed";
 
 /** The operator-supplied `REVIEWZY_DB` path rejected a required setting, distinct from a bug in the daemon. */
 export class StoreError extends Error {
@@ -39,8 +57,27 @@ export function openStore(config: Config): Store {
 
   runMigrations(db);
 
+  const events = new EventTarget();
+  const waiters = new Set<() => void>();
+
   return {
     db,
+    events,
+    notifyStatusChange: (id, status) => {
+      events.dispatchEvent(new CustomEvent(STATUS_CHANGE_EVENT, { detail: { id, status } }));
+    },
+    registerWaiter: (resolve) => {
+      waiters.add(resolve);
+      return () => {
+        waiters.delete(resolve);
+      };
+    },
+    // A snapshot copy: a waiter unregisters itself while resolving, so iterating the live set
+    // while calling the handlers would skip a later waiter.
+    resolveInFlightWaiters: () => {
+      for (const resolve of [...waiters]) resolve();
+    },
+    waiterCount: () => waiters.size,
     close: () => db.close(),
   };
 }
