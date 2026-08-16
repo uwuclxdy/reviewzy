@@ -258,6 +258,7 @@ describe("login", () => {
     expect(setCookie).toContain("SameSite=Strict");
     expect(setCookie).toContain("Path=/");
     expect(setCookie).not.toContain("Max-Age"); // browser-session cookie
+    expect(setCookie).not.toContain("Secure"); // loopback http only; a Secure cookie would never be sent there
     env.close();
   });
 
@@ -295,11 +296,79 @@ describe("login", () => {
 
   test("next cannot redirect off the dashboard", async () => {
     const env = openEnv();
-    for (const evil of ["//evil.example", "https://evil.example", "///evil.example"]) {
+    // The backslash is the interesting one: the URL parser rewrites it to a slash, so `/\evil.example`
+    // would otherwise resolve to the off-dashboard authority `evil.example`.
+    for (const evil of ["//evil.example", "https://evil.example", "///evil.example", "/\\evil.example"]) {
       const res = await env.post("/login", loginForm(PASSWORD, evil));
       expect(res.status, evil).toBe(303);
       expect(res.headers.get("location"), evil).toBe("/");
     }
+    env.close();
+  });
+
+  test("a CRLF or an oversized next is rejected outright", async () => {
+    const env = openEnv();
+    // A CRLF would split the Location header if it ever reached the redirect; the length cap keeps
+    // the value small enough for every header a browser will send. Both currently answer with "/",
+    // and these pins keep them that way.
+    const crlf = await env.post("/login", loginForm(PASSWORD, "/\r\nevil.example"));
+    expect(crlf.status).toBe(303);
+    expect(crlf.headers.get("location")).toBe("/");
+    const long = await env.post("/login", loginForm(PASSWORD, "/" + "a".repeat(3000)));
+    expect(long.status).toBe(303);
+    expect(long.headers.get("location")).toBe("/");
+    env.close();
+  });
+
+  test("a malformed login body re-renders the form, never a 500", async () => {
+    const env = openEnv();
+    // A JSON body (or any non-form content type) fails formData parsing; the route must treat it
+    // as a failed attempt like any other, not crash into a 500 at the credential boundary.
+    const res = await env.post("/login", null, { "content-type": "application/json" });
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain('role="alert"');
+    expect(html).toContain("Wrong password. Try again.");
+    expect(res.headers.getSetCookie().length).toBe(0);
+    env.close();
+  });
+
+  test("a login attempt costs at least the fixed delay, so failure cannot be timed apart from success", async () => {
+    const env = openEnv();
+    const t0 = performance.now();
+    const res = await env.post("/login", loginForm("wrong"));
+    const elapsed = performance.now() - t0;
+    // A lower bound only: slowness cannot flake a lower-bound assert, but removing or shrinking
+    // the delay turns this red.
+    expect(elapsed).toBeGreaterThan(200);
+    expect(res.status).toBe(200);
+    env.close();
+  });
+
+  test("a next pointing back at the login page is not honored, so the redirect never loops", async () => {
+    const env = openEnv();
+    const cookie = await signIn(env);
+    // Without the guard, GET /login?next=/login would redirect to itself forever.
+    for (const next of ["%2Flogin", "%2Flogin%2F"]) {
+      const res = await env.get(`/login?next=${next}`, { Cookie: cookie });
+      expect(res.status, next).toBe(303);
+      expect(res.headers.get("location"), next).toBe("/");
+    }
+    env.close();
+  });
+
+  test("the trailing-slash spellings of the auth routes work like the canonical ones", async () => {
+    const env = openEnv();
+    const form = await env.get("/login/");
+    expect(form.status).toBe(200);
+    const html = await form.text();
+    expect(html).toContain('<form method="post" action="/login"');
+    expect(html).not.toContain("Wrong password");
+    const cookie = await signIn(env);
+    const logout = await env.post("/logout/", null, { Cookie: cookie });
+    expect(logout.status).toBe(303);
+    expect(logout.headers.get("location")).toBe("/login");
+    expect(logout.headers.getSetCookie()[0]).toContain("Max-Age=0");
     env.close();
   });
 

@@ -13,7 +13,11 @@ const SESSION_PAYLOAD = "reviewzy-session-v1";
 /** The payload's base64url spelling, which is what the cookie actually carries. */
 const ENCODED_PAYLOAD = Buffer.from(SESSION_PAYLOAD, "utf8").toString("base64url");
 
-/** The cookie's pinned attributes: HttpOnly, SameSite=Strict, and browser-session (no Max-Age on the set). */
+/**
+ * The cookie's pinned attributes: HttpOnly, SameSite=Strict, and browser-session (no Max-Age on the
+ * set). No Secure: the daemon serves plain loopback http only (the docs/design.md posture), where a
+ * Secure cookie would never be sent at all.
+ */
 const SET_COOKIE_ATTRS = "HttpOnly; SameSite=Strict; Path=/";
 
 /** The dashboard's session auth: sign and verify a cookie, and check the login password. */
@@ -102,13 +106,17 @@ function cookieValue(header: string | undefined, name: string): string | undefin
 
 /**
  * A login's `next` destination: only a local path is honored (starts with `/`, not `//`, no control
- * characters, bounded length), so a crafted value can never redirect the browser off the dashboard
- * or split the Location header. Anything else means the list.
+ * characters, no backslash, bounded length), so a crafted value can never redirect the browser off
+ * the dashboard or split the Location header. The backslash is rejected because the URL parser
+ * rewrites it to a slash, which would turn `/\evil.example` into the off-dashboard authority
+ * `evil.example`; the check runs on the decoded value, so every encoding arrives as the same
+ * backslash and is rejected the same way. Anything else means the list.
  */
 export function safeNext(raw: unknown): string | undefined {
   if (typeof raw !== "string" || raw === "") return undefined;
   if (raw.length > 2048) return undefined;
   if (!raw.startsWith("/") || raw.startsWith("//")) return undefined;
+  if (raw.includes("\\")) return undefined;
   if (/[\x00-\x1f\x7f]/.test(raw)) return undefined;
   return raw;
 }

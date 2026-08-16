@@ -38,17 +38,19 @@ export function mountDashboard(app: Hono, config: Config, store: Store): void {
 
   if (auth.enabled) {
     // The gate, registered before every dashboard route so nothing below it answers unsigned.
-    // Exempt: the auth surface itself, the vendored assets (css/js/fonts, never data), and the
-    // mcp/health/drain surface this app mounts ahead of the dashboard, which owns its own gates.
-    // Everything else fails closed. htmx requests answer 401 with HX-Redirect so the browser
-    // follows the login instead of swapping it into the target region (a 303 would swap the login
-    // page into the list); a plain GET redirects with the path as `next` so the login lands back;
-    // a plain POST goes to the login without one.
+    // Exempt: the auth surface itself (both spellings of each path), the vendored assets
+    // (css/js/fonts, never data), and the mcp/health/drain surface this app mounts ahead of the
+    // dashboard, which owns its own gates. Everything else fails closed. htmx requests answer 401
+    // with HX-Redirect so the browser follows the login instead of swapping it into the target
+    // region (a 303 would swap the login page into the list); a plain GET redirects with the path
+    // as `next` so the login lands back; a plain POST goes to the login without one.
     app.use("*", async (c, next) => {
       const path = c.req.path;
       if (
         path === "/login" ||
+        path === "/login/" ||
         path === "/logout" ||
+        path === "/logout/" ||
         path === "/mcp" ||
         path === "/health" ||
         path === "/drain" ||
@@ -71,15 +73,37 @@ export function mountDashboard(app: Hono, config: Config, store: Store): void {
     // honoring a safe `next`); POST /login is the one credential check, a timing-safe compare,
     // and sets the session cookie on success; the failure re-renders the form with one message
     // and the field cleared. POST /logout clears the cookie; it is exempt from the gate so it is
-    // idempotent when already signed out.
-    app.get("/login", async (c) => {
+    // idempotent when already signed out. Each route also answers its trailing-slash spelling:
+    // hono matches paths exactly, so a visitor who typed the slash would otherwise be bounced into
+    // a dead end after authenticating, and a signed-in /logout/ would never clear the session.
+    const loginPageHandler = async (c: Context): Promise<Response> => {
       const next = safeNext(c.req.query("next"));
-      if (await auth.accept(c.req.header("Cookie"))) return c.redirect(next ?? "/", 303);
+      if (await auth.accept(c.req.header("Cookie"))) {
+        // A signed-in visitor goes to their destination; a `next` that points back at the login
+        // page itself would redirect forever, so it means the list.
+        const destination =
+          next === undefined || next === "/login" || next.startsWith("/login?") || next.startsWith("/login/") ? "/" : next;
+        return c.redirect(destination, 303);
+      }
       return c.html(html`<!doctype html>${loginPage(next)}`);
-    });
+    };
+    app.get("/login", loginPageHandler);
+    app.get("/login/", loginPageHandler);
 
     app.post("/login", async (c) => {
-      const form = await c.req.formData();
+      // A uniform floor on every attempt, before anything else is parsed or compared: without it,
+      // a failure would answer faster than a success and the credential check would leak through
+      // timing to the same local attacker the delay is meant to slow. Constant and stateless, so
+      // the no-lockout, no-rate-limiting surface is unchanged.
+      await new Promise((resolve) => setTimeout(resolve, 250));
+      let form: FormData;
+      try {
+        form = await c.req.formData();
+      } catch {
+        // A malformed body (a JSON request, a broken boundary) is a failed attempt like any other,
+        // never a 500 at the credential boundary; the `next` it carried is unreadable.
+        return c.html(html`<!doctype html>${loginPage(undefined, "Wrong password. Try again.")}`);
+      }
       const next = safeNext(form.get("next"));
       const presented = form.get("password");
       if (typeof presented === "string" && (await auth.acceptPassword(presented))) {
@@ -89,10 +113,12 @@ export function mountDashboard(app: Hono, config: Config, store: Store): void {
       return c.html(html`<!doctype html>${loginPage(next, "Wrong password. Try again.")}`);
     });
 
-    app.post("/logout", (c) => {
+    const logoutHandler = (c: Context): Response => {
       c.header("set-cookie", auth.clearCookieHeader());
       return c.redirect("/login", 303);
-    });
+    };
+    app.post("/logout", logoutHandler);
+    app.post("/logout/", logoutHandler);
   }
 
   app.get("/", (c) => {
