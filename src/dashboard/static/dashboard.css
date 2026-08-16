@@ -77,3 +77,57 @@
 /* ---- Error box (cloned from #error-box by dashboard.js) ---- */
 .callout-content { min-width: 0; }
 .callout-actions { margin-top: var(--space-2); }
+
+/* ---- Entry editor ---- */
+/* The one live region: present in the DOM, absent from layout, and never focusable. */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+.editor-grid { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: var(--space-8); align-items: start; }
+.editor-main { min-width: 0; }
+.editor-rail { display: flex; flex-direction: column; gap: var(--space-6); position: sticky; top: var(--space-8); }
+@media (max-width: 900px) {
+  .editor-grid { grid-template-columns: 1fr; }
+  .editor-rail { position: static; }
+}
+#editor-region > .callout { margin-bottom: var(--space-4); }
+#editor-region > .btn { margin-top: var(--space-4); }
+.editor-actions { margin-top: var(--space-4); }
+
+/* Constraint panel: live count and placeholder checklist; the server owns the refusal. */
+.constraint-row { display: flex; gap: var(--space-3); padding: 6px 0; }
+.constraint-row + .constraint-row { border-top: 1px solid var(--line); }
+.constraint-label { flex-shrink: 0; font: 450 11px/1.4 var(--font-sans); letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-dim); width: 96px; padding-top: 2px; }
+.constraint-value { min-width: 0; color: var(--text-muted); font-size: var(--text-sm); }
+.char-count { color: var(--text-muted); font-size: var(--text-sm); }
+.char-count.over { color: var(--danger); }
+.placeholder-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.placeholder-item { display: flex; align-items: center; gap: var(--space-2); }
+.placeholder-state { font-size: var(--text-xs); color: var(--text-dim); min-width: 52px; }
+.placeholder-state.is-present { color: var(--success); }
+.placeholder-token { font: 400 var(--text-sm)/1 var(--font-mono); color: var(--text); background: var(--bg-sunken); border: 1px solid var(--line); border-radius: var(--radius); padding: 2px 6px; }
+
+/* Revision history: newest first; the text clamps like the list's entry text. */
+.history-empty { font-size: var(--text-sm); color: var(--text-faint); padding: var(--space-2) 0; }
+.revision-list { list-style: none; margin: 0; padding: 0; }
+.revision { padding: var(--space-3) 0; }
+.revision + .revision { border-top: 1px solid var(--line); }
+.revision-head { display: flex; align-items: center; gap: var(--space-3); margin-bottom: var(--space-2); }
+.revision-time { font-size: var(--text-xs); color: var(--text-faint); }
+.revision-head .btn { margin-left: auto; }
+.revision-text {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}

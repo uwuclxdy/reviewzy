@@ -59,4 +59,74 @@
     form.addEventListener("htmx:responseError", showFilterError);
     form.addEventListener("htmx:sendError", showFilterError);
   }
+
+  // --- Editor live metrics ---
+  // The constraint panel lives outside the htmx swap region, so the char count and the placeholder
+  // checklist track the textarea as the user types. This is a convenience preview only: the server
+  // store layer owns the refusal, and the panel re-syncs on any swap.
+  function refreshEditorMetrics() {
+    const textarea = document.getElementById("editor-text");
+    if (!textarea) return;
+    const announcements = [];
+
+    const charCount = document.getElementById("char-count");
+    if (charCount) {
+      const max = Number(charCount.dataset.maxLen);
+      if (Number.isFinite(max)) {
+        const length = textarea.value.length;
+        const over = length > max;
+        const wasOver = charCount.classList.contains("over");
+        charCount.textContent = `${length} / ${max}`;
+        charCount.classList.toggle("over", over);
+        if (over !== wasOver) {
+          announcements.push(
+            over ? `Over the length limit of ${max} characters` : `Within the ${max} character limit`,
+          );
+        }
+      }
+    }
+
+    for (const item of document.querySelectorAll(".placeholder-item")) {
+      const placeholder = item.dataset.placeholder ?? "";
+      const present = textarea.value.includes(placeholder);
+      const state = item.querySelector(".placeholder-state");
+      if (state) {
+        const wasPresent = state.classList.contains("is-present");
+        state.textContent = present ? "Present" : "Missing";
+        state.classList.toggle("is-present", present);
+        if (present !== wasPresent) {
+          announcements.push(`Placeholder {${placeholder}} ${present ? "present" : "missing"}`);
+        }
+      }
+    }
+
+    // Announced flips only; the per-keystroke values themselves are never read aloud.
+    const live = document.getElementById("editor-live");
+    if (live && announcements.length > 0) {
+      live.textContent = `${announcements.join(". ")}.`;
+    }
+  }
+
+  document.addEventListener("input", (event) => {
+    if (event.target instanceof HTMLTextAreaElement && event.target.id === "editor-text") {
+      refreshEditorMetrics();
+    }
+  });
+
+  // A save swaps the editor region in; the textarea survives via hx-preserve, so one pass after
+  // the swap keeps the panel in sync with the value the server kept.
+  document.addEventListener("htmx:afterSwap", refreshEditorMetrics);
+
+  // "Use" on a revision loads its text into the editor and re-syncs the panel, ready to save.
+  document.addEventListener("click", (event) => {
+    const target = event.target instanceof Element ? event.target : null;
+    const useButton = target ? target.closest("[data-use-revision]") : null;
+    if (!useButton) return;
+    const textNode = useButton.closest(".revision")?.querySelector(".revision-text");
+    const textarea = document.getElementById("editor-text");
+    if (!textNode || !textarea) return;
+    textarea.value = textNode.textContent ?? "";
+    refreshEditorMetrics();
+    textarea.focus();
+  });
 })();

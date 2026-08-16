@@ -1,4 +1,6 @@
 import type { JSX } from "hono/jsx/jsx-runtime";
+import { listRevisions, parseConstraints } from "../db/human-save.ts";
+import type { Constraints, HumanSaveRefusal, RevisionRow } from "../db/human-save.ts";
 import {
   countEntries,
   listEntries,
@@ -308,6 +310,7 @@ function ProjectGroupView({ group }: { group: ProjectGroup }) {
                   <th>Status</th>
                   <th>Filed by</th>
                   <th>Constraints</th>
+                  <th>Edit</th>
                 </tr>
               </thead>
               <tbody>
@@ -346,6 +349,9 @@ function EntryRowView({ entry }: { entry: EntryRow }) {
       <td class="cell-filedby">{entry.filed_by ?? ""}</td>
       <td class="cell-constraints">
         {constraints.length > 0 ? <span class="constraint-summary">{constraints.join(" · ")}</span> : null}
+      </td>
+      <td>
+        <a class="btn btn-secondary btn-sm" href={`/entries/${entry.id}`}>Edit</a>
       </td>
     </tr>
   );
@@ -415,4 +421,354 @@ export function dashboardPage(store: Store, params: ListParams): JSX.Element {
 /** The list region only, for htmx requests; the loading strip and the error template stay in the page. */
 export function entriesFragment(store: Store, params: ListParams): JSX.Element {
   return <ListRegion vm={loadList(store, params)} />;
+}
+
+// ---- Entry editor ----
+
+export type EditorViewModel = {
+  readonly entry: EntryRow;
+  readonly revisions: readonly RevisionRow[];
+  readonly constraints: Constraints;
+};
+
+/**
+ * What the last save round rendered the editor with. `submittedText` is the text the user
+ * submitted (a refusal must keep it in the textarea), and `refusal` is the formatted message when
+ * the last save was refused. Both are present so a swap never has to guess which one exists.
+ */
+export type EditorState = {
+  readonly submittedText: string;
+  readonly refusal: string | undefined;
+};
+
+/** The one entry the editor edits, by the same keyset query the list uses; `undefined` when the id is unknown. */
+function getEntry(store: Store, id: string): EntryRow | undefined {
+  return listEntries(store, { projectId: undefined, status: undefined, ids: [id], q: undefined, limit: 1, cursor: undefined })
+    .rows[0];
+}
+
+export function loadEditor(store: Store, id: string): EditorViewModel | null {
+  const entry = getEntry(store, id);
+  if (entry === undefined) return null;
+  return { entry, revisions: listRevisions(store, id), constraints: parseConstraints(entry.constraints) };
+}
+
+/** The tolerant parse for `entries.context`, mirroring `parseConstraints`: foreign rows may hold malformed JSON, and unparseable means no context rows, never a 500. */
+function parseContext(json: string): Record<string, unknown> {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(json);
+  } catch {
+    return {};
+  }
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return {};
+  return parsed as Record<string, unknown>;
+}
+
+/**
+ * The user-facing refusal messages, in the dashboard's own voice: name what failed, then the fix.
+ * The store's refusal carries the values; only this function turns them into prose.
+ */
+export function formatSaveRefusal(refusal: Exclude<HumanSaveRefusal, { kind: "unknown" }>): string {
+  switch (refusal.kind) {
+    case "max_len":
+      return `This text is ${refusal.length} characters; the length limit is ${refusal.maxLen}. Shorten it to ${refusal.maxLen} characters or fewer.`;
+    case "placeholder":
+      return `The text is missing the placeholder {${refusal.placeholder}}. Add {${refusal.placeholder}} to the text and save again.`;
+    case "empty":
+      return "Nothing to save. Enter text, or reject the entry.";
+    case "status":
+      return refusal.status === "applied"
+        ? "This entry is already applied, so its text can't be changed here. If the anchor goes stale, the entry returns to approved and can be edited."
+        : "This entry was rejected, so its text can't be changed. A rejected entry stays rejected; file a new entry if the line still needs changing.";
+  }
+}
+
+function DangerCallout({ title, body }: { title: string; body: string }) {
+  return (
+    <div class="callout callout-danger" role="alert">
+      <div class="callout-icon" style="color: var(--danger)">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+          <circle cx="8" cy="8" r="6.5" />
+          <path d="M10 6L6 10M6 6l4 4" />
+        </svg>
+      </div>
+      <div class="callout-content">
+        <div class="callout-title">{title}</div>
+        <div class="callout-body">{body}</div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * The editor region, swapped wholesale by a save (form + status tag + history + any refusal).
+ * The textarea carries `hx-preserve`, so a swap keeps the user's focus and typing while the
+ * server-rendered value stays what the last save left: the submitted text on a refusal.
+ */
+function EditorRegion({ vm, state }: { vm: EditorViewModel; state: EditorState | undefined }) {
+  const text = state?.submittedText ?? vm.entry.human_text ?? vm.entry.agent_draft ?? "";
+  return (
+    <div id="editor-region">
+      {state?.refusal !== undefined ? (
+        <DangerCallout title="Text not saved" body={state.refusal} />
+      ) : null}
+      <form
+        id="editor-form"
+        class="card"
+        method="post"
+        action={`/entries/${vm.entry.id}/save`}
+        hx-post={`/entries/${vm.entry.id}/save`}
+        hx-target="#editor-region"
+        hx-swap="outerHTML"
+      >
+        <div class="card-header">
+          <div class="card-title">Text</div>
+          <span class={`tag ${STATUS_TAG[vm.entry.status]}`}>
+            <span class="tag-dot"></span>
+            {STATUS_LABEL[vm.entry.status]}
+          </span>
+        </div>
+        <div class="card-content">
+          <textarea id="editor-text" class="input" name="text" rows={10} aria-label="Entry text" hx-preserve="true">
+            {text}
+          </textarea>
+          <div class="editor-actions">
+            <button class="btn btn-primary" type="submit">Save text</button>
+          </div>
+        </div>
+      </form>
+      <RevisionHistory revisions={vm.revisions} />
+    </div>
+  );
+}
+
+function RevisionHistory({ revisions }: { revisions: readonly RevisionRow[] }) {
+  return (
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">Revision history</div>
+      </div>
+      <div class="card-content">
+        {revisions.length === 0 ? (
+          <p class="history-empty">No saved revisions yet</p>
+        ) : (
+          <ul class="revision-list">
+            {revisions.map((revision) => (
+              <li class="revision" key={revision.id}>
+                <div class="revision-head">
+                  <span class={`tag tag-data ${STATUS_TAG[revision.status]}`}>{STATUS_LABEL[revision.status]}</span>
+                  <time class="revision-time" datetime={new Date(revision.created_at).toISOString()}>
+                    {new Date(revision.created_at).toLocaleString()}
+                  </time>
+                  <button class="btn btn-ghost btn-sm" type="button" data-use-revision title="Use this text">
+                    Use
+                  </button>
+                </div>
+                <div class="revision-text">{revision.human_text}</div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** The constraint panel: what the entry's save enforces, plus the display-only tone and notes. */
+function ConstraintsCard({ constraints, text }: { constraints: Constraints; text: string }) {
+  const maxLen = constraints.maxLen;
+  const placeholders = constraints.placeholders;
+  const tone = constraints.tone;
+  const notes = constraints.notes;
+  const hasAny = maxLen !== undefined || placeholders.length > 0 || tone !== undefined || notes !== undefined;
+  if (!hasAny) return null;
+  return (
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">Constraints</div>
+      </div>
+      <div class="card-content">
+        {maxLen !== undefined ? (
+          <div class="constraint-row">
+            <div class="constraint-label">Length</div>
+            <div class="constraint-value">
+              <span id="char-count" class="num char-count" data-max-len={maxLen}>
+                {text.length} / {maxLen}
+              </span>
+            </div>
+          </div>
+        ) : null}
+        {placeholders.length > 0 ? (
+          <div class="constraint-row">
+            <div class="constraint-label">Placeholders</div>
+            <ul class="placeholder-list">
+              {placeholders.map((placeholder) => {
+                const present = text.includes(placeholder);
+                return (
+                  <li class="placeholder-item" data-placeholder={placeholder} key={placeholder}>
+                    <span class={`placeholder-state${present ? " is-present" : ""}`}>
+                      {present ? "Present" : "Missing"}
+                    </span>
+                    <span class="placeholder-token">{"{" + placeholder + "}"}</span>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        ) : null}
+        {tone !== undefined ? (
+          <div class="constraint-row">
+            <div class="constraint-label">Tone</div>
+            <div class="constraint-value">{tone}</div>
+          </div>
+        ) : null}
+        {notes !== undefined ? (
+          <div class="constraint-row">
+            <div class="constraint-label">Notes</div>
+            <div class="constraint-value">{notes}</div>
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+/** The entry's context JSON plus its anchor metadata, as an info-table readout. */
+function ContextCard({ entry }: { entry: EntryRow }) {
+  const context = parseContext(entry.context);
+  return (
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">Context</div>
+      </div>
+      <div class="card-content">
+        <table class="info-table">
+          {Object.entries(context).map(([key, value]) => (
+            <tr key={key}>
+              <td>{key}</td>
+              <td>{typeof value === "string" ? value : JSON.stringify(value)}</td>
+            </tr>
+          ))}
+          <tr>
+            <td>Repo</td>
+            <td>{entry.repo}</td>
+          </tr>
+          <tr>
+            <td>File</td>
+            <td>{entry.file}</td>
+          </tr>
+          <tr>
+            <td>Anchor</td>
+            <td>{entry.anchor_text}</td>
+          </tr>
+          <tr>
+            <td>File hash</td>
+            <td>{entry.file_hash}</td>
+          </tr>
+          {entry.filed_by !== null ? (
+            <tr>
+              <td>Filed by</td>
+              <td>{entry.filed_by}</td>
+            </tr>
+          ) : null}
+          {entry.stale_note !== null ? (
+            <tr>
+              <td>Stale note</td>
+              <td>{entry.stale_note}</td>
+            </tr>
+          ) : null}
+        </table>
+      </div>
+    </div>
+  );
+}
+
+/** The full editor page; the mount wraps it in the doctype. */
+export function editorPage(vm: EditorViewModel, state: EditorState | undefined = undefined): JSX.Element {
+  const text = state?.submittedText ?? vm.entry.human_text ?? vm.entry.agent_draft ?? "";
+  return (
+    <html lang="en" data-theme="dark">
+      <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>Edit entry · {NAME}</title>
+        <link rel="stylesheet" href="/static/tokens.css" />
+        <link rel="stylesheet" href="/static/components.css" />
+        <link rel="stylesheet" href="/static/dashboard.css" />
+        <script src="/static/htmx.min.js"></script>
+        <script src="/static/dashboard.js" defer></script>
+      </head>
+      <body>
+        <div class="app-shell">
+          <Navbar />
+          <main class="main">
+            <header class="page-header">
+              <div class="label page-eyebrow">Entry review</div>
+              <h1 class="page-title">Edit entry</h1>
+              <p class="page-lede">Saving the text approves the entry and releases it to agents.</p>
+            </header>
+            <div class="editor-grid">
+              <div class="editor-main">
+                <EditorRegion vm={vm} state={state} />
+              </div>
+              <aside class="editor-rail">
+                <ContextCard entry={vm.entry} />
+                <ConstraintsCard constraints={vm.constraints} text={text} />
+              </aside>
+            </div>
+            {/* The one live region: announcements on constraint-state flips only, so a screen reader
+                is not flooded with a per-keystroke value. Lives outside the swap region. */}
+            <span id="editor-live" class="visually-hidden" aria-live="polite"></span>
+          </main>
+        </div>
+      </body>
+    </html>
+  );
+}
+
+/** The editor region only, for htmx save responses; the page shell, context, and constraints stay put. */
+export function editorFragment(vm: EditorViewModel, state: EditorState | undefined = undefined): JSX.Element {
+  return <EditorRegion vm={vm} state={state} />;
+}
+
+/** The 404 page for an unknown entry id, with the way onward the page-not-found pattern demands. */
+export function notFoundPage(): JSX.Element {
+  return (
+    <html lang="en" data-theme="dark">
+      <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>Entry not found · {NAME}</title>
+        <link rel="stylesheet" href="/static/tokens.css" />
+        <link rel="stylesheet" href="/static/components.css" />
+        <link rel="stylesheet" href="/static/dashboard.css" />
+        <script src="/static/htmx.min.js"></script>
+        <script src="/static/dashboard.js" defer></script>
+      </head>
+      <body>
+        <div class="app-shell">
+          <Navbar />
+          <main class="main">
+            <header class="page-header">
+              <div class="label page-eyebrow">Entry review</div>
+              <h1 class="page-title">Entry not found</h1>
+              <p class="page-lede">This entry doesn't exist. Return to the list to find it.</p>
+              <a href="/" class="btn btn-secondary">Back to entries</a>
+            </header>
+          </main>
+        </div>
+      </body>
+    </html>
+  );
+}
+
+/** The htmx fragment for a save on an id that vanished mid-session: htmx will not swap a 4xx, so this is a 200 with the way onward in the editor region itself. */
+export function entryGoneFragment(): JSX.Element {
+  return (
+    <div id="editor-region">
+      <DangerCallout title="This entry no longer exists" body="Return to the list to find it." />
+      <a href="/" class="btn btn-secondary">Back to entries</a>
+    </div>
+  );
 }
