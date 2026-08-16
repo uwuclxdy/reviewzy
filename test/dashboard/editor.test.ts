@@ -100,9 +100,11 @@ describe("editor page", () => {
     expect(html).toContain("<h1 class=\"page-title\">Edit entry</h1>");
     expect(html).toContain("Saving the text approves the entry and releases it to agents.");
 
-    // The form wires both the native POST and the htmx swap of the editor region.
+    // The form wires both the native POST and the htmx swap of the whole editor view, so the
+    // diff's after-side re-renders with the authored text on a save (the transitions below keep
+    // targeting the region only, since they never change what the diff shows).
     expect(html).toContain(`hx-post="/entries/${id}/save"`);
-    expect(html).toContain('hx-target="#editor-region"');
+    expect(html).toContain('hx-target="#editor-view"');
     expect(html).toContain('hx-swap="outerHTML"');
     expect(html).toContain(`action="/entries/${id}/save"`);
     expect(html).toContain('method="post"');
@@ -229,6 +231,21 @@ describe("list rows", () => {
 });
 
 describe("saving from the editor", () => {
+  test("a save swaps in the diff after-side with the authored text, not the stale agent draft", async () => {
+    const { env, id } = envWithDraft();
+    const text = "Run the command to set up the project.";
+    const res = await env.post(`/entries/${id}/save`, saveForm(text), HX);
+    const html = await res.text();
+
+    // The save fragment re-renders the diff region, so the authored text reaches the after-side in
+    // the live DOM; without it the swap leaves the stale agent draft showing until a reload.
+    expect(html).toContain('<div class="card-title">After</div>');
+    expect(html).toContain("diff-anchor");
+    expect(html).toContain(text);
+    expect(html).not.toContain("Fix the wording of the setup section.");
+    env.close();
+  });
+
   test("a draft save swaps in an approved editor region with a history row", async () => {
     const { env, id } = envWithDraft();
     const text = "Run the command to set up the project.";
@@ -365,6 +382,9 @@ describe("saving from the editor", () => {
     const html = await res.text();
     expect(html).toContain("no longer exists");
     expect(html).toContain('href="/"');
+    // The save swap targets the whole editor view, so the gone fragment answers in that same shape.
+    expect(html).toContain('<div id="editor-view">');
+    expect(html).toContain('<div id="editor-region">');
     env.close();
   });
 });

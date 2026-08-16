@@ -692,7 +692,7 @@ function EditorRegion({ vm, state }: { vm: EditorViewModel; state: EditorState |
         method="post"
         action={`/entries/${vm.entry.id}/save`}
         hx-post={`/entries/${vm.entry.id}/save`}
-        hx-target="#editor-region"
+        hx-target="#editor-view"
         hx-swap="outerHTML"
       >
         <input type="hidden" name="view" value="editor" />
@@ -927,9 +927,31 @@ function DiffView({ entry }: { entry: EntryRow }) {
   );
 }
 
+/**
+ * The editor view: the diff above the editor grid, one swap node. A save changes the diff's
+ * after-side, so the save form targets this wrapper and its response re-renders the whole view;
+ * the transitions target only the region inside (they never change what the diff shows).
+ */
+function EditorView({ vm, state }: { vm: EditorViewModel; state: EditorState | undefined }) {
+  const text = state?.submittedText ?? vm.entry.human_text ?? vm.entry.agent_draft ?? "";
+  return (
+    <div id="editor-view">
+      <DiffView entry={vm.entry} />
+      <div class="editor-grid">
+        <div class="editor-main">
+          <EditorRegion vm={vm} state={state} />
+        </div>
+        <aside class="editor-rail">
+          <ContextCard entry={vm.entry} />
+          <ConstraintsCard constraints={vm.constraints} text={text} />
+        </aside>
+      </div>
+    </div>
+  );
+}
+
 /** The full editor page; the mount wraps it in the doctype. */
 export function editorPage(vm: EditorViewModel, state: EditorState | undefined = undefined): JSX.Element {
-  const text = state?.submittedText ?? vm.entry.human_text ?? vm.entry.agent_draft ?? "";
   return (
     <html lang="en" data-theme="dark">
       <head>
@@ -953,16 +975,7 @@ export function editorPage(vm: EditorViewModel, state: EditorState | undefined =
               <h1 class="page-title">Edit entry</h1>
               <p class="page-lede">Saving the text approves the entry and releases it to agents.</p>
             </header>
-            <DiffView entry={vm.entry} />
-            <div class="editor-grid">
-              <div class="editor-main">
-                <EditorRegion vm={vm} state={state} />
-              </div>
-              <aside class="editor-rail">
-                <ContextCard entry={vm.entry} />
-                <ConstraintsCard constraints={vm.constraints} text={text} />
-              </aside>
-            </div>
+            <EditorView vm={vm} state={state} />
             {/* The one live region: announcements on constraint-state flips only, so a screen reader
                 is not flooded with a per-keystroke value. Lives outside the swap region. */}
             <span id="editor-live" class="visually-hidden" aria-live="polite"></span>
@@ -973,9 +986,14 @@ export function editorPage(vm: EditorViewModel, state: EditorState | undefined =
   );
 }
 
-/** The editor region only, for htmx save responses; the page shell, context, and constraints stay put. */
+/** The editor region only, for htmx transition responses; the page shell, diff, context, and constraints stay put. */
 export function editorFragment(vm: EditorViewModel, state: EditorState | undefined = undefined): JSX.Element {
   return <EditorRegion vm={vm} state={state} />;
+}
+
+/** The whole editor view (diff + region + rail), for htmx save responses: a save changes the diff's after-side, so the swap must re-render it. */
+export function editorViewFragment(vm: EditorViewModel, state: EditorState | undefined = undefined): JSX.Element {
+  return <EditorView vm={vm} state={state} />;
 }
 
 /** The 404 page for an unknown entry id, with the way onward the page-not-found pattern demands. */
@@ -1019,4 +1037,9 @@ export function entryGoneFragment(): JSX.Element {
       <a href="/" class="btn btn-secondary">Back to entries</a>
     </div>
   );
+}
+
+/** The save swap targets the whole editor view, so a vanished id answers in that same wrapper shape. */
+export function editorViewGoneFragment(): JSX.Element {
+  return <div id="editor-view">{entryGoneFragment()}</div>;
 }

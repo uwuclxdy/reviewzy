@@ -9,6 +9,8 @@ import {
   dashboardPage,
   editorFragment,
   editorPage,
+  editorViewFragment,
+  editorViewGoneFragment,
   entriesFragment,
   entryGoneFragment,
   formatSaveRefusal,
@@ -78,11 +80,11 @@ export function mountDashboard(app: Hono, config: Config, store: Store): void {
 
     if (!outcome.ok && outcome.refusal.kind === "unknown") {
       // htmx will not swap a 4xx, so the save response on a vanished id is a 200 fragment with the
-      // way onward inside the editor region itself; the GET above stays a true 404.
-      return c.html(entryGoneFragment());
+      // way onward inside the editor view itself; the GET above stays a true 404.
+      return c.html(editorViewGoneFragment());
     }
     const vm = loadEditor(store, id);
-    if (vm === null) return c.html(entryGoneFragment());
+    if (vm === null) return c.html(editorViewGoneFragment());
     const state: EditorState = {
       submittedText: text,
       // The unknown case returned above, so this re-check is what narrows the refusal for the
@@ -96,7 +98,9 @@ export function mountDashboard(app: Hono, config: Config, store: Store): void {
       if (outcome.ok) return c.redirect(`/entries/${id}`, 303);
       return c.html(html`<!doctype html>${editorPage(vm, state)}`);
     }
-    return c.html(editorFragment(vm, state));
+    // The save swap targets the whole editor view, so the diff's after-side re-renders with the
+    // authored text; the transitions below answer with the region fragment only.
+    return c.html(editorViewFragment(vm, state));
   });
 
   // The two transitions. One route answers both the editor and the list: the buttons in the editor
