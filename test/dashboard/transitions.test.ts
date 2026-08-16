@@ -100,6 +100,13 @@ describe("list transitions", () => {
     expect(html).not.toContain('role="alert"');
     expect(statusOf(env.store, id)).toBe("approved");
     expect(humanTextOf(env.store, id)).toBe("Fix the wording of the setup section.");
+    // The approve slot stays occupied by a disabled button, so a double-click's second click
+    // cannot land on the Reject button that would otherwise shift into the slot; the row keeps
+    // its reject action and loses the checkbox.
+    expect(html).toContain("<button type=\"button\" class=\"btn btn-primary btn-sm\" disabled=\"\">");
+    expect(html).toContain(`hx-post="/entries/${id}/reject"`);
+    expect(html).not.toContain(`hx-post="/entries/${id}/approve"`);
+    expect(html).not.toContain(`value="${id}"`);
     env.close();
   });
 
@@ -168,7 +175,16 @@ describe("list transitions", () => {
     expect(html).toContain('<form id="batch-form"');
     expect(html).toContain('hx-post="/batch-approve"');
     expect(html).toContain('hx-target="#entries-list"');
-    expect(html).toContain(">Approve selected</button>");
+    expect(html).toContain('>Approve selected</button>');
+    // Every repeat-activation guard rides the exact button it disables: the batch submit and both
+    // row actions (a page-level presence check would let one button lose its guard silently).
+    expect(html).toContain('<button class="btn btn-primary btn-sm" type="submit" hx-disabled-elt="this">');
+    expect(html).toContain(
+      `<button type="button" class="btn btn-primary btn-sm" hx-post="/entries/${ids[0]!}/approve" hx-target="#entries-list" hx-swap="innerHTML" hx-indicator="#entries-loading" hx-disabled-elt="this">`,
+    );
+    expect(html).toContain(
+      `<button type="button" class="btn btn-danger btn-sm" hx-post="/entries/${ids[0]!}/reject" hx-target="#entries-list" hx-swap="innerHTML" hx-indicator="#entries-loading" hx-disabled-elt="this">`,
+    );
     expect(html).toContain('name="q" value=""');
     expect(html).toContain('name="status" value=""');
     expect(html).toContain('name="project" value=""');
@@ -303,6 +319,14 @@ describe("editor transitions", () => {
     expect(html).toContain(">Reject</button>");
     expect(html).toContain('id="editor-action-loading"');
     expect(html).toContain("Updating entry");
+    // In-flight double-clicks and keyboard repeats are dropped by the disabled attribute on the
+    // exact button that fires, not just somewhere on the page.
+    expect(html).toContain(
+      `<button type="button" class="btn btn-secondary" hx-post="/entries/${id}/approve" hx-target="#editor-region" hx-swap="outerHTML" hx-indicator="#editor-action-loading" hx-disabled-elt="this">`,
+    );
+    expect(html).toContain(
+      `<button type="button" class="btn btn-danger" hx-post="/entries/${id}/reject" hx-target="#editor-region" hx-swap="outerHTML" hx-indicator="#editor-action-loading" hx-disabled-elt="this">`,
+    );
     env.close();
   });
 
@@ -317,6 +341,11 @@ describe("editor transitions", () => {
     expect(html).not.toContain('role="alert"');
     expect(statusOf(env.store, id)).toBe("approved");
     expect(humanTextOf(env.store, id)).toBe("Fix the wording of the setup section.");
+    // Same slot-occupancy guard as the list row: the disabled placeholder blocks a stray
+    // double-click from reaching the Reject button in the swapped region.
+    expect(html).toContain("<button type=\"button\" class=\"btn btn-secondary\" disabled=\"\">");
+    expect(html).toContain(`hx-post="/entries/${id}/reject"`);
+    expect(html).not.toContain(`hx-post="/entries/${id}/approve"`);
     env.close();
   });
 

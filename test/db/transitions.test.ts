@@ -132,9 +132,12 @@ describe("approveEntry", () => {
     const store = openTempStore();
     const project = insertProject(store, "alpha");
     const entry = insertEntry(store, project.id);
-    const seen: { id: string; status: string }[] = [];
+    const seen: { id: string; status: string; rowStatus: string }[] = [];
     store.events.addEventListener(STATUS_CHANGE_EVENT, (event) => {
-      seen.push((event as CustomEvent).detail);
+      const detail = (event as CustomEvent).detail as { id: string; status: string };
+      // The event fires after the write, so a waiter's re-read inside the listener must see the
+      // new status; a notify-before-write regression would record the stale one.
+      seen.push({ ...detail, rowStatus: entryRow(store, detail.id).status });
     });
 
     const before = Date.now();
@@ -152,7 +155,7 @@ describe("approveEntry", () => {
     // revision writer.
     expect(revisionCount(store, entry.id)).toBe(0);
 
-    expect(seen).toEqual([{ id: entry.id, status: "approved" }]);
+    expect(seen).toEqual([{ id: entry.id, status: "approved", rowStatus: "approved" }]);
     store.close();
   });
 
@@ -217,9 +220,12 @@ describe("rejectEntry", () => {
       const store = openTempStore();
       const project = insertProject(store, "alpha");
       const entry = insertEntry(store, project.id, { status });
-      const seen: { id: string; status: string }[] = [];
+      const seen: { id: string; status: string; rowStatus: string }[] = [];
       store.events.addEventListener(STATUS_CHANGE_EVENT, (event) => {
-        seen.push((event as CustomEvent).detail);
+        const detail = (event as CustomEvent).detail as { id: string; status: string };
+        // The event fires after the write, so a waiter's re-read inside the listener must see the
+        // new status; a notify-before-write regression would record the stale one.
+        seen.push({ ...detail, rowStatus: entryRow(store, detail.id).status });
       });
 
       const before = Date.now();
@@ -229,7 +235,7 @@ describe("rejectEntry", () => {
       expect(entryRow(store, entry.id).status).toBe("rejected");
       expect(entryRow(store, entry.id).updated_at).toBeGreaterThanOrEqual(before);
       expect(revisionCount(store, entry.id)).toBe(0);
-      expect(seen).toEqual([{ id: entry.id, status: "rejected" }]);
+      expect(seen).toEqual([{ id: entry.id, status: "rejected", rowStatus: "rejected" }]);
       store.close();
     },
   );
@@ -271,9 +277,12 @@ describe("batchApproveEntries", () => {
     const appliedBefore = fullRow(store, applied.id);
     const rejectedBefore = fullRow(store, rejected.id);
     const noDraftBefore = fullRow(store, noDraft.id);
-    const seen: { id: string; status: string }[] = [];
+    const seen: { id: string; status: string; rowStatus: string }[] = [];
     store.events.addEventListener(STATUS_CHANGE_EVENT, (event) => {
-      seen.push((event as CustomEvent).detail);
+      const detail = (event as CustomEvent).detail as { id: string; status: string };
+      // The event fires after the write, so a waiter's re-read inside the listener must see the
+      // new status; a notify-before-write regression would record the stale one.
+      seen.push({ ...detail, rowStatus: entryRow(store, detail.id).status });
     });
 
     const results = batchApproveEntries(store, [draft.id, approved.id, applied.id, rejected.id, noDraft.id, "missing"]);
@@ -292,7 +301,7 @@ describe("batchApproveEntries", () => {
     expect(fullRow(store, rejected.id)).toBe(rejectedBefore);
     expect(fullRow(store, noDraft.id)).toBe(noDraftBefore);
     expect(revisionCount(store, draft.id)).toBe(0);
-    expect(seen).toEqual([{ id: draft.id, status: "approved" }]);
+    expect(seen).toEqual([{ id: draft.id, status: "approved", rowStatus: "approved" }]);
     store.close();
   });
 

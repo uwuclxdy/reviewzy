@@ -363,7 +363,9 @@ function BatchForm({ vm }: { vm: ListViewModel }) {
       <input type="hidden" name="status" value={vm.status} />
       <input type="hidden" name="project" value={vm.project} />
       <div class="batch-bar">
-        <button class="btn btn-primary btn-sm" type="submit">Approve selected</button>
+        <button class="btn btn-primary btn-sm" type="submit" hx-disabled-elt="this">
+          Approve selected
+        </button>
       </div>
       {vm.groups.map((group) => (
         <ProjectGroupView key={group.slug} group={group} />
@@ -463,7 +465,15 @@ function EntryRowView({ entry }: { entry: EntryRow }) {
             hx-target="#entries-list"
             hx-swap="innerHTML"
             hx-indicator="#entries-loading"
+            hx-disabled-elt="this"
           >
+            Approve
+          </button>
+        ) : entry.status === "approved" ? (
+          // The approve slot stays occupied for approved rows: a double-click's second click lands
+          // where Approve was, and the disabled button (pointer-events none) swallows it before it
+          // can hit the Reject button that shifted into the slot.
+          <button type="button" class="btn btn-primary btn-sm" disabled>
             Approve
           </button>
         ) : null}
@@ -475,6 +485,7 @@ function EntryRowView({ entry }: { entry: EntryRow }) {
             hx-target="#entries-list"
             hx-swap="innerHTML"
             hx-indicator="#entries-loading"
+            hx-disabled-elt="this"
           >
             Reject
           </button>
@@ -706,7 +717,15 @@ function EditorRegion({ vm, state }: { vm: EditorViewModel; state: EditorState |
                 hx-target="#editor-region"
                 hx-swap="outerHTML"
                 hx-indicator="#editor-action-loading"
+                hx-disabled-elt="this"
               >
+                Approve draft
+              </button>
+            ) : vm.entry.status === "approved" ? (
+              // Same slot-occupancy guard as the list row: the second click of a double-click on
+              // the just-approving button would otherwise land on the Reject button that shifts
+              // into this slot in the swapped region.
+              <button type="button" class="btn btn-secondary" disabled>
                 Approve draft
               </button>
             ) : null}
@@ -718,6 +737,7 @@ function EditorRegion({ vm, state }: { vm: EditorViewModel; state: EditorState |
                 hx-target="#editor-region"
                 hx-swap="outerHTML"
                 hx-indicator="#editor-action-loading"
+                hx-disabled-elt="this"
               >
                 Reject
               </button>
