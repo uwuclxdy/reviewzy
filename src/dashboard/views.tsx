@@ -139,6 +139,28 @@ function fileBasename(path: string): string {
   return path.split(/[/\\]/).pop() ?? path;
 }
 
+/** The batch ulid shortened to head+tail for the header; the full id stays available in the title. */
+function shortUlid(id: string): string {
+  return `${id.slice(0, 6)}…${id.slice(-6)}`;
+}
+
+/**
+ * Whether a stored constraints JSON carries at least one enforced constraint (`max_len`, or a
+ * non-empty `placeholders`). The tolerant parse mirrors `parseConstraints`: foreign rows may hold
+ * malformed JSON, and unparseable means no constraint, never an error.
+ */
+function entryHasConstraints(constraints: string): boolean {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(constraints);
+  } catch {
+    return false;
+  }
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return false;
+  const raw = parsed as Record<string, unknown>;
+  return typeof raw.max_len === "number" || (Array.isArray(raw.placeholders) && raw.placeholders.length > 0);
+}
+
 /** The section the current page belongs to, marking the matching navbar link. */
 type NavSection = "entries" | "style-guide" | "none";
 
@@ -381,37 +403,48 @@ function ProjectGroupView({ group }: { group: ProjectGroup }) {
           {count} {count === 1 ? "entry" : "entries"}
         </span>
       </header>
-      {group.batches.map((batch) => (
-        <div class="batch" key={batch.id}>
-          <div class="batch-header">
-            <span class="label">Batch</span>
-            <span class="batch-id">{batch.id}</span>
+      {group.batches.map((batch) => {
+        // A batch names its filer only when every entry agrees; mixed filers show a count here and
+        // each row names its own inline, so the per-row flag is computed alongside the header value.
+        const filers = [...new Set(batch.entries.map((entry) => entry.filed_by).filter((filer): filer is string => filer !== null))];
+        const singleFiler = filers.length === 1 ? filers[0]! : null;
+        const mixedFilers = filers.length >= 2;
+        const constraintsCount = batch.entries.filter((entry) => entryHasConstraints(entry.constraints)).length;
+        return (
+          <div class="batch" key={batch.id}>
+            <div class="batch-header">
+              <span class="label">Batch</span>
+              {singleFiler !== null ? <span class="batch-meta">{singleFiler}</span> : null}
+              {mixedFilers ? <span class="batch-meta">{filers.length} filers</span> : null}
+              <span class="batch-id" title={batch.id}>{shortUlid(batch.id)}</span>
+              {constraintsCount > 0 ? <span class="batch-meta">{constraintsCount} with constraints</span> : null}
+            </div>
+            <div class="table-wrap">
+              <table>
+                <colgroup>
+                  <col class="col-select" />
+                  <col />
+                  <col class="col-status" />
+                  <col class="col-actions" />
+                </colgroup>
+                <thead>
+                  <tr>
+                    <th>Select</th>
+                    <th>Text</th>
+                    <th>Status</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {batch.entries.map((entry) => (
+                    <EntryRowView key={entry.id} entry={entry} filerInline={mixedFilers} />
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
-          <div class="table-wrap">
-            <table>
-              <colgroup>
-                <col class="col-select" />
-                <col />
-                <col class="col-status" />
-                <col class="col-actions" />
-              </colgroup>
-              <thead>
-                <tr>
-                  <th>Select</th>
-                  <th>Text</th>
-                  <th>Status</th>
-                  <th>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {batch.entries.map((entry) => (
-                  <EntryRowView key={entry.id} entry={entry} />
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      ))}
+        );
+      })}
     </section>
   );
 }
@@ -422,9 +455,10 @@ function ProjectGroupView({ group }: { group: ProjectGroup }) {
  * are still reported per entry). The action buttons carry the row's own approve and reject,
  * targeting the list region; their requests include the batch form's hidden filters, so an action
  * round re-renders the region under the same filter. Applied and rejected rows are terminal from
- * the dashboard side and offer only the editor.
+ * the dashboard side and offer only the editor. When the batch holds mixed filers, the row also
+ * names its own filer beside the basename.
  */
-function EntryRowView({ entry }: { entry: EntryRow }) {
+function EntryRowView({ entry, filerInline }: { entry: EntryRow; filerInline: boolean }) {
   const text = entry.human_text ?? entry.agent_draft;
   const approve = entry.status === "draft";
   const reject = entry.status === "draft" || entry.status === "approved";
@@ -436,7 +470,10 @@ function EntryRowView({ entry }: { entry: EntryRow }) {
         ) : null}
       </td>
       <td class="cell-text" title={`${entry.file} — ${entry.anchor_text}`}>
-        <span class="entry-file">{fileBasename(entry.file)}</span>
+        <span class="entry-file">
+          {fileBasename(entry.file)}
+          {filerInline && entry.filed_by !== null ? <span class="entry-filer"> · {entry.filed_by}</span> : null}
+        </span>
         <span class="entry-text" title={text ?? ""}>{text}</span>
       </td>
       <td>

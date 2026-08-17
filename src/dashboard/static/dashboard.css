@@ -42,6 +42,7 @@
 .batch { margin-bottom: var(--space-6); }
 .batch-header { display: flex; align-items: baseline; gap: var(--space-3); margin-bottom: var(--space-2); }
 .batch-id { font: 400 var(--text-xs)/1 var(--font-mono); color: var(--text-faint); }
+.batch-meta { font: 400 var(--text-xs)/1 var(--font-sans); color: var(--text-faint); }
 
 /* ---- Entry table cells ----
    The table lays out fixed with a colgroup so the prose column takes the remainder and the

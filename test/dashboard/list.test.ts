@@ -110,6 +110,8 @@ env.store.db.run("UPDATE entries SET status = 'approved', human_text = 'Explain 
 ]);
 env.store.db.run("UPDATE entries SET status = 'applied' WHERE id = ?", [batchB.results[0]!.id]);
 env.store.db.run("UPDATE entries SET status = 'rejected' WHERE id = ?", [batchB.results[1]!.id]);
+// A second filer in batchB makes it a mixed-filer batch: the header counts filers, each row names its own.
+env.store.db.run("UPDATE entries SET filed_by = 'other-agent' WHERE id = ?", [batchB.results[0]!.id]);
 
 /** The rendered text of each fixture entry (human_text wins over agent_draft), keyed by entry id. */
 const RENDERED: { batchId: string; id: string; text: string }[] = [
@@ -134,6 +136,15 @@ function expectOrder(html: string, needles: readonly string[]) {
     expect(idx, `"${needle}" appears after the previous needle`).toBeGreaterThan(prev);
     prev = idx;
   }
+}
+
+/** The `.batch-header` region for a batch, from its header div to the table that follows. */
+function batchHeader(html: string, batchId: string): string {
+  const idMark = html.indexOf(`class="batch-id" title="${batchId}"`);
+  expect(idMark, `batch ${batchId} header rendered`).toBeGreaterThan(-1);
+  const start = html.lastIndexOf('<div class="batch-header">', idMark);
+  const end = html.indexOf('<div class="table-wrap">', idMark);
+  return html.slice(start, end);
 }
 
 describe("dashboard entry list", () => {
@@ -204,9 +215,9 @@ describe("dashboard entry list", () => {
       textsByBatch.set(item.batchId, [...(textsByBatch.get(item.batchId) ?? []), { id: item.id, text: item.text }]);
     }
     pageBatchOrder.forEach((batchId, i) => {
-      const start = html.indexOf(`class="batch-id">${batchId}<`);
+      const start = html.indexOf(`class="batch-id" title="${batchId}"`);
       expect(start, `batch ${batchId} rendered in batch order`).toBeGreaterThan(-1);
-      const end = i + 1 < pageBatchOrder.length ? html.indexOf(`class="batch-id">${pageBatchOrder[i + 1]!}<`) : html.length;
+      const end = i + 1 < pageBatchOrder.length ? html.indexOf(`class="batch-id" title="${pageBatchOrder[i + 1]!}"`) : html.length;
       const texts = textsByBatch
         .get(batchId)!
         .sort((a, b) => a.id.localeCompare(b.id))
@@ -226,6 +237,42 @@ describe("dashboard entry list", () => {
     // The prose is prefixed with the file basename, and the cell title carries the full path and anchor.
     expect(html).toContain('<span class="entry-file">setup.md</span>');
     expect(html).toContain('title="docs/setup.md — Run bun install"');
+  });
+
+  test("batch header shows the filer, shortened id, and constraint count", async () => {
+    const html = await (await env.get("/")).text();
+
+    // A single-filer batch names that filer once in its header; batchA and batchD are both
+    // probe-agent alone, so each of their headers carries the name exactly once.
+    expect(batchHeader(html, batchA.batchId).match(/probe-agent/g) ?? []).toHaveLength(1);
+    expect(batchHeader(html, batchD.batchId).match(/probe-agent/g) ?? []).toHaveLength(1);
+    // An all-null batch shows no filer slot at all.
+    const cHeader = batchHeader(html, batchC.batchId);
+    expect(cHeader).not.toContain("filer");
+    expect(cHeader).not.toContain("probe-agent");
+
+    // The full ulid stays in the title; the visible text is head+tail joined by an ellipsis.
+    const shortA = `${batchA.batchId.slice(0, 6)}…${batchA.batchId.slice(-6)}`;
+    expect(html).toContain(`class="batch-id" title="${batchA.batchId}">${shortA}</span>`);
+
+    // Constraint count appears only when non-zero: batchA has one constrained entry, batchB two.
+    expect(html).toContain('<span class="batch-meta">1 with constraints</span>');
+    expect(html).toContain('<span class="batch-meta">2 with constraints</span>');
+    expect(cHeader).not.toContain("constraint");
+  });
+
+  test("a mixed-filer batch names neither in the header and labels each row inline", async () => {
+    const html = await (await env.get("/")).text();
+
+    // batchB holds two filers (probe-agent and other-agent): the header names neither, only the count.
+    const bHeader = batchHeader(html, batchB.batchId);
+    expect(bHeader).toContain('<span class="batch-meta">2 filers</span>');
+    expect(bHeader).not.toContain("probe-agent");
+    expect(bHeader).not.toContain("other-agent");
+
+    // Each row names its own filer inline beside the file basename.
+    expect(html).toContain('<span class="entry-filer"> · other-agent</span>');
+    expect(html).toContain('<span class="entry-filer"> · probe-agent</span>');
   });
 
   test("filters by search text over the same columns as the mcp tool", async () => {
