@@ -2,7 +2,7 @@
 
 # reviewzy
 
-**human-in-the-loop mcp review for user-facing text: agents file the strings they want to write, a human authors or approves them on a dashboard, and any later agent session applies the approved words in place**
+**human-in-the-loop mcp review for user-facing text: agents file, a human approves, later sessions apply**
 
 bulk-audit and rewrite user-facing copy across CLIs, TUIs, web UIs, and websites; prose authorship stays human
 
@@ -13,7 +13,9 @@ bulk-audit and rewrite user-facing copy across CLIs, TUIs, web UIs, and websites
 
 ---
 
-reviewzy is a self-hosted dashboard and mcp server for human-in-the-loop copy review. a coding agent files the exact strings it wants to write or rewrite, and a human authors or approves each one. any later agent session fetches the approved words and applies them in place. no i18n keys, no content layer: each entry points at the string where it already lives.
+reviewzy is a self-hosted dashboard and mcp server for human-in-the-loop copy review. a coding agent files the exact strings it wants to write or rewrite. a human authors or approves each one on the dashboard. a later agent session fetches the approved words and applies them in place. no i18n keys, no content layer: each entry points at the string where it already lives.
+
+file an entry:
 
 ```json
 {
@@ -32,14 +34,24 @@ reviewzy is a self-hosted dashboard and mcp server for human-in-the-loop copy re
 }
 ```
 
-the call answers `batch_id 01M060XY9GNK6ANVENN4Y4MK7N` with the entry as `draft`, plus a `dashboard_url` for the batch. an agent can never approve: the human authors or rejects on the dashboard, and a later agent session applies through `mark_applied`.
+the call answers with the entry as `draft` and a dashboard link for the batch:
+
+```json
+{
+  "batch_id": "01M060XY9GNK6ANVENN4Y4MK7N",
+  "results": [
+    { "id": "01M060XY9GNK6ANVENN4Y4MK7P", "status": "draft", "deduped": false, "updated": false }
+  ],
+  "dashboard_url": "http://127.0.0.1:3123/?project=my-app"
+}
+```
 
 ## Why
 
 - **file + snippet anchors, no i18n keys:** apply-back is a targeted replace in place
 - **humans author, agents apply:** the status machine is server-enforced; only the dashboard reaches `approved` or `rejected`
 - **per-project style guide as an mcp resource:** merged with the global guide, embedded in `fetch_approved`
-- **append-only revision history:** every save is undoable, and history survives archiving
+- **append-only revision history:** every save is undoable; history survives archiving
 - **ntfy and webhook notifications, archive retention:** one ping per filing batch; applied entries archive after `ARCHIVE_AFTER_DAYS`
 
 ## How it works
@@ -78,20 +90,7 @@ curl http://127.0.0.1:3123/health
 {"name":"reviewzy","version":"0.1.0","pid":4172598,"nonce":"881f0e93-8dde-4c75-b559-d2e3d3b223f0","startedAt":"2026-08-16T19:31:28.640Z"}
 ```
 
-open http://127.0.0.1:3123/ for the dashboard. point an mcp client at reviewzy to start filing:
-
-```json
-{
-  "mcpServers": {
-    "reviewzy": {
-      "command": "bunx",
-      "args": ["reviewzy@latest"]
-    }
-  }
-}
-```
-
-the shim resolves `@latest` per session and drains a stale daemon on upgrade. the endpoint speaks the stateless `2026-07-28` mcp revision.
+open http://127.0.0.1:3123/ for the dashboard.
 
 ## Configuration
 
@@ -111,6 +110,23 @@ copy `.env.example` to `.env` and edit. every key is optional; a bad value refus
 
 a credential left unset keeps that surface loopback-only with a startup warning.
 
+## Integrations
+
+point an mcp client at reviewzy to start filing:
+
+```json
+{
+  "mcpServers": {
+    "reviewzy": {
+      "command": "bunx",
+      "args": ["reviewzy@latest"]
+    }
+  }
+}
+```
+
+the endpoint speaks the stateless `2026-07-28` mcp revision.
+
 ## Comparison
 
 | | reviewzy | Contentrain | gotoHuman | Ditto |
@@ -124,13 +140,13 @@ the blocking human-in-the-loop mcp family pops a dialog per call: no queue, no p
 
 ## FAQ
 
-**How do I approve AI-generated text before it lands in my code?** the agent files strings as drafts, you author or approve them on the dashboard, the agent applies. an agent can never reach `approved` on its own.
+**How do I approve AI-generated text before it lands in my code?** the agent files strings as drafts, you author or approve them on the dashboard, the agent applies.
 
 **Can an AI agent rewrite my CLI help text without i18n keys?** yes. entries anchor on the exact current strings; apply-back is a targeted replace.
 
 **How do I bulk-rewrite all user-facing copy in a codebase?** file batches per project, group by project or batch on the dashboard, approve in bulk with a before/after diff, then let a later agent session fetch and apply.
 
-**How do I update the style guide my agents read?** edit it on the dashboard at `/style-guide`. the resource carries a 60-second cache hint, so a saved edit can take up to 60s to reach an agent that already cached it.
+**How do I update the style guide my agents read?** edit it on the dashboard at `/style-guide`. a saved edit reaches agents in up to 60 seconds.
 
 ## Development
 
