@@ -1,3 +1,4 @@
+/** @jsxImportSource hono/jsx */
 import type { JSX } from "hono/jsx/jsx-runtime";
 import { listRevisions, parseConstraints } from "../db/human-save.ts";
 import type { Constraints, HumanSaveRefusal, RevisionRow, TransitionRefusal } from "../db/human-save.ts";
