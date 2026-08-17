@@ -166,4 +166,57 @@
     refreshEditorMetrics();
     textarea.focus();
   });
+
+  // --- Batch select-all and live selection count ---
+  // The list region is swapped wholesale on every filter and action round, so no listener bound to
+  // a checkbox or the button survives a swap: change events are delegated on document, and one pass
+  // after each swap recomputes the select-all states and the approve button's count. All of it is
+  // progressive enhancement — without JS the approve button keeps its static label, stays enabled,
+  // and the native form still submits the checked rows.
+  const DRAFT_SELECTOR = 'input[type="checkbox"][name="id"]';
+  const SELECT_ALL_SELECTOR = 'input[type="checkbox"].select-all';
+
+  function selectionCount() {
+    return document.querySelectorAll(`#batch-form ${DRAFT_SELECTOR}:checked`).length;
+  }
+
+  function updateApproveButton() {
+    const button = document.querySelector('#batch-form .batch-bar button[type="submit"]');
+    if (!button) return;
+    const count = selectionCount();
+    button.textContent = count === 0 ? "Approve selected" : `Approve ${count}`;
+    button.disabled = count === 0;
+  }
+
+  function updateSelectAll(selectAll) {
+    const batch = selectAll.closest(".batch");
+    if (!batch) return;
+    const drafts = batch.querySelectorAll(DRAFT_SELECTOR);
+    const checked = batch.querySelectorAll(`${DRAFT_SELECTOR}:checked`).length;
+    selectAll.checked = drafts.length > 0 && checked === drafts.length;
+    selectAll.indeterminate = checked > 0 && checked < drafts.length;
+  }
+
+  function refreshSelection() {
+    for (const selectAll of document.querySelectorAll(SELECT_ALL_SELECTOR)) {
+      updateSelectAll(selectAll);
+    }
+    updateApproveButton();
+  }
+
+  document.addEventListener("change", (event) => {
+    const target = event.target instanceof Element ? event.target : null;
+    if (!target) return;
+    if (target.matches(SELECT_ALL_SELECTOR)) {
+      const batch = target.closest(".batch");
+      if (batch) {
+        for (const draft of batch.querySelectorAll(DRAFT_SELECTOR)) {
+          draft.checked = target.checked;
+        }
+      }
+    }
+    refreshSelection();
+  });
+
+  document.addEventListener("htmx:afterSwap", refreshSelection);
 })();

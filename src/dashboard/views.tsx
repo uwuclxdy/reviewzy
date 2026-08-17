@@ -413,6 +413,9 @@ function ProjectGroupView({ group }: { group: ProjectGroup }) {
         return (
           <div class="batch" key={batch.id}>
             <div class="batch-header">
+              {/* Select-all toggles only this batch's draft rows. No `name`, so it never submits as
+                  an entry id; dashboard.js derives checked/indeterminate from the draft checkboxes. */}
+              <input type="checkbox" class="select-all" aria-label={`Select all drafts in batch ${shortUlid(batch.id)}`} />
               <span class="label">Batch</span>
               {singleFiler !== null ? <span class="batch-meta">{singleFiler}</span> : null}
               {mixedFilers ? <span class="batch-meta">{filers.length} filers</span> : null}

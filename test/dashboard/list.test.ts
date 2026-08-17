@@ -275,6 +275,25 @@ describe("dashboard entry list", () => {
     expect(html).toContain('<span class="entry-filer"> · probe-agent</span>');
   });
 
+  test("adds a per-batch select-all and keeps the approve button static and enabled without JS", async () => {
+    const html = await (await env.get("/")).text();
+
+    // One select-all per batch (4), and it never carries `name`, so it is not submitted as an
+    // entry id — the draft checkboxes alone post as `id`.
+    expect(html.match(/type="checkbox" class="select-all"/g) ?? []).toHaveLength(4);
+    expect(html).not.toContain('name="id" class="select-all"');
+
+    // Only draft rows carry a selectable checkbox: batchA has one draft, batchB none (applied +
+    // rejected), and batchC and batchD one each.
+    expect(html.match(/type="checkbox" name="id"/g) ?? []).toHaveLength(3);
+
+    // The no-JS approve button keeps its static label and no `disabled` attribute; the live count
+    // and the disabled state are applied by dashboard.js.
+    expect(html).toContain(
+      'class="btn btn-primary btn-sm" type="submit" hx-disabled-elt="this">Approve selected</button>',
+    );
+  });
+
   test("filters by search text over the same columns as the mcp tool", async () => {
     // agent_draft
     const byDraft = await (await env.get("/?q=wording")).text();
