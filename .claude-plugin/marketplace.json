@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-marketplace.json",
+  "name": "reviewzy",
+  "description": "human-in-the-loop mcp review for user-facing text: agents file, a human approves, later sessions apply",
+  "owner": {
+    "name": "uwuclxdy"
+  },
+  "plugins": [
+    {
+      "name": "reviewzy",
+      "source": "./",
+      "version": "0.1.0",
+      "category": "productivity",
+      "description": "human-in-the-loop mcp review for user-facing text"
+    }
+  ]
+}

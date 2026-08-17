@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
+  "name": "reviewzy",
+  "version": "0.1.0",
+  "description": "human-in-the-loop mcp review for user-facing text: agents file, a human approves, later sessions apply",
+  "author": {
+    "name": "uwuclxdy"
+  },
+  "license": "AGPL-3.0-only",
+  "homepage": "https://github.com/uwuclxdy/reviewzy",
+  "repository": "https://github.com/uwuclxdy/reviewzy",
+  "keywords": ["mcp", "human-in-the-loop", "copy", "review"],
+  "mcpServers": {
+    "reviewzy": {
+      "command": "bunx",
+      "args": ["reviewzy@latest"]
+    }
+  }
+}
