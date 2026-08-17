@@ -145,20 +145,13 @@ function shortUlid(id: string): string {
 }
 
 /**
- * Whether a stored constraints JSON carries at least one enforced constraint (`max_len`, or a
- * non-empty `placeholders`). The tolerant parse mirrors `parseConstraints`: foreign rows may hold
- * malformed JSON, and unparseable means no constraint, never an error.
+ * Whether a stored constraints JSON carries at least one enforced constraint. Reuses
+ * `parseConstraints` so the header counts exactly what the editor enforces; malformed JSON parses
+ * to no constraint, never an error.
  */
 function entryHasConstraints(constraints: string): boolean {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(constraints);
-  } catch {
-    return false;
-  }
-  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return false;
-  const raw = parsed as Record<string, unknown>;
-  return typeof raw.max_len === "number" || (Array.isArray(raw.placeholders) && raw.placeholders.length > 0);
+  const parsed = parseConstraints(constraints);
+  return parsed.maxLen !== undefined || parsed.placeholders.length > 0;
 }
 
 /** The section the current page belongs to, marking the matching navbar link. */
@@ -238,6 +231,9 @@ function FilterForm({ vm }: { vm: ListViewModel }) {
           ))}
         </select>
       </div>
+      <noscript>
+        <button class="btn btn-primary" type="submit">Apply filters</button>
+      </noscript>
     </form>
   );
 }
@@ -402,11 +398,13 @@ function ProjectGroupView({ group }: { group: ProjectGroup }) {
         </span>
       </header>
       {group.batches.map((batch) => {
-        // A batch names its filer only when every entry agrees; mixed filers show a count here and
-        // each row names its own inline, so the per-row flag is computed alongside the header value.
-        const filers = [...new Set(batch.entries.map((entry) => entry.filed_by).filter((filer): filer is string => filer !== null))];
-        const singleFiler = filers.length === 1 ? filers[0]! : null;
-        const mixedFilers = filers.length >= 2;
+        // A batch names its filer only when every entry agrees on the same value (null included); a
+        // disagreement shows the distinct-filer count here and each row names its own inline.
+        const filedBy = batch.entries.map((entry) => entry.filed_by);
+        const allAgree = filedBy.every((filer) => filer === filedBy[0]);
+        const singleFiler = allAgree && filedBy[0] !== null ? filedBy[0] : null;
+        const distinctFilers = [...new Set(filedBy.filter((filer): filer is string => filer !== null))];
+        const mixedFilers = !allAgree && distinctFilers.length > 0;
         const constraintsCount = batch.entries.filter((entry) => entryHasConstraints(entry.constraints)).length;
         return (
           <div class="batch" key={batch.id}>
@@ -416,7 +414,7 @@ function ProjectGroupView({ group }: { group: ProjectGroup }) {
               <input type="checkbox" class="select-all" aria-label={`Select all drafts in batch ${shortUlid(batch.id)}`} />
               <span class="label">Batch</span>
               {singleFiler !== null ? <span class="batch-meta">{singleFiler}</span> : null}
-              {mixedFilers ? <span class="batch-meta">{filers.length} filers</span> : null}
+              {mixedFilers ? <span class="batch-meta">{distinctFilers.length} {distinctFilers.length === 1 ? "filer" : "filers"}</span> : null}
               <span class="batch-id" title={batch.id}>{shortUlid(batch.id)}</span>
               {constraintsCount > 0 ? <span class="batch-meta">{constraintsCount} with constraints</span> : null}
             </div>

@@ -180,9 +180,10 @@ describe("dashboard entry list", () => {
     expect(html).toContain('name="q"');
     expect(html).toContain('name="status"');
     expect(html).toContain('name="project"');
-    // The Apply button is gone: the fields auto-submit on change/input via dashboard.js, while
-    // Enter in the search field still submits the form natively.
-    expect(html).not.toContain("Apply filters");
+    // The Apply button survives only inside <noscript> as the no-JS submit path: the selects and
+    // search auto-submit on change/input via dashboard.js, and without JS the button submits natively.
+    expect(html).toContain("<noscript>");
+    expect(html).toContain('class="btn btn-primary" type="submit">Apply filters</button>');
 
     // The loading indicator, scoped to the list region.
     expect(html).toContain('<div id="entries-loading" class="htmx-indicator" role="status">');
@@ -277,6 +278,25 @@ describe("dashboard entry list", () => {
     // Each row names its own filer inline beside the file basename.
     expect(html).toContain('<span class="entry-filer"> · other-agent</span>');
     expect(html).toContain('<span class="entry-filer"> · probe-agent</span>');
+  });
+
+  test("a batch mixing a filer with an unfiled entry names a count and labels only the filed row", async () => {
+    const mixed = serveApp();
+    try {
+      const filed = fileEntries(mixed.store, "alpha", "solo-agent", [
+        draft({ file: "docs/a.md", anchorText: "a", anchorHash: "ha", fileHash: "fa", agentDraft: "A note." }),
+        draft({ file: "docs/b.md", anchorText: "b", anchorHash: "hb", fileHash: "fb", agentDraft: "B note." }),
+      ]);
+      // Null one entry's filer so the batch holds a filer and an unfiled entry: not every entry agrees.
+      mixed.store.db.run("UPDATE entries SET filed_by = NULL WHERE id = ?", [filed.results[1]!.id]);
+      const html = await (await mixed.get("/")).text();
+      const header = batchHeader(html, filed.batchId);
+      expect(header).toContain("1 filer");
+      expect(header).not.toContain("solo-agent");
+      expect(html).toContain('<span class="entry-filer"> · solo-agent</span>');
+    } finally {
+      mixed.close();
+    }
   });
 
   test("adds a per-batch select-all and keeps the approve button static and enabled without JS", async () => {
