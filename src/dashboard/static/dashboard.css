@@ -48,7 +48,7 @@
    row never overflows at 1280px; select, status, and actions are the sized columns. The file
    basename prefixes the prose, mono and dim, so two rows proposing similar text stay
    distinguishable; the cell title carries the full path and anchor. */
-.col-select { width: 44px; }
+.col-select { width: 80px; }
 .col-status { width: 10%; }
 .col-actions { width: 24%; }
 .entry-file {

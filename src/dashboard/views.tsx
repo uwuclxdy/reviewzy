@@ -437,7 +437,7 @@ function EntryRowView({ entry }: { entry: EntryRow }) {
       </td>
       <td class="cell-text" title={`${entry.file} — ${entry.anchor_text}`}>
         <span class="entry-file">{fileBasename(entry.file)}</span>
-        <span class="entry-text">{text}</span>
+        <span class="entry-text" title={text ?? ""}>{text}</span>
       </td>
       <td>
         <span class={`tag ${STATUS_TAG[entry.status]}`}>
