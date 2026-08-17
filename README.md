@@ -50,7 +50,7 @@ the call answers with the entry as `draft` and a dashboard link for the batch:
 
 - **file + snippet anchors, no i18n keys:** apply-back is a targeted replace in place
 - **humans author, agents apply:** the status machine is server-enforced; only the dashboard reaches `approved` or `rejected`
-- **per-project style guide as an mcp resource:** merged with the global guide, embedded in `fetch_approved`
+- **per-project style guide (mcp resource):** merged with the global guide, embedded in `fetch_approved`
 - **append-only revision history:** every save is undoable; history survives archiving
 - **ntfy and webhook notifications, archive retention:** one ping per filing batch; applied entries archive after `ARCHIVE_AFTER_DAYS`
 
@@ -59,7 +59,7 @@ the call answers with the entry as `draft` and a dashboard link for the batch:
 | stage | who | what happens |
 |---|---|---|
 | file | agent | `file_entries` through the stdio shim, which finds or spawns one shared daemon |
-| notify | daemon | pings ntfy and/or the webhook with a dashboard link |
+| notify | daemon | pings ntfy or the webhook with a dashboard link |
 | author | human | edits, approves, or rejects on the dashboard; saving prose releases it as `approved` |
 | fetch | agent | `fetch_approved` (or a blocking `await_approved`) returns text, anchor, constraints, and the merged style guide |
 | apply | agent | replaces the anchor, reports through `mark_applied` |
@@ -71,7 +71,15 @@ the call answers with the entry as `draft` and a dashboard link for the batch:
 bunx reviewzy@latest
 ```
 
-requires bun >= 1.3 (the store is `bun:sqlite`, bun-only; no `npx` form). the shim spawns one shared daemon per machine on first use.
+runs the published npm version (the default). to switch to the latest git version:
+
+```sh
+bunx github:uwuclxdy/reviewzy
+```
+
+pin a commit with `bunx github:uwuclxdy/reviewzy#<sha>` to keep it stable.
+
+requires bun >= 1.3 (the store is `bun:sqlite`; npm/npx not supported). the shim spawns one shared daemon per machine on first use.
 
 from a checkout:
 
@@ -80,16 +88,14 @@ bun install
 bun run daemon
 ```
 
-### as a Claude Code plugin
+### Claude Code plugin
 
-the repo is a plugin: it registers the MCP server and adds a `/reviewzy` slash command plus the reviewzy skill.
+the plugin registers the MCP server and adds a `/reviewzy` slash command plus the reviewzy skill.
 
 ```
 /plugin marketplace add uwuclxdy/reviewzy
 /plugin install reviewzy@reviewzy
 ```
-
-same bun requirement as the npm form.
 
 ## Usage
 
