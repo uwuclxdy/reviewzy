@@ -214,23 +214,18 @@ describe("dashboard entry list", () => {
       expectOrder(html.slice(start, end), texts);
     });
 
-    // A row carries file, anchor, text, status tag, filed_by, and the constraint summary.
-    expect(html).toContain(">File</th>");
-    expect(html).toContain(">Anchor</th>");
+    // A row carries the select checkbox, the basename-prefixed proposed text, the status tag, and actions.
+    expect(html).toContain(">Select</th>");
     expect(html).toContain(">Text</th>");
     expect(html).toContain(">Status</th>");
-    expect(html).toContain(">Filed by</th>");
-    expect(html).toContain(">Constraints</th>");
+    expect(html).toContain(">Actions</th>");
     expect(html).toContain('class="tag tag-warning"><span class="tag-dot"></span>Draft</span>');
     expect(html).toContain('class="tag tag-success"><span class="tag-dot"></span>Approved</span>');
     expect(html).toContain('class="tag tag-info"><span class="tag-dot"></span>Applied</span>');
     expect(html).toContain('class="tag tag-danger"><span class="tag-dot"></span>Rejected</span>');
-    expect(html).toContain("probe-agent");
-    expect(html).toContain("max 200 · {command}");
-    expect(html).toContain("{year}");
-    expect(html).toContain("max 40");
-    // A filing that omitted the agent name leaves the cell empty.
-    expect(html).toContain('<td class="cell-filedby"></td>');
+    // The prose is prefixed with the file basename, and the cell title carries the full path and anchor.
+    expect(html).toContain('<span class="entry-file">setup.md</span>');
+    expect(html).toContain('title="docs/setup.md — Run bun install"');
   });
 
   test("filters by search text over the same columns as the mcp tool", async () => {
@@ -450,7 +445,7 @@ describe("dashboard entry list", () => {
       const html = await (await big.get("/")).text();
       // The whole walk renders: all 201 rows (one entry row each), page 2's row included. A walk
       // that stops after the first page renders exactly one row short, whatever the id order.
-      expect(html.match(/class="cell-filedby"/g) ?? []).toHaveLength(201);
+      expect(html.match(/class="cell-text"/g) ?? []).toHaveLength(201);
       const page2Text = page2.rows[0]!.agent_draft;
       expect(page2Text).not.toBeNull();
       expect(html).toContain(page2Text!);

@@ -134,24 +134,9 @@ function loadList(store: Store, params: ListParams): ListViewModel {
   };
 }
 
-/** The constraint summary cell: max_len and placeholders from the stored constraints JSON, mono, middot-joined. */
-function constraintSummary(constraintsJson: string): string[] {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(constraintsJson);
-  } catch {
-    return [];
-  }
-  if (typeof parsed !== "object" || parsed === null) return [];
-  const constraints = parsed as Record<string, unknown>;
-  const parts: string[] = [];
-  if (typeof constraints.max_len === "number") parts.push(`max ${constraints.max_len}`);
-  if (Array.isArray(constraints.placeholders)) {
-    for (const placeholder of constraints.placeholders) {
-      if (typeof placeholder === "string" && placeholder !== "") parts.push(`{${placeholder}}`);
-    }
-  }
-  return parts;
+/** The basename of a repo file path (the segment after the last slash), the dim per-row prefix. */
+function fileBasename(path: string): string {
+  return path.split(/[/\\]/).pop() ?? path;
 }
 
 /** The section the current page belongs to, marking the matching navbar link. */
@@ -404,15 +389,17 @@ function ProjectGroupView({ group }: { group: ProjectGroup }) {
           </div>
           <div class="table-wrap">
             <table>
+              <colgroup>
+                <col class="col-select" />
+                <col />
+                <col class="col-status" />
+                <col class="col-actions" />
+              </colgroup>
               <thead>
                 <tr>
-                  <th class="cell-select">Select</th>
-                  <th>File</th>
-                  <th>Anchor</th>
+                  <th>Select</th>
                   <th>Text</th>
                   <th>Status</th>
-                  <th>Filed by</th>
-                  <th>Constraints</th>
                   <th>Actions</th>
                 </tr>
               </thead>
@@ -439,7 +426,6 @@ function ProjectGroupView({ group }: { group: ProjectGroup }) {
  */
 function EntryRowView({ entry }: { entry: EntryRow }) {
   const text = entry.human_text ?? entry.agent_draft;
-  const constraints = constraintSummary(entry.constraints);
   const approve = entry.status === "draft";
   const reject = entry.status === "draft" || entry.status === "approved";
   return (
@@ -449,24 +435,15 @@ function EntryRowView({ entry }: { entry: EntryRow }) {
           <input type="checkbox" name="id" value={entry.id} aria-label={`Select ${entry.file}`} />
         ) : null}
       </td>
-      <td class="cell-file">
-        <span class="file-path" title={entry.file}>{entry.file}</span>
-      </td>
-      <td class="cell-anchor">
-        <span class="anchor-text" title={entry.anchor_text}>{entry.anchor_text}</span>
-      </td>
-      <td class="cell-text">
-        <span class="entry-text" title={text ?? ""}>{text}</span>
+      <td class="cell-text" title={`${entry.file} — ${entry.anchor_text}`}>
+        <span class="entry-file">{fileBasename(entry.file)}</span>
+        <span class="entry-text">{text}</span>
       </td>
       <td>
         <span class={`tag ${STATUS_TAG[entry.status]}`}>
           <span class="tag-dot"></span>
           {STATUS_LABEL[entry.status]}
         </span>
-      </td>
-      <td class="cell-filedby">{entry.filed_by ?? ""}</td>
-      <td class="cell-constraints">
-        {constraints.length > 0 ? <span class="constraint-summary">{constraints.join(" · ")}</span> : null}
       </td>
       <td class="cell-actions">
         {approve ? (

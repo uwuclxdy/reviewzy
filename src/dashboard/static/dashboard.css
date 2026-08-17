@@ -44,17 +44,19 @@
 .batch-id { font: 400 var(--text-xs)/1 var(--font-mono); color: var(--text-faint); }
 
 /* ---- Entry table cells ----
-   Paths, anchors, and constraint summaries are machine data, so they set the mono face;
-   long values ellipsize in place and keep the full value in the title attribute. */
-.cell-file { max-width: 380px; }
-.cell-anchor { max-width: 320px; }
-.cell-text { max-width: 560px; }
-.file-path, .anchor-text {
+   The table lays out fixed with a colgroup so the prose column takes the remainder and the
+   row never overflows at 1280px; select, status, and actions are the sized columns. The file
+   basename prefixes the prose, mono and dim, so two rows proposing similar text stay
+   distinguishable; the cell title carries the full path and anchor. */
+.col-select { width: 44px; }
+.col-status { width: 10%; }
+.col-actions { width: 24%; }
+.entry-file {
   display: block;
   font-family: var(--font-mono);
   font-size: var(--text-xs);
   line-height: 1.4;
-  color: var(--text-muted);
+  color: var(--text-faint);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -65,15 +67,12 @@
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
-.cell-filedby { color: var(--text-dim); white-space: nowrap; }
-.constraint-summary { font-family: var(--font-mono); font-size: var(--text-xs); color: var(--text-dim); white-space: nowrap; }
 
 /* ---- Row actions and batch approve ----
    A control mid-request ignores further activations: htmx marks the requesting element with
    .htmx-request while the request is in flight, and pointer-events drops the duplicate click a
    double-click would otherwise fire. */
 .htmx-request { pointer-events: none; }
-.cell-select { width: 44px; }
 .cell-select input[type="checkbox"] { accent-color: var(--accent); }
 .cell-actions { white-space: nowrap; }
 .cell-actions .btn + .btn { margin-left: var(--space-2); }
