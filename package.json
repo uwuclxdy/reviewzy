@@ -4,10 +4,11 @@
   "description": "agents draft user-facing copy, humans sign off on a dashboard, agents apply the approved words back in place",
   "license": "AGPL-3.0-only",
   "type": "module",
-  "private": true,
+  "private": false,
   "bin": {
     "reviewzy": "bin/reviewzy"
   },
+  "files": ["bin", "src", "tsconfig.json", ".env.example"],
   "engines": {
     "bun": ">=1.3.0"
   },
