@@ -80,6 +80,17 @@ bun install
 bun run daemon
 ```
 
+### as a Claude Code plugin
+
+the repo is a plugin: it registers the MCP server and adds a `/reviewzy` slash command plus the reviewzy skill.
+
+```
+/plugin marketplace add uwuclxdy/reviewzy
+/plugin install reviewzy@reviewzy
+```
+
+same bun requirement as the npm form.
+
 ## Usage
 
 ```sh
