@@ -60,6 +60,34 @@
     form.addEventListener("htmx:sendError", showFilterError);
   }
 
+  // --- Filter auto-submit ---
+  // The Apply button is gone: changing a select or typing in the search fires the filter request
+  // itself. requestSubmit() reaches htmx's submit listener on the form; the debounce collapses a
+  // burst of keystrokes into one request. Only the change and input events below trigger a submit,
+  // and both fire on user action alone, so a programmatic value reset (which sets .value directly
+  // and emits no event) never re-fires.
+  function submitFilters() {
+    const target = document.getElementById("filters");
+    if (target && typeof target.requestSubmit === "function") {
+      target.requestSubmit();
+    }
+  }
+
+  let searchTimer;
+  function scheduleSearchSubmit() {
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(submitFilters, 300);
+  }
+
+  if (form) {
+    const statusSelect = document.getElementById("status");
+    const projectSelect = document.getElementById("project");
+    const searchInput = document.getElementById("q");
+    statusSelect?.addEventListener("change", submitFilters);
+    projectSelect?.addEventListener("change", submitFilters);
+    searchInput?.addEventListener("input", scheduleSearchSubmit);
+  }
+
   // --- Style guide save errors ---
   // A failed save (HTTP error or network error) puts the error box from the page's
   // #style-guide-error-box template above the form; the retry button re-submits the save form.

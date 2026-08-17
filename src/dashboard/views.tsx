@@ -185,12 +185,11 @@ function Navbar({ signedIn, active }: { signedIn: boolean; active: NavSection })
   );
 }
 
-function PageHeader() {
+function PageHeader({ total }: { total: number }) {
   return (
     <header class="page-header">
-      <div class="label page-eyebrow">Review queue</div>
       <h1 class="page-title">Entries</h1>
-      <p class="page-lede">Agent drafts waiting for your approval.</p>
+      <span class="page-count">{total} {total === 1 ? "entry" : "entries"}</span>
     </header>
   );
 }
@@ -239,7 +238,6 @@ function FilterForm({ vm }: { vm: ListViewModel }) {
           ))}
         </select>
       </div>
-      <button class="btn btn-primary" type="submit">Apply filters</button>
     </form>
   );
 }
@@ -574,7 +572,7 @@ export function dashboardPage(
         <div class="app-shell">
           <Navbar signedIn={signedIn} active="entries" />
           <main class="main">
-            <PageHeader />
+            <PageHeader total={vm.total} />
             <FilterForm vm={vm} />
             <div id="entries">
               <div id="entries-loading" class="htmx-indicator" role="status">

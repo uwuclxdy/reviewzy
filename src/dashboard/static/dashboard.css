@@ -6,14 +6,16 @@
 .app-shell { min-height: 100vh; display: flex; flex-direction: column; }
 .main { padding: var(--space-10) var(--space-12); max-width: 1400px; margin: 0 auto; width: 100%; }
 
-/* ---- Page header: the eyebrow / title / lede triplet ---- */
+/* ---- Page header: the eyebrow / title / lede triplet (login/editor pages) ---- */
 .page-header { margin-bottom: var(--space-8); padding-bottom: var(--space-5); border-bottom: 1px solid var(--line); }
 .page-eyebrow { color: var(--accent); margin-bottom: var(--space-2); }
 .page-title { font: 550 var(--text-2xl)/1.15 var(--font-sans); color: var(--text); letter-spacing: -0.02em; margin-bottom: var(--space-3); }
 .page-lede { font-size: var(--text-base); color: var(--text-dim); max-width: 540px; }
+/* The entries header is just the title plus the total count, no eyebrow or lede. */
+.page-count { font-size: var(--text-sm); color: var(--text-dim); }
 
 /* ---- Filter form ---- */
-.filters { display: grid; grid-template-columns: minmax(0, 2fr) 200px 200px auto; gap: var(--space-3); align-items: end; margin-bottom: var(--space-8); }
+.filters { display: grid; grid-template-columns: minmax(0, 2fr) 200px 200px; gap: var(--space-3); align-items: end; margin-bottom: var(--space-8); }
 @media (max-width: 768px) { .filters { grid-template-columns: 1fr; } }
 
 /* ---- Entries region ---- */

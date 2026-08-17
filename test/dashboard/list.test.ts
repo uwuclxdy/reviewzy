@@ -165,9 +165,11 @@ describe("dashboard entry list", () => {
     expect(html).toContain('<a class="navbar-link active" href="/">Entries</a>');
     expect(html).toContain('id="navbar-ink"');
 
-    // Page header triplet.
-    expect(html).toContain("Review queue");
+    // Page header: the title plus the total count, no eyebrow or lede.
     expect(html).toContain("<h1 class=\"page-title\">Entries</h1>");
+    expect(html).toContain('<span class="page-count">6 entries</span>');
+    expect(html).not.toContain("Review queue");
+    expect(html).not.toContain("Agent drafts waiting for your approval.");
 
     // The filter form: native GET for no-JS, htmx for the fragment swap.
     expect(html).toContain('<form id="filters" method="get" action="/"');
@@ -178,7 +180,9 @@ describe("dashboard entry list", () => {
     expect(html).toContain('name="q"');
     expect(html).toContain('name="status"');
     expect(html).toContain('name="project"');
-    expect(html).toContain(">Apply filters</button>");
+    // The Apply button is gone: the fields auto-submit on change/input via dashboard.js, while
+    // Enter in the search field still submits the form natively.
+    expect(html).not.toContain("Apply filters");
 
     // The loading indicator, scoped to the list region.
     expect(html).toContain('<div id="entries-loading" class="htmx-indicator" role="status">');
