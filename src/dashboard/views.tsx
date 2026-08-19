@@ -139,19 +139,9 @@ function fileBasename(path: string): string {
   return path.split(/[/\\]/).pop() ?? path;
 }
 
-/** The batch ulid shortened to head+tail for the header; the full id stays available in the title. */
+/** The batch ulid shortened to head+tail, enough to name each batch's select-all checkbox distinctly for a screen reader. */
 function shortUlid(id: string): string {
   return `${id.slice(0, 6)}…${id.slice(-6)}`;
-}
-
-/**
- * Whether a stored constraints JSON carries at least one enforced constraint. Reuses
- * `parseConstraints` so the header counts exactly what the editor enforces; malformed JSON parses
- * to no constraint, never an error.
- */
-function entryHasConstraints(constraints: string): boolean {
-  const parsed = parseConstraints(constraints);
-  return parsed.maxLen !== undefined || parsed.placeholders.length > 0;
 }
 
 /** The section the current page belongs to, marking the matching navbar link. */
@@ -398,39 +388,31 @@ function ProjectGroupView({ group }: { group: ProjectGroup }) {
         </span>
       </header>
       {group.batches.map((batch) => {
-        // A batch names its filer only when every entry agrees on the same value (null included); a
-        // disagreement shows the distinct-filer count here and each row names its own inline.
+        // A batch names its filer in the header only when every entry agrees on one non-null
+        // value; a disagreement leaves the header filer-less and each row names its own inline.
         const filedBy = batch.entries.map((entry) => entry.filed_by);
         const allAgree = filedBy.every((filer) => filer === filedBy[0]);
         const singleFiler = allAgree && filedBy[0] !== null ? filedBy[0] : null;
-        const distinctFilers = [...new Set(filedBy.filter((filer): filer is string => filer !== null))];
-        const mixedFilers = !allAgree && distinctFilers.length > 0;
-        const constraintsCount = batch.entries.filter((entry) => entryHasConstraints(entry.constraints)).length;
+        const mixedFilers = !allAgree && filedBy.some((filer) => filer !== null);
         return (
           <div class="batch" key={batch.id}>
             <div class="batch-header">
               {/* Select-all toggles only this batch's draft rows. No `name`, so it never submits as
                   an entry id; dashboard.js derives checked/indeterminate from the draft checkboxes. */}
               <input type="checkbox" class="select-all" aria-label={`Select all drafts in batch ${shortUlid(batch.id)}`} />
-              <span class="label">Batch</span>
               {singleFiler !== null ? <span class="batch-meta">{singleFiler}</span> : null}
-              {mixedFilers ? <span class="batch-meta">{distinctFilers.length} {distinctFilers.length === 1 ? "filer" : "filers"}</span> : null}
-              <span class="batch-id" title={batch.id}>{shortUlid(batch.id)}</span>
-              {constraintsCount > 0 ? <span class="batch-meta">{constraintsCount} with constraints</span> : null}
             </div>
             <div class="table-wrap">
               <table>
                 <colgroup>
                   <col class="col-select" />
                   <col />
-                  <col class="col-status" />
                   <col class="col-actions" />
                 </colgroup>
                 <thead>
                   <tr>
                     <th>Select</th>
                     <th>Text</th>
-                    <th>Status</th>
                     <th>Actions</th>
                   </tr>
                 </thead>
@@ -451,11 +433,12 @@ function ProjectGroupView({ group }: { group: ProjectGroup }) {
 /**
  * One row. The checkbox names the entry for the batch form; it exists only on drafts, because an
  * approve on any other status always refuses and a checkbox that can only refuse is noise (races
- * are still reported per entry). The action buttons carry the row's own approve and reject,
- * targeting the list region; their requests include the batch form's hidden filters, so an action
- * round re-renders the region under the same filter. Applied and rejected rows are terminal from
- * the dashboard side and offer only the editor. When the batch holds mixed filers, the row also
- * names its own filer beside the basename.
+ * are still reported per entry). The status chip sits beside the file basename; the three icon
+ * action slots always render, inapplicable ones disabled, so a double-click's second click lands
+ * on the disabled slot rather than a shifted action. Approve and reject target the list region and
+ * include the batch form's hidden filters, so an action round re-renders the region under the same
+ * filter; the editor link is always present. When the batch holds mixed filers, the row also names
+ * its own filer beside the basename.
  */
 function EntryRowView({ entry, filerInline }: { entry: EntryRow; filerInline: boolean }) {
   const text = entry.human_text ?? entry.agent_draft;
@@ -469,53 +452,79 @@ function EntryRowView({ entry, filerInline }: { entry: EntryRow; filerInline: bo
         ) : null}
       </td>
       <td class="cell-text" title={`${entry.file} — ${entry.anchor_text}`}>
-        <span class="entry-file">
-          {fileBasename(entry.file)}
-          {filerInline && entry.filed_by !== null ? <span class="entry-filer"> · {entry.filed_by}</span> : null}
-        </span>
+        <div class="entry-head">
+          <span class="entry-file">
+            {fileBasename(entry.file)}
+            {filerInline && entry.filed_by !== null ? <span class="entry-filer"> · {entry.filed_by}</span> : null}
+          </span>
+          <span class={`tag ${STATUS_TAG[entry.status]}`}>
+            <span class="tag-dot"></span>
+            {STATUS_LABEL[entry.status]}
+          </span>
+        </div>
         <span class="entry-text" title={text ?? ""}>{text}</span>
-      </td>
-      <td>
-        <span class={`tag ${STATUS_TAG[entry.status]}`}>
-          <span class="tag-dot"></span>
-          {STATUS_LABEL[entry.status]}
-        </span>
       </td>
       <td class="cell-actions">
         {approve ? (
           <button
             type="button"
-            class="btn btn-primary btn-sm"
+            class="btn btn-icon"
+            style="color: var(--success)"
+            aria-label={`Approve ${entry.file}`}
+            title="Approve"
             hx-post={`/entries/${entry.id}/approve`}
             hx-target="#entries-list"
             hx-swap="innerHTML"
             hx-indicator="#entries-loading"
             hx-disabled-elt="this"
           >
-            Approve
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+              <circle cx="8" cy="8" r="6.5" />
+              <path d="M5 8l2 2 4-4" />
+            </svg>
           </button>
-        ) : entry.status === "approved" ? (
-          // The approve slot stays occupied for approved rows: a double-click's second click lands
-          // where Approve was, and the disabled button (pointer-events none) swallows it before it
-          // can hit the Reject button that shifted into the slot.
-          <button type="button" class="btn btn-primary btn-sm" disabled>
-            Approve
+        ) : (
+          // The approve slot stays occupied on every non-draft row: a double-click's second click
+          // lands on the disabled button (pointer-events none) rather than the next slot.
+          <button type="button" class="btn btn-icon" style="color: var(--success)" aria-label={`Approve ${entry.file}`} title="Approve" disabled>
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+              <circle cx="8" cy="8" r="6.5" />
+              <path d="M5 8l2 2 4-4" />
+            </svg>
           </button>
-        ) : null}
+        )}
         {reject ? (
           <button
             type="button"
-            class="btn btn-danger btn-sm"
+            class="btn btn-icon"
+            style="color: var(--danger)"
+            aria-label={`Reject ${entry.file}`}
+            title="Reject"
             hx-post={`/entries/${entry.id}/reject`}
             hx-target="#entries-list"
             hx-swap="innerHTML"
             hx-indicator="#entries-loading"
             hx-disabled-elt="this"
           >
-            Reject
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+              <circle cx="8" cy="8" r="6.5" />
+              <path d="M10 6L6 10M6 6l4 4" />
+            </svg>
           </button>
-        ) : null}
-        <a class="btn btn-secondary btn-sm" href={`/entries/${entry.id}`}>Edit</a>
+        ) : (
+          // The reject slot stays occupied on applied and rejected rows for the same guard.
+          <button type="button" class="btn btn-icon" style="color: var(--danger)" aria-label={`Reject ${entry.file}`} title="Reject" disabled>
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+              <circle cx="8" cy="8" r="6.5" />
+              <path d="M10 6L6 10M6 6l4 4" />
+            </svg>
+          </button>
+        )}
+        <a class="btn btn-icon" href={`/entries/${entry.id}`} aria-label={`Edit ${entry.file}`} title="Edit">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+            <path d="M11.5 2.5l2 2L5 13H3v-2z" />
+          </svg>
+        </a>
       </td>
     </tr>
   );

@@ -103,7 +103,7 @@ describe("list transitions", () => {
     // The approve slot stays occupied by a disabled button, so a double-click's second click
     // cannot land on the Reject button that would otherwise shift into the slot; the row keeps
     // its reject action and loses the checkbox.
-    expect(html).toContain("<button type=\"button\" class=\"btn btn-primary btn-sm\" disabled=\"\">");
+    expect(html).toContain('<button type="button" class="btn btn-icon" style="color: var(--success)" aria-label="Approve docs/setup.md" title="Approve" disabled="">');
     expect(html).toContain(`hx-post="/entries/${id}/reject"`);
     expect(html).not.toContain(`hx-post="/entries/${id}/approve"`);
     expect(html).not.toContain(`value="${id}"`);
@@ -180,10 +180,10 @@ describe("list transitions", () => {
     // row actions (a page-level presence check would let one button lose its guard silently).
     expect(html).toContain('<button class="btn btn-primary btn-sm" type="submit" hx-disabled-elt="this">');
     expect(html).toContain(
-      `<button type="button" class="btn btn-primary btn-sm" hx-post="/entries/${ids[0]!}/approve" hx-target="#entries-list" hx-swap="innerHTML" hx-indicator="#entries-loading" hx-disabled-elt="this">`,
+      `<button type="button" class="btn btn-icon" style="color: var(--success)" aria-label="Approve file-0.md" title="Approve" hx-post="/entries/${ids[0]!}/approve" hx-target="#entries-list" hx-swap="innerHTML" hx-indicator="#entries-loading" hx-disabled-elt="this">`,
     );
     expect(html).toContain(
-      `<button type="button" class="btn btn-danger btn-sm" hx-post="/entries/${ids[0]!}/reject" hx-target="#entries-list" hx-swap="innerHTML" hx-indicator="#entries-loading" hx-disabled-elt="this">`,
+      `<button type="button" class="btn btn-icon" style="color: var(--danger)" aria-label="Reject file-0.md" title="Reject" hx-post="/entries/${ids[0]!}/reject" hx-target="#entries-list" hx-swap="innerHTML" hx-indicator="#entries-loading" hx-disabled-elt="this">`,
     );
     expect(html).toContain('name="q" value=""');
     expect(html).toContain('name="status" value=""');
@@ -193,8 +193,6 @@ describe("list transitions", () => {
     expect(html).toContain(`hx-post="/entries/${ids[0]!}/approve"`);
     expect(html).toContain(`hx-post="/entries/${ids[0]!}/reject"`);
     expect(html).toContain(`href="/entries/${ids[0]!}"`);
-    expect(html).toContain(">Approve</button>");
-    expect(html).toContain(">Reject</button>");
     expect(html).toContain("<th>Actions</th>");
     env.close();
   });

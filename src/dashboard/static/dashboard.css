@@ -43,19 +43,25 @@
 .project-name { font: 500 var(--text-lg)/1.2 var(--font-mono); color: var(--text); letter-spacing: -0.01em; }
 .batch { margin-bottom: var(--space-6); }
 .batch-header { display: flex; align-items: baseline; gap: var(--space-3); margin-bottom: var(--space-2); }
-.batch-id { font: 400 var(--text-xs)/1 var(--font-mono); color: var(--text-faint); }
 .batch-meta { font: 400 var(--text-xs)/1 var(--font-sans); color: var(--text-faint); }
 
 /* ---- Entry table cells ----
    The table lays out fixed with a colgroup so the prose column takes the remainder and the
-   row never overflows at 1280px; select, status, and actions are the sized columns. The file
-   basename prefixes the prose, mono and dim, so two rows proposing similar text stay
-   distinguishable; the cell title carries the full path and anchor. */
+   row never overflows at 1280px; select and actions are the fixed columns. The file basename
+   prefixes the prose, mono and dim, so two rows proposing similar text stay distinguishable; the
+   status chip sits beside it in the entry-head row, and the cell title carries the full path and
+   anchor. */
 .col-select { width: 80px; }
-.col-status { width: 10%; }
-.col-actions { width: 24%; }
+.col-actions { width: 120px; }
+.entry-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: 2px;
+}
 .entry-file {
-  display: block;
+  flex: 1 1 auto;
+  min-width: 0;
   font-family: var(--font-mono);
   font-size: var(--text-xs);
   line-height: 1.4;
@@ -64,6 +70,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
+.entry-head .tag { flex-shrink: 0; }
 .entry-text {
   display: -webkit-box;
   -webkit-line-clamp: 2;
@@ -79,6 +86,7 @@
 .cell-select input[type="checkbox"] { accent-color: var(--accent); }
 .cell-actions { white-space: nowrap; }
 .cell-actions .btn + .btn { margin-left: var(--space-2); }
+.table-wrap tbody td.cell-actions { padding-left: var(--space-1); padding-right: var(--space-1); }
 .batch-bar {
   display: flex;
   align-items: center;

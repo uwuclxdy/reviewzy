@@ -223,7 +223,7 @@ describe("list rows", () => {
   test("each entry row links to its editor", async () => {
     const { env, id } = envWithDraft();
     const html = await (await env.get("/")).text();
-    expect(html).toContain(`<a class="btn btn-secondary btn-sm" href="/entries/${id}">Edit</a>`);
+    expect(html).toContain(`<a class="btn btn-icon" href="/entries/${id}" aria-label="Edit docs/setup.md" title="Edit">`);
     // Task 13 widened the column to the row's transitions, so the header names the whole cell.
     expect(html).toContain("<th>Actions</th>");
     env.close();

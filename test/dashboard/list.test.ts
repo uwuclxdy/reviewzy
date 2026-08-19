@@ -110,7 +110,7 @@ env.store.db.run("UPDATE entries SET status = 'approved', human_text = 'Explain 
 ]);
 env.store.db.run("UPDATE entries SET status = 'applied' WHERE id = ?", [batchB.results[0]!.id]);
 env.store.db.run("UPDATE entries SET status = 'rejected' WHERE id = ?", [batchB.results[1]!.id]);
-// A second filer in batchB makes it a mixed-filer batch: the header counts filers, each row names its own.
+// A second filer in batchB makes it a mixed-filer batch: the header names no filer, each row names its own.
 env.store.db.run("UPDATE entries SET filed_by = 'other-agent' WHERE id = ?", [batchB.results[0]!.id]);
 
 /** The rendered text of each fixture entry (human_text wins over agent_draft), keyed by entry id. */
@@ -138,12 +138,26 @@ function expectOrder(html: string, needles: readonly string[]) {
   }
 }
 
+/** The head+tail short form of a ulid, mirroring the view's `shortUlid`. */
+function shortUlid(id: string): string {
+  return `${id.slice(0, 6)}…${id.slice(-6)}`;
+}
+
 /** The `.batch-header` region for a batch, from its header div to the table that follows. */
 function batchHeader(html: string, batchId: string): string {
-  const idMark = html.indexOf(`class="batch-id" title="${batchId}"`);
+  const idMark = html.indexOf(`aria-label="Select all drafts in batch ${shortUlid(batchId)}"`);
   expect(idMark, `batch ${batchId} header rendered`).toBeGreaterThan(-1);
   const start = html.lastIndexOf('<div class="batch-header">', idMark);
   const end = html.indexOf('<div class="table-wrap">', idMark);
+  return html.slice(start, end);
+}
+
+/** The `.cell-actions` region for an entry, from its `<td>` to the row's close. */
+function entryActions(html: string, id: string): string {
+  const mark = html.indexOf(`href="/entries/${id}"`);
+  expect(mark, `entry ${id} action cell rendered`).toBeGreaterThan(-1);
+  const start = html.lastIndexOf('<td class="cell-actions">', mark);
+  const end = html.indexOf("</td>", mark);
   return html.slice(start, end);
 }
 
@@ -220,9 +234,9 @@ describe("dashboard entry list", () => {
       textsByBatch.set(item.batchId, [...(textsByBatch.get(item.batchId) ?? []), { id: item.id, text: item.text }]);
     }
     pageBatchOrder.forEach((batchId, i) => {
-      const start = html.indexOf(`class="batch-id" title="${batchId}"`);
+      const start = html.indexOf(`aria-label="Select all drafts in batch ${shortUlid(batchId)}"`);
       expect(start, `batch ${batchId} rendered in batch order`).toBeGreaterThan(-1);
-      const end = i + 1 < pageBatchOrder.length ? html.indexOf(`class="batch-id" title="${pageBatchOrder[i + 1]!}"`) : html.length;
+      const end = i + 1 < pageBatchOrder.length ? html.indexOf(`aria-label="Select all drafts in batch ${shortUlid(pageBatchOrder[i + 1]!)}"`) : html.length;
       const texts = textsByBatch
         .get(batchId)!
         .sort((a, b) => a.id.localeCompare(b.id))
@@ -230,10 +244,9 @@ describe("dashboard entry list", () => {
       expectOrder(html.slice(start, end), texts);
     });
 
-    // A row carries the select checkbox, the basename-prefixed proposed text, the status tag, and actions.
+    // A row carries the select checkbox, the basename-prefixed proposed text, and the action slots.
     expect(html).toContain(">Select</th>");
     expect(html).toContain(">Text</th>");
-    expect(html).toContain(">Status</th>");
     expect(html).toContain(">Actions</th>");
     expect(html).toContain('class="tag tag-warning"><span class="tag-dot"></span>Draft</span>');
     expect(html).toContain('class="tag tag-success"><span class="tag-dot"></span>Approved</span>');
@@ -244,7 +257,7 @@ describe("dashboard entry list", () => {
     expect(html).toContain('title="docs/setup.md — Run bun install"');
   });
 
-  test("batch header shows the filer, shortened id, and constraint count", async () => {
+  test("batch header shows the filer only when every entry agrees on one", async () => {
     const html = await (await env.get("/")).text();
 
     // A single-filer batch names that filer once in its header; batchA and batchD are both
@@ -255,23 +268,13 @@ describe("dashboard entry list", () => {
     const cHeader = batchHeader(html, batchC.batchId);
     expect(cHeader).not.toContain("filer");
     expect(cHeader).not.toContain("probe-agent");
-
-    // The full ulid stays in the title; the visible text is head+tail joined by an ellipsis.
-    const shortA = `${batchA.batchId.slice(0, 6)}…${batchA.batchId.slice(-6)}`;
-    expect(html).toContain(`class="batch-id" title="${batchA.batchId}">${shortA}</span>`);
-
-    // Constraint count appears only when non-zero: batchA has one constrained entry, batchB two.
-    expect(html).toContain('<span class="batch-meta">1 with constraints</span>');
-    expect(html).toContain('<span class="batch-meta">2 with constraints</span>');
-    expect(cHeader).not.toContain("constraint");
   });
 
-  test("a mixed-filer batch names neither in the header and labels each row inline", async () => {
+  test("a mixed-filer batch names no filer in the header and labels each row inline", async () => {
     const html = await (await env.get("/")).text();
 
-    // batchB holds two filers (probe-agent and other-agent): the header names neither, only the count.
+    // batchB holds two filers (probe-agent and other-agent): the header names neither.
     const bHeader = batchHeader(html, batchB.batchId);
-    expect(bHeader).toContain('<span class="batch-meta">2 filers</span>');
     expect(bHeader).not.toContain("probe-agent");
     expect(bHeader).not.toContain("other-agent");
 
@@ -280,7 +283,7 @@ describe("dashboard entry list", () => {
     expect(html).toContain('<span class="entry-filer"> · probe-agent</span>');
   });
 
-  test("a batch mixing a filer with an unfiled entry names a count and labels only the filed row", async () => {
+  test("a batch mixing a filer with an unfiled entry labels only the filed row", async () => {
     const mixed = serveApp();
     try {
       const filed = fileEntries(mixed.store, "alpha", "solo-agent", [
@@ -291,7 +294,6 @@ describe("dashboard entry list", () => {
       mixed.store.db.run("UPDATE entries SET filed_by = NULL WHERE id = ?", [filed.results[1]!.id]);
       const html = await (await mixed.get("/")).text();
       const header = batchHeader(html, filed.batchId);
-      expect(header).toContain("1 filer");
       expect(header).not.toContain("solo-agent");
       expect(html).toContain('<span class="entry-filer"> · solo-agent</span>');
     } finally {
@@ -316,6 +318,44 @@ describe("dashboard entry list", () => {
     expect(html).toContain(
       'class="btn btn-primary btn-sm" type="submit" hx-disabled-elt="this">Approve selected</button>',
     );
+  });
+
+  test("renders three icon action slots per status", async () => {
+    const html = await (await env.get("/")).text();
+
+    // Draft: approve and reject are enabled, edit is always a live link.
+    const draftId = batchA.results[0]!.id;
+    const draftActions = entryActions(html, draftId);
+    expect(draftActions).toContain('aria-label="Approve docs/setup.md"');
+    expect(draftActions).toContain(`title="Approve" hx-post="/entries/${draftId}/approve"`);
+    expect(draftActions).toContain('aria-label="Reject docs/setup.md"');
+    expect(draftActions).toContain(`title="Reject" hx-post="/entries/${draftId}/reject"`);
+    expect(draftActions).toContain('aria-label="Edit docs/setup.md"');
+    expect(draftActions).toContain(`href="/entries/${draftId}"`);
+
+    // Approved: approve is disabled, reject enabled, edit present.
+    const approvedId = batchA.results[1]!.id;
+    const approvedActions = entryActions(html, approvedId);
+    expect(approvedActions).toContain('aria-label="Approve docs/cache.md"');
+    expect(approvedActions).toContain('title="Approve" disabled');
+    expect(approvedActions).not.toContain(`hx-post="/entries/${approvedId}/approve"`);
+    expect(approvedActions).toContain(`title="Reject" hx-post="/entries/${approvedId}/reject"`);
+    expect(approvedActions).toContain(`href="/entries/${approvedId}"`);
+
+    // Applied and rejected: approve and reject are both disabled; edit stays.
+    for (const [id, file] of [
+      [batchB.results[0]!.id, "LICENSE.md"],
+      [batchB.results[1]!.id, "README.md"],
+    ] as const) {
+      const actions = entryActions(html, id);
+      expect(actions).toContain(`aria-label="Approve ${file}"`);
+      expect(actions).toContain('title="Approve" disabled');
+      expect(actions).toContain(`aria-label="Reject ${file}"`);
+      expect(actions).toContain('title="Reject" disabled');
+      expect(actions).not.toContain(`hx-post="/entries/${id}/approve"`);
+      expect(actions).not.toContain(`hx-post="/entries/${id}/reject"`);
+      expect(actions).toContain(`href="/entries/${id}"`);
+    }
   });
 
   test("filters by search text over the same columns as the mcp tool", async () => {
