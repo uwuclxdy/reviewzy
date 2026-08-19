@@ -97,6 +97,18 @@ the plugin registers the MCP server and adds a `/reviewzy` slash command plus th
 /plugin install reviewzy@reviewzy
 ```
 
+#### run a checkout as the plugin (dev)
+
+the marketplace above pins the published version. to run your local checkout instead, first repoint the plugin's mcp server at the linked binary: in `.claude-plugin/plugin.json`, change `mcpServers.reviewzy.command` from `bunx` to `reviewzy` and drop `args`. keep that edit uncommitted. the committed value stays `bunx reviewzy@latest` for publish. then, from the checkout root:
+
+```sh
+bun link                              # reviewzy on PATH, symlinked to bin/reviewzy
+claude plugin marketplace add ./      # register the checkout as a marketplace
+claude plugin install reviewzy@reviewzy
+```
+
+the shared daemon is keyed on version: a same-version daemon already running from npm keeps serving. bump `version` in `package.json` (the shim then drains it) or kill the daemon before `src/` edits reach it.
+
 ## Usage
 
 ```sh
