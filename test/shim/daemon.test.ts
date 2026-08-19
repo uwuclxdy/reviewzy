@@ -495,6 +495,40 @@ describe("version handoff", () => {
   );
 
   test(
+    "dev mode drains an equal-version daemon and respawns a fresh one",
+    async () => {
+      const { lockfile, env } = isolate();
+      const port = await freePort();
+      const real = spawnRealDaemon(env(port));
+      const health = await waitHealthy(port);
+      writeLockfileAtomic(lockfile, { pid: health.pid, port, version: health.version, nonce: health.nonce });
+
+      let spawns = 0;
+      const handle = await ensureDaemon({
+        lockfile,
+        port,
+        shimVersion: VERSION,
+        dev: true,
+        env: env(port),
+        spawnDaemon: (childEnv) => {
+          spawns += 1;
+          const pid = spawnDetachedDaemon(childEnv, lockfile);
+          tracked.add(pid);
+          return pid;
+        },
+      });
+      track(handle.pid);
+
+      expect(spawns).toBe(1);
+      expect(handle.pid).not.toBe(real.pid);
+      expect(await real.exit).toBe(0);
+      expect((await fetchHealth(port))?.pid).toBe(handle.pid);
+      expect(listenersOn(port)).toBe(1);
+    },
+    45_000,
+  );
+
+  test(
     "a guarded daemon refuses a drain from the wrong bearer token and answers the right one",
     async () => {
       const { lockfile, env } = isolate();

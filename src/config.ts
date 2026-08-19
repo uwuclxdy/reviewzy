@@ -11,6 +11,10 @@ const ConfigSchema = z.object({
   REVIEWZY_DB: z.string().min(1).default(defaultDbPath),
   REVIEWZY_BASE_URL: z.url().optional(),
 
+  // Dev only: `1` makes the shim drain and respawn the daemon on every session start, so checkout
+  // `src/` edits reach it without a version bump. Unset (or empty) is off; any other value refuses.
+  REVIEWZY_DEV: z.literal("1").optional(),
+
   REVIEWZY_TOKEN: z.string().min(1).optional(),
   DASHBOARD_PASSWORD: z.string().min(1).optional(),
 

@@ -31,6 +31,13 @@ describe("loadConfig", () => {
     const config = loadConfig({ REVIEWZY_BASE_URL: "https://copy.example.com" });
     expect(config.baseUrl).toBe("https://copy.example.com");
   });
+
+  test("REVIEWZY_DEV is unset by default and accepts only `1`", () => {
+    expect(loadConfig({}).REVIEWZY_DEV).toBeUndefined();
+    expect(loadConfig({ REVIEWZY_DEV: "" }).REVIEWZY_DEV).toBeUndefined();
+    expect(loadConfig({ REVIEWZY_DEV: "1" }).REVIEWZY_DEV).toBe("1");
+    expect(() => loadConfig({ REVIEWZY_DEV: "0" })).toThrow(/REVIEWZY_DEV/);
+  });
 });
 
 describe("startupWarnings", () => {

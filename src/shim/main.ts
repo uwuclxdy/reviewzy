@@ -135,6 +135,7 @@ export async function runShim(): Promise<void> {
     port: config.REVIEWZY_PORT,
     shimVersion: VERSION,
     token: config.REVIEWZY_TOKEN,
+    dev: config.REVIEWZY_DEV === "1",
     env: process.env,
   });
   console.error(

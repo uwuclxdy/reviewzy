@@ -184,6 +184,8 @@ export type EnsureDaemonOptions = {
   port: number;
   /** The shim's own package version, compared semantically against the daemon's `/health` version. */
   shimVersion: string;
+  /** Dev mode (`REVIEWZY_DEV=1`): drain and respawn even when the daemon's version is not older. */
+  dev?: boolean | undefined;
   /** The bearer token for `/drain` and `/mcp` when `REVIEWZY_TOKEN` is set. */
   token?: string | undefined;
   /** The environment the spawned daemon inherits. */
@@ -193,10 +195,21 @@ export type EnsureDaemonOptions = {
 };
 
 /**
+ * Why the shim must drain the running daemon, or null when it may be adopted: the shim's version
+ * outranks the daemon's (the production update handoff), or dev mode forces a reload so checkout
+ * `src/` edits reach the daemon without a version bump.
+ */
+function drainReason(shimVersion: string, daemonVersion: string, dev: boolean): string | null {
+  if (dev) return "dev mode reloads checkout source";
+  const rank = compareSemver(shimVersion, daemonVersion);
+  return rank !== null && rank > 0 ? `shim ${shimVersion} outranks daemon ${daemonVersion}` : null;
+}
+
+/**
  * Returns a live daemon handle, spawning or handshaking a handoff as needed:
  *
  * 1. A live, reviewzy-owned daemon named by a valid lockfile is adopted (and drained first, when
- *    the shim's version semantically outranks the daemon's).
+ *    the shim's version semantically outranks the daemon's, or when dev mode is set).
  * 2. Otherwise, under an exclusive claim, the shim re-checks for a live daemon (another shim may
  *    have finished while this one waited), spawns the daemon detached, waits for `/health`, and
  *    writes the lockfile from the health body — so the recorded pid is always the process that is
@@ -208,11 +221,9 @@ export async function ensureDaemon(options: EnsureDaemonOptions): Promise<Daemon
   for (let attempt = 0; attempt < ATTEMPTS; attempt++) {
     const live = await liveDaemon(options.lockfile);
     if (live !== null) {
-      const rank = compareSemver(options.shimVersion, live.health.version);
-      if (rank !== null && rank > 0) {
-        console.error(
-          `reviewzy: shim ${options.shimVersion} outranks daemon ${live.health.version}; draining pid ${live.health.pid}`,
-        );
+      const reason = drainReason(options.shimVersion, live.health.version, options.dev === true);
+      if (reason !== null) {
+        console.error(`reviewzy: ${reason}; draining pid ${live.health.pid}`);
         await drainAndAwaitExit(live.lock, options.token);
         // Falls through to the spawn phase; the drained daemon is gone and cannot be adopted.
       } else {
@@ -234,11 +245,9 @@ export async function ensureDaemon(options: EnsureDaemonOptions): Promise<Daemon
         // The same version rung the adopt path applies: a raced daemon was fully booted before the
         // winning shim released the claim (release follows the health wait), so draining it here
         // cannot interrupt a boot.
-        const rank = compareSemver(options.shimVersion, raced.health.version);
-        if (rank !== null && rank > 0) {
-          console.error(
-            `reviewzy: shim ${options.shimVersion} outranks raced daemon ${raced.health.version}; draining pid ${raced.health.pid}`,
-          );
+        const reason = drainReason(options.shimVersion, raced.health.version, options.dev === true);
+        if (reason !== null) {
+          console.error(`reviewzy: ${reason}; draining pid ${raced.health.pid}`);
           await drainAndAwaitExit(raced.lock, options.token);
           // Falls through to the spawn phase; the claim is already ours.
         } else {
@@ -289,11 +298,9 @@ export async function ensureDaemon(options: EnsureDaemonOptions): Promise<Daemon
             version: incumbent.version,
             nonce: incumbent.nonce,
           };
-          const rank = compareSemver(options.shimVersion, incumbent.version);
-          if (rank !== null && rank > 0) {
-            console.error(
-              `reviewzy: shim ${options.shimVersion} outranks incumbent daemon ${incumbent.version}; draining pid ${incumbent.pid}`,
-            );
+          const reason = drainReason(options.shimVersion, incumbent.version, options.dev === true);
+          if (reason !== null) {
+            console.error(`reviewzy: ${reason}; draining pid ${incumbent.pid}`);
             await drainAndAwaitExit(incumbentLock, options.token);
             return spawnAndVerify();
           }
