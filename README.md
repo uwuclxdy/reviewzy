@@ -99,7 +99,7 @@ the plugin registers the MCP server and adds a `/reviewzy` slash command plus th
 
 #### run a checkout as the plugin (dev)
 
-the marketplace above pins the published version. to run your local checkout instead, first repoint the plugin's mcp server at the linked binary: in `.claude-plugin/plugin.json`, change `mcpServers.reviewzy.command` from `bunx` to `reviewzy` and drop `args`. keep that edit uncommitted. the committed value stays `bunx reviewzy@latest` for publish. then, from the checkout root:
+the marketplace above pins the published version. to run your local checkout instead, first repoint the plugin's mcp server at the linked binary: in `.claude-plugin/plugin.json`, change `mcpServers.reviewzy.command` from `bunx` to `reviewzy`, drop `args`, and add `env: { "REVIEWZY_DEV": "1" }` so the shim drains and respawns the daemon from the checkout on every session start. keep that edit uncommitted. the committed value stays `bunx reviewzy@latest` for publish. then, from the checkout root:
 
 ```sh
 bun link                              # reviewzy on PATH, symlinked to bin/reviewzy
@@ -107,7 +107,7 @@ claude plugin marketplace add ./      # register the checkout as a marketplace
 claude plugin install reviewzy@reviewzy
 ```
 
-the shared daemon is keyed on version: a same-version daemon already running from npm keeps serving, so `src/` edits never reach it. set `REVIEWZY_DEV=1` in `.env` to make the shim drain and respawn the daemon from the checkout on every session start instead. bumping `version` or killing the daemon is the manual fallback.
+without `REVIEWZY_DEV=1`, the shared daemon is keyed on version: a same-version daemon already running from npm keeps serving, so `src/` edits never reach it. bumping `version` or killing the daemon is the manual fallback.
 
 ## Usage
 
