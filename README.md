@@ -107,7 +107,7 @@ claude plugin marketplace add ./      # register the checkout as a marketplace
 claude plugin install reviewzy@reviewzy
 ```
 
-the shared daemon is keyed on version: a same-version daemon already running from npm keeps serving. bump `version` in `package.json` (the shim then drains it) or kill the daemon before `src/` edits reach it.
+the shared daemon is keyed on version: a same-version daemon already running from npm keeps serving, so `src/` edits never reach it. set `REVIEWZY_DEV=1` in `.env` to make the shim drain and respawn the daemon from the checkout on every session start instead. bumping `version` or killing the daemon is the manual fallback.
 
 ## Usage
 
@@ -130,6 +130,7 @@ copy `.env.example` to `.env` and edit. every key is optional; a bad value refus
 | `REVIEWZY_PORT` | `3123` | dashboard and mcp port; the bind is `127.0.0.1` always |
 | `REVIEWZY_DB` | `~/.local/share/reviewzy/reviewzy.db` | sqlite file (`$XDG_DATA_HOME` respected) |
 | `REVIEWZY_BASE_URL` | `http://127.0.0.1:$REVIEWZY_PORT` | dashboard url used in notification links |
+| `REVIEWZY_DEV` | unset | set to `1` to drain and respawn the daemon from the checkout on every session start (dev only) |
 | `REVIEWZY_TOKEN` | unset | bearer token guarding mcp; set it and it is required |
 | `DASHBOARD_PASSWORD` | unset | dashboard login; set it and it is required |
 | `ARCHIVE_AFTER_DAYS` | `90` | days an applied entry waits before archiving |
