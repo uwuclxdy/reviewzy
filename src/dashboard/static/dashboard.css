@@ -205,6 +205,9 @@
 /* The editor's title card header: the title falls back to the anchor text, which can be one long
    unbroken string, so it wraps inside the card instead of overflowing or shoving the status pill. */
 .editor-title { min-width: 0; overflow-wrap: anywhere; }
+/* The entry text ships verbatim, often carrying markdown backticks and significant whitespace;
+   mono gives every glyph, space included, one full cell so both stay countable while editing. */
+#editor-text { font-family: var(--font-mono); }
 
 /* ---- Editor prev/next rails ----
    One full-height fixed strip per side, below the 56px navbar, so the previous and next entries are
