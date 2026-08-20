@@ -13,6 +13,7 @@ import type { EntryRow, EntryStatus } from "../db/queries.ts";
 import { readStyleGuideSection } from "../db/style-guide.ts";
 import type { StyleGuideForm, StyleGuideFormRefusal, StyleGuideInput } from "../db/style-guide.ts";
 import type { Store } from "../db/store.ts";
+import { parseRepoLink, REPO_ICON } from "./repo-link.ts";
 import { NAME, VERSION } from "../version.ts";
 
 /**
@@ -958,6 +959,23 @@ function ConstraintsCard({ constraints, text }: { constraints: Constraints; text
   );
 }
 
+/**
+ * The repo row's value: a recognized remote renders as its brand icon beside the bare owner/repo
+ * path, both linking out to the host; an unrecognized one renders as the raw string as filed.
+ */
+function RepoValue({ repo }: { repo: string }) {
+  const link = parseRepoLink(repo);
+  if (link === null) return <>{repo}</>;
+  return (
+    <a class="repo-link" href={link.href} target="_blank" rel="noopener noreferrer" title={repo}>
+      <svg class="repo-icon" viewBox="0 0 24 24" aria-hidden="true">
+        <path d={REPO_ICON[link.provider]} />
+      </svg>
+      <span>{link.path}</span>
+    </a>
+  );
+}
+
 /** The entry's context JSON plus its anchor metadata, as an info-table readout. */
 function ContextCard({ entry }: { entry: EntryRow }) {
   const context = parseContext(entry.context);
@@ -976,7 +994,7 @@ function ContextCard({ entry }: { entry: EntryRow }) {
           ))}
           <tr>
             <td>Repo</td>
-            <td>{entry.repo}</td>
+            <td><RepoValue repo={entry.repo} /></td>
           </tr>
           <tr>
             <td>File</td>

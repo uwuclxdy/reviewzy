@@ -152,6 +152,22 @@ describe("editor page", () => {
     env.close();
   });
 
+  test("links a recognized repo to its host with a brand icon and a shortened path", async () => {
+    const { env, id } = envWithDraft({ repo: "https://github.com/uwuclxdy/clauth.git" });
+    const html = await (await env.get(`/entries/${id}`)).text();
+
+    expect(html).toContain('class="repo-link" href="https://github.com/uwuclxdy/clauth"');
+    expect(html).toContain('target="_blank" rel="noopener noreferrer"');
+    expect(html).toContain('title="https://github.com/uwuclxdy/clauth.git"');
+    expect(html).toContain('class="repo-icon"');
+    // The github octocat glyph leads the icon's path data.
+    expect(html).toContain("M12 .297");
+    expect(html).toContain(">uwuclxdy/clauth</span>");
+    // The raw remote no longer sits in the value cell; only the shortened path does.
+    expect(html).not.toContain("https://github.com/uwuclxdy/clauth.git</td>");
+    env.close();
+  });
+
   test("shows the entry title in place of the bare 'Text' label and renders inert rails for a lone entry", async () => {
     const { env, id } = envWithDraft({ title: "Setup wording" });
     const html = await (await env.get(`/entries/${id}`)).text();

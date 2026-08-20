@@ -245,6 +245,11 @@
 .placeholder-item { display: flex; align-items: center; gap: var(--space-2); }
 .placeholder-state { font-size: var(--text-xs); color: var(--text-dim); min-width: 52px; }
 .placeholder-state.is-present { color: var(--success); }
+
+/* Repo row link: the brand icon beside the shortened owner/repo path, linking out to the host. */
+.repo-link { display: inline-flex; align-items: center; gap: 6px; color: var(--text); text-decoration: none; }
+.repo-link:hover { color: var(--accent); }
+.repo-icon { width: 14px; height: 14px; flex-shrink: 0; fill: currentColor; opacity: 0.7; }
 .placeholder-token { font: 400 var(--text-sm)/1 var(--font-mono); color: var(--text); background: var(--bg-sunken); border: 1px solid var(--line); border-radius: var(--radius); padding: 2px 6px; }
 
 /* Revision history: newest first; the text clamps like the list's entry text. */
