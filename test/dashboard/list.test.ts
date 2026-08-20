@@ -248,6 +248,7 @@ describe("dashboard entry list", () => {
     // A row carries the select checkbox, the title, the file path, and the action slots.
     expect(html).toContain(">Select</th>");
     expect(html).toContain(">Title</th>");
+    expect(html).toContain(">Status</th>");
     expect(html).toContain(">File</th>");
     expect(html).toContain(">Actions</th>");
     expect(html).toContain('class="tag tag-warning">Draft</span>');

@@ -47,10 +47,10 @@
 
 /* ---- Entry table cells ----
    The table lays out fixed with a colgroup so the title column takes the remainder and the row
-   never overflows; select, file, and actions are the fixed columns. The title leads (agent-supplied,
-   else the anchor text), the status chip sits beside it, and the file path is its own dim mono
-   column. */
+   never overflows; select, status, file, and actions are the fixed columns. The status pill has
+   its own column, so the title truncates at one consistent point and the pill stays tight. */
 .col-select { width: 80px; }
+.col-status { width: 106px; }
 .col-file { width: 200px; }
 .col-actions { width: 120px; }
 .entry-head {
@@ -67,9 +67,6 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
-/* A uniform width (the widest label, Approved, plus breathing room) so the pill's left edge is
-   constant across rows and the title column truncates at one consistent point. */
-.entry-head .tag { flex-shrink: 0; min-width: 74px; justify-content: center; }
 .entry-filer {
   flex-shrink: 0;
   font-size: var(--text-xs);

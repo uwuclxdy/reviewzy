@@ -421,6 +421,7 @@ function ProjectGroupView({ group }: { group: ProjectGroup }) {
                 <colgroup>
                   <col class="col-select" />
                   <col />
+                  <col class="col-status" />
                   <col class="col-file" />
                   <col class="col-actions" />
                 </colgroup>
@@ -428,6 +429,7 @@ function ProjectGroupView({ group }: { group: ProjectGroup }) {
                   <tr>
                     <th>Select</th>
                     <th>Title</th>
+                    <th>Status</th>
                     <th>File</th>
                     <th>Actions</th>
                   </tr>
@@ -471,10 +473,10 @@ function EntryRowView({ entry, filerInline }: { entry: EntryRow; filerInline: bo
         <div class="entry-head">
           <span class="entry-title">{title}</span>
           {filerInline && entry.filed_by !== null ? <span class="entry-filer"> · {entry.filed_by}</span> : null}
-          <span class={`tag ${STATUS_TAG[entry.status]}`}>
-            {STATUS_LABEL[entry.status]}
-          </span>
         </div>
+      </td>
+      <td class="cell-status">
+        <span class={`tag ${STATUS_TAG[entry.status]}`}>{STATUS_LABEL[entry.status]}</span>
       </td>
       <td class="cell-file" title={entry.file}>{entry.file}</td>
       <td class="cell-actions">
