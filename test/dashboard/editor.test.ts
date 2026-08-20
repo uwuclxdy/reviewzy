@@ -36,6 +36,7 @@ afterEach(() => {
 const FIXTURE: NewEntry = {
   repo: "https://example.com/org/repo.git",
   file: "docs/setup.md",
+  title: null,
   anchorText: "Run bun install",
   anchorBefore: "Run this before anything else.",
   anchorAfter: "Then run the tests.",
@@ -148,6 +149,46 @@ describe("editor page", () => {
     // Revision history: settled empty state, not a loading state.
     expect(html).toContain("Revision history");
     expect(html).toContain("No saved revisions yet");
+    env.close();
+  });
+
+  test("shows the entry title in place of the bare 'Text' label and renders inert rails for a lone entry", async () => {
+    const { env, id } = envWithDraft({ title: "Setup wording" });
+    const html = await (await env.get(`/entries/${id}`)).text();
+
+    expect(html).toContain('<div class="card-title editor-title">Setup wording</div>');
+    expect(html).not.toContain('<div class="card-title">Text</div>');
+    // A lone entry has no neighbour in the list walk, so both rails render inert.
+    expect(html).toContain('class="editor-nav-btn editor-nav-prev is-disabled"');
+    expect(html).toContain('class="editor-nav-btn editor-nav-next is-disabled"');
+    expect(html).not.toContain('aria-label="Previous entry"');
+    expect(html).not.toContain('aria-label="Next entry"');
+    env.close();
+  });
+
+  test("links prev/next to the adjacent entries in id order, inert at the boundaries", async () => {
+    const env = openEnv();
+    const batch = fileEntries(env.store, "alpha", "probe-agent", [
+      draftEntry({ file: "a.md", anchorText: "a", anchorHash: "ha", fileHash: "fa", agentDraft: "A" }),
+      draftEntry({ file: "b.md", anchorText: "b", anchorHash: "hb", fileHash: "fb", agentDraft: "B" }),
+      draftEntry({ file: "c.md", anchorText: "c", anchorHash: "hc", fileHash: "fc", agentDraft: "C" }),
+    ]);
+    // The walk is by ascending id, so sort the ids to know which is first, middle, last.
+    const [first, middle, last] = batch.results.map((r) => r.id).sort();
+
+    const html = await (await env.get(`/entries/${middle}`)).text();
+    expect(html).toContain(`href="/entries/${first}"`);
+    expect(html).toContain('aria-label="Previous entry"');
+    expect(html).toContain(`href="/entries/${last}"`);
+    expect(html).toContain('aria-label="Next entry"');
+
+    const firstHtml = await (await env.get(`/entries/${first}`)).text();
+    expect(firstHtml).toContain('class="editor-nav-btn editor-nav-prev is-disabled"');
+    expect(firstHtml).toContain(`href="/entries/${middle}"`);
+
+    const lastHtml = await (await env.get(`/entries/${last}`)).text();
+    expect(lastHtml).toContain('class="editor-nav-btn editor-nav-next is-disabled"');
+    expect(lastHtml).toContain(`href="/entries/${middle}"`);
     env.close();
   });
 

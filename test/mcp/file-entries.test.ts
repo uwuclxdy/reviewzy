@@ -314,6 +314,28 @@ describe("re-file semantics", () => {
     expect(rows(first.store, "refile").length).toBe(1);
   });
 
+  test("a supplied title is stored, a re-file omitting it keeps the value, and a new title overwrites it", async () => {
+    const filed = (await fileEntries({ project: "title", entries: [entry({ title: "Hero button copy" })] })).body.result
+      ?.structuredContent as Result;
+    const id = filed.results[0]!.id;
+    expect(rows(first.store, "title")[0]?.title).toBe("Hero button copy");
+
+    // A re-file that omits title keeps the stored one, like the other agent fields.
+    const redone = await fileEntries({ project: "title", entries: [entry()] });
+    expect((redone.body.result?.structuredContent as Result).results[0]).toMatchObject({
+      id,
+      status: "draft",
+      deduped: true,
+      updated: true,
+    });
+    expect(rows(first.store, "title")[0]?.title).toBe("Hero button copy");
+
+    // A re-file carrying a new title overwrites it in place, minting no second row.
+    await fileEntries({ project: "title", entries: [entry({ title: "Hero CTA" })] });
+    expect(rows(first.store, "title")[0]?.title).toBe("Hero CTA");
+    expect(rows(first.store, "title").length).toBe(1);
+  });
+
   /**
    * The wipe this pins: before the COALESCE fix, a re-file that did not carry a field replaced it
    * with the empty default — draft became NULL, context and constraints became "{}".

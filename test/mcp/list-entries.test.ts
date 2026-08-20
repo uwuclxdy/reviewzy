@@ -146,7 +146,7 @@ describe("the returned rows", () => {
     const stored = rows(first.store, "fields")[0]!;
 
     const FIELDS = [
-      "id", "project_id", "batch_id", "repo", "file", "anchor_text", "anchor_before",
+      "id", "project_id", "batch_id", "repo", "file", "title", "anchor_text", "anchor_before",
       "anchor_after", "anchor_hash", "file_hash", "agent_draft", "human_text", "status",
       "context", "constraints", "filed_by", "stale_note", "applied_hash", "created_at", "updated_at", "applied_at", "archived_at",
     ];
@@ -163,6 +163,13 @@ describe("the returned rows", () => {
     const relisted = (await listEntries({ project: "fields" })).body.result
       ?.structuredContent as ListResult;
     expect(relisted.entries[0]?.applied_hash).toBe("a".repeat(64));
+
+    // title round-trips the same way: write one and re-list, so a null wire value cannot hide a
+    // schema omission.
+    first.store.db.run("UPDATE entries SET title = ? WHERE id = ?", ["Dashboard label", out.id as string]);
+    const retitled = (await listEntries({ project: "fields" })).body.result
+      ?.structuredContent as ListResult;
+    expect(retitled.entries[0]?.title).toBe("Dashboard label");
 
     expect(typeof out.context).toBe("string");
     expect(JSON.parse(out.context as string)).toEqual(entry().context);

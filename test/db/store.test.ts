@@ -133,7 +133,7 @@ describe("openStore", () => {
     const store = openTempStore();
     const version = (store.db.query("PRAGMA user_version").get() as { user_version: number })
       .user_version;
-    expect(version).toBe(3);
+    expect(version).toBe(4);
     store.close();
   });
 
@@ -200,7 +200,7 @@ describe("openStore", () => {
     const second = openStore(configWithDb(dbPath));
     const version = (second.db.query("PRAGMA user_version").get() as { user_version: number })
       .user_version;
-    expect(version).toBe(3);
+    expect(version).toBe(4);
 
     const row = second.db.query("SELECT slug FROM projects WHERE id = ?").get(project.id) as {
       slug: string;
@@ -499,6 +499,17 @@ describe("timestamps", () => {
         (c) => c.name,
       );
       expect(columns, table).toContain("applied_hash");
+    }
+    store.close();
+  });
+
+  test("title exists and is nullable on entries and entries_archive (migration 4)", () => {
+    const store = openTempStore();
+    for (const table of ["entries", "entries_archive"]) {
+      const columns = (store.db.query(`PRAGMA table_info(${table})`).all() as { name: string; notnull: number }[]);
+      const title = columns.find((c) => c.name === "title");
+      expect(title, `${table}.title column`).toBeDefined();
+      expect(title?.notnull, `${table}.title is nullable`).toBe(0);
     }
     store.close();
   });

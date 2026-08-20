@@ -42,6 +42,7 @@ const ConstraintsJson = z.strictObject({
 const FileEntryArgs = z.object({
   repo: z.string().min(1),
   file: z.string().min(1),
+  title: z.string().min(1).optional(),
   anchor_text: z.string().min(1),
   anchor_before: z.string().optional(),
   anchor_after: z.string().optional(),
@@ -152,6 +153,7 @@ function validateEntry(index: number, raw: z.output<typeof FileEntryArgs>): NewE
   return {
     repo: raw.repo,
     file: raw.file,
+    title: raw.title ?? null,
     anchorText: raw.anchor_text,
     anchorBefore: raw.anchor_before ?? "",
     anchorAfter: raw.anchor_after ?? "",
@@ -177,7 +179,7 @@ export function registerFileEntriesTool(server: McpServer, baseUrl: string, stor
     {
       title: "File entries for review",
       description:
-        "File draft entries for a human to author or approve. Each entry names one exact string to replace: repo (git remote url preferred), file path, anchor_text, and anchor_before/anchor_after context lines. Identity is (project, repo, file, sha256(anchor_text)): re-filing a known draft overwrites the agent draft, context, and constraints in place; an entry already approved, applied, or rejected is returned untouched with its own status, and a rejected anchor stays rejected — stop proposing a turned-down line. file provenance: send exactly one of file_content (the whole file at filing time; the server hashes it) or file_hash (its sha256 hex). constraints: {max_len?, placeholders?: string[], tone?, notes?} — a save breaking max_len or dropping a placeholder is refused later, so declare what the copy must keep. Keys the schema does not list are ignored.",
+        "File draft entries for a human to author or approve. Each entry names one exact string to replace: repo (git remote url preferred), file path, an optional title (a human-readable label the dashboard shows in place of the file path), anchor_text, and anchor_before/anchor_after context lines. Identity is (project, repo, file, sha256(anchor_text)): re-filing a known draft overwrites the agent draft, context, and constraints in place; an entry already approved, applied, or rejected is returned untouched with its own status, and a rejected anchor stays rejected — stop proposing a turned-down line. file provenance: send exactly one of file_content (the whole file at filing time; the server hashes it) or file_hash (its sha256 hex). constraints: {max_len?, placeholders?: string[], tone?, notes?} — a save breaking max_len or dropping a placeholder is refused later, so declare what the copy must keep. Keys the schema does not list are ignored.",
       inputSchema: z.object({
         project: z.string().min(1),
         entries: z.array(FileEntryArgs).min(1),

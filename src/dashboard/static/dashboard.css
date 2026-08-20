@@ -46,36 +46,41 @@
 .batch-meta { font: 400 var(--text-xs)/1 var(--font-sans); color: var(--text-faint); }
 
 /* ---- Entry table cells ----
-   The table lays out fixed with a colgroup so the prose column takes the remainder and the
-   row never overflows at 1280px; select and actions are the fixed columns. The file basename
-   prefixes the prose, mono and dim, so two rows proposing similar text stay distinguishable; the
-   status chip sits beside it in the entry-head row, and the cell title carries the full path and
-   anchor. */
+   The table lays out fixed with a colgroup so the title column takes the remainder and the row
+   never overflows; select, file, and actions are the fixed columns. The title leads (agent-supplied,
+   else the anchor text), the status chip sits beside it, and the file path is its own dim mono
+   column. */
 .col-select { width: 80px; }
+.col-file { width: 200px; }
 .col-actions { width: 120px; }
 .entry-head {
   display: flex;
   align-items: center;
   gap: var(--space-2);
-  margin-bottom: 2px;
 }
-.entry-file {
+.entry-title {
   flex: 1 1 auto;
   min-width: 0;
-  font-family: var(--font-mono);
-  font-size: var(--text-xs);
-  line-height: 1.4;
-  color: var(--text-faint);
+  font: 450 var(--text-base)/1.4 var(--font-sans);
+  color: var(--text);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 .entry-head .tag { flex-shrink: 0; }
-.entry-text {
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
+.entry-filer {
+  flex-shrink: 0;
+  font-size: var(--text-xs);
+  color: var(--text-faint);
+  white-space: nowrap;
+}
+.cell-file {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--text-faint);
+  white-space: nowrap;
   overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* ---- Row actions and batch approve ----
@@ -154,6 +159,32 @@
   .editor-grid { grid-template-columns: 1fr; }
   .editor-rail { position: static; }
 }
+/* The editor's title card header: the title falls back to the anchor text, which can be one long
+   unbroken string, so it wraps inside the card instead of overflowing or shoving the status pill. */
+.editor-title { min-width: 0; overflow-wrap: anywhere; }
+
+/* ---- Editor prev/next rails ----
+   One full-height fixed strip per side, below the 56px navbar, so the previous and next entries are
+   a single click away while reading. The strip sits inside the 48px page padding, clear of content. */
+.editor-nav-btn {
+  position: fixed;
+  top: 56px;
+  bottom: 0;
+  width: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-dim);
+  text-decoration: none;
+  z-index: 40;
+  transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+}
+.editor-nav-prev { left: 0; }
+.editor-nav-next { right: 0; }
+.editor-nav-btn:hover { background: var(--bg-hover); color: var(--text); }
+.editor-nav-btn.is-disabled { color: var(--text-faint); opacity: 0.4; pointer-events: none; }
+.editor-nav-btn svg { width: 18px; height: 18px; }
+@media (max-width: 900px) { .editor-nav { display: none; } }
 #editor-region > .callout { margin-bottom: var(--space-4); }
 #editor-region > .btn { margin-top: var(--space-4); }
 .editor-actions { margin-top: var(--space-4); display: flex; align-items: center; gap: var(--space-2); }

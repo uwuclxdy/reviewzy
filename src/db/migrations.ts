@@ -146,4 +146,16 @@ export const MIGRATIONS: Migration[] = [
       ALTER TABLE entries_archive ADD COLUMN applied_hash TEXT;
     `,
   },
+  {
+    version: 4,
+    name: "entry-title",
+    sql: `
+      -- An optional human-readable label the dashboard shows in place of the file basename, so a
+      -- row reads as what it changes rather than where it lives (cloudy, 2026-08-20). Nullable:
+      -- an entry without one falls back to its anchor text at render. The archive mirrors entries
+      -- column-for-column, so it gains the column too.
+      ALTER TABLE entries ADD COLUMN title TEXT;
+      ALTER TABLE entries_archive ADD COLUMN title TEXT;
+    `,
+  },
 ];

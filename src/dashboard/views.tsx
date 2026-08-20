@@ -3,6 +3,7 @@ import type { JSX } from "hono/jsx/jsx-runtime";
 import { listRevisions, parseConstraints } from "../db/human-save.ts";
 import type { Constraints, HumanSaveRefusal, RevisionRow, TransitionRefusal } from "../db/human-save.ts";
 import {
+  adjacentEntryIds,
   countEntries,
   listEntries,
   listProjects,
@@ -137,6 +138,19 @@ function loadList(store: Store, params: ListParams): ListViewModel {
 /** The basename of a repo file path (the segment after the last slash), the dim per-row prefix. */
 function fileBasename(path: string): string {
   return path.split(/[/\\]/).pop() ?? path;
+}
+
+/**
+ * The entry's display title: the agent-supplied `title` when it is non-empty, else the anchor text
+ * (the string being changed), else the file basename for a foreign row carrying neither. The title
+ * is what the list and the editor lead with in place of the file path.
+ */
+function entryTitle(entry: EntryRow): string {
+  const title = entry.title?.trim();
+  if (title !== undefined && title !== "") return title;
+  const anchor = entry.anchor_text.trim();
+  if (anchor !== "") return anchor;
+  return fileBasename(entry.file);
 }
 
 /** The batch ulid shortened to head+tail, enough to name each batch's select-all checkbox distinctly for a screen reader. */
@@ -407,12 +421,14 @@ function ProjectGroupView({ group }: { group: ProjectGroup }) {
                 <colgroup>
                   <col class="col-select" />
                   <col />
+                  <col class="col-file" />
                   <col class="col-actions" />
                 </colgroup>
                 <thead>
                   <tr>
                     <th>Select</th>
-                    <th>Text</th>
+                    <th>Title</th>
+                    <th>File</th>
                     <th>Actions</th>
                   </tr>
                 </thead>
@@ -433,15 +449,15 @@ function ProjectGroupView({ group }: { group: ProjectGroup }) {
 /**
  * One row. The checkbox names the entry for the batch form; it exists only on drafts, because an
  * approve on any other status always refuses and a checkbox that can only refuse is noise (races
- * are still reported per entry). The status chip sits beside the file basename; the three icon
- * action slots always render, inapplicable ones disabled, so a double-click's second click lands
- * on the disabled slot rather than a shifted action. Approve and reject target the list region and
- * include the batch form's hidden filters, so an action round re-renders the region under the same
- * filter; the editor link is always present. When the batch holds mixed filers, the row also names
- * its own filer beside the basename.
+ * are still reported per entry). The status chip sits beside the title; the three icon action slots
+ * always render, inapplicable ones disabled, so a double-click's second click lands on the disabled
+ * slot rather than a shifted action. Approve and reject target the list region and include the
+ * batch form's hidden filters, so an action round re-renders the region under the same filter; the
+ * editor link is always present. When the batch holds mixed filers, the row also names its own
+ * filer beside the title.
  */
 function EntryRowView({ entry, filerInline }: { entry: EntryRow; filerInline: boolean }) {
-  const text = entry.human_text ?? entry.agent_draft;
+  const title = entryTitle(entry);
   const approve = entry.status === "draft";
   const reject = entry.status === "draft" || entry.status === "approved";
   return (
@@ -451,19 +467,17 @@ function EntryRowView({ entry, filerInline }: { entry: EntryRow; filerInline: bo
           <input type="checkbox" name="id" value={entry.id} aria-label={`Select ${entry.file}`} />
         ) : null}
       </td>
-      <td class="cell-text" title={`${entry.file} — ${entry.anchor_text}`}>
+      <td class="cell-title" title={`${entry.file} — ${entry.anchor_text}`}>
         <div class="entry-head">
-          <span class="entry-file">
-            {fileBasename(entry.file)}
-            {filerInline && entry.filed_by !== null ? <span class="entry-filer"> · {entry.filed_by}</span> : null}
-          </span>
+          <span class="entry-title">{title}</span>
+          {filerInline && entry.filed_by !== null ? <span class="entry-filer"> · {entry.filed_by}</span> : null}
           <span class={`tag ${STATUS_TAG[entry.status]}`}>
             <span class="tag-dot"></span>
             {STATUS_LABEL[entry.status]}
           </span>
         </div>
-        <span class="entry-text" title={text ?? ""}>{text}</span>
       </td>
+      <td class="cell-file" title={entry.file}>{entry.file}</td>
       <td class="cell-actions">
         {approve ? (
           <button
@@ -665,6 +679,9 @@ export type EditorViewModel = {
   readonly entry: EntryRow;
   readonly revisions: readonly RevisionRow[];
   readonly constraints: Constraints;
+  /** The entry immediately before/after in the list's ascending-id walk, or null at the boundary. */
+  readonly prevId: string | null;
+  readonly nextId: string | null;
 };
 
 /**
@@ -687,7 +704,8 @@ export function getEntry(store: Store, id: string): EntryRow | undefined {
 export function loadEditor(store: Store, id: string): EditorViewModel | null {
   const entry = getEntry(store, id);
   if (entry === undefined) return null;
-  return { entry, revisions: listRevisions(store, id), constraints: parseConstraints(entry.constraints) };
+  const { prevId, nextId } = adjacentEntryIds(store, id);
+  return { entry, revisions: listRevisions(store, id), constraints: parseConstraints(entry.constraints), prevId, nextId };
 }
 
 /** The tolerant parse for `entries.context`, mirroring `parseConstraints`: foreign rows may hold malformed JSON, and unparseable means no context rows, never a 500. */
@@ -792,7 +810,7 @@ function EditorRegion({ vm, state }: { vm: EditorViewModel; state: EditorState |
       >
         <input type="hidden" name="view" value="editor" />
         <div class="card-header">
-          <div class="card-title">Text</div>
+          <div class="card-title editor-title">{entryTitle(vm.entry)}</div>
           <span class={`tag ${STATUS_TAG[vm.entry.status]}`}>
             <span class="tag-dot"></span>
             {STATUS_LABEL[vm.entry.status]}
@@ -1045,6 +1063,40 @@ function EditorView({ vm, state }: { vm: EditorViewModel; state: EditorState | u
   );
 }
 
+/** The editor's full-height prev/next rails: one fixed strip per side, a link when a neighbour exists. */
+function EditorNav({ prevId, nextId }: { prevId: string | null; nextId: string | null }) {
+  return (
+    <nav class="editor-nav" aria-label="Entry navigation">
+      <EditorNavButton side="prev" targetId={prevId} />
+      <EditorNavButton side="next" targetId={nextId} />
+    </nav>
+  );
+}
+
+/** One rail: a chevron on a full-height strip, or an inert placeholder at the boundary. */
+function EditorNavButton({ side, targetId }: { side: "prev" | "next"; targetId: string | null }) {
+  const label = side === "prev" ? "Previous entry" : "Next entry";
+  const chevron = side === "prev" ? "M10 3L5 8l5 5" : "M6 3l5 5-5 5";
+  const cls = `editor-nav-btn editor-nav-${side}`;
+  const icon = (
+    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+      <path d={chevron} />
+    </svg>
+  );
+  if (targetId === null) {
+    return (
+      <span class={`${cls} is-disabled`} aria-hidden="true">
+        {icon}
+      </span>
+    );
+  }
+  return (
+    <a class={cls} href={`/entries/${targetId}`} aria-label={label} title={label}>
+      {icon}
+    </a>
+  );
+}
+
 /** The full editor page; the mount wraps it in the doctype. `signedIn` is whether the navbar offers sign-out. */
 export function editorPage(vm: EditorViewModel, state: EditorState | undefined = undefined, signedIn = false): JSX.Element {
   return (
@@ -1071,6 +1123,7 @@ export function editorPage(vm: EditorViewModel, state: EditorState | undefined =
               <p class="page-lede">Saving the text approves the entry and releases it to agents.</p>
             </header>
             <EditorView vm={vm} state={state} />
+            <EditorNav prevId={vm.prevId} nextId={vm.nextId} />
             {/* The one live region: announcements on constraint-state flips only, so a screen reader
                 is not flooded with a per-keystroke value. Lives outside the swap region. */}
             <span id="editor-live" class="visually-hidden" aria-live="polite"></span>

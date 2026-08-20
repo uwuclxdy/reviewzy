@@ -25,6 +25,7 @@ const Entry = z.object({
   batch_id: z.string(),
   repo: z.string(),
   file: z.string(),
+  title: z.string().nullable(),
   anchor_text: z.string(),
   anchor_before: z.string(),
   anchor_after: z.string(),
@@ -65,7 +66,7 @@ export function registerListEntriesTool(server: McpServer, store: Store): void {
     {
       title: "List entries for review",
       description:
-        "List entries in the review queue, ordered by ascending entry id (ulid, i.e. filing order) — the same order a cursor walk covers. Every filter is optional and they combine with AND: project (a slug with no project is refused: read tools never create one), status (draft, approved, applied, rejected), ids (exact entry ids), q (case-insensitive substring, ASCII-only case fold: a row matches when any of file, anchor_text, agent_draft, human_text contains it), limit (default 50, max 200 — a higher value is refused), cursor (keyset pagination: pass the previous page's next_cursor to continue from after the last entry returned). next_cursor is present only when the page returned exactly limit rows, meaning more may exist; absent means the walk is exhausted — stop paging then, never craft a cursor of your own. Each entry carries its stored fields as stored: id, project_id, batch_id, repo, file, anchor_text, anchor_before, anchor_after, anchor_hash, file_hash, agent_draft, human_text, status, context, constraints, filed_by, stale_note, applied_hash, created_at, updated_at, applied_at, archived_at — with context and constraints as their stored JSON strings, not parsed objects.",
+        "List entries in the review queue, ordered by ascending entry id (ulid, i.e. filing order) — the same order a cursor walk covers. Every filter is optional and they combine with AND: project (a slug with no project is refused: read tools never create one), status (draft, approved, applied, rejected), ids (exact entry ids), q (case-insensitive substring, ASCII-only case fold: a row matches when any of file, anchor_text, agent_draft, human_text contains it), limit (default 50, max 200 — a higher value is refused), cursor (keyset pagination: pass the previous page's next_cursor to continue from after the last entry returned). next_cursor is present only when the page returned exactly limit rows, meaning more may exist; absent means the walk is exhausted — stop paging then, never craft a cursor of your own. Each entry carries its stored fields as stored: id, project_id, batch_id, repo, file, title, anchor_text, anchor_before, anchor_after, anchor_hash, file_hash, agent_draft, human_text, status, context, constraints, filed_by, stale_note, applied_hash, created_at, updated_at, applied_at, archived_at — with context and constraints as their stored JSON strings, not parsed objects.",
       inputSchema: ListEntriesArgs,
       outputSchema: ListEntriesOutput,
     },

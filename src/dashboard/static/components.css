@@ -673,7 +673,7 @@ kbd {
 
 /* ---- Key-value / metadata table ----
    Mono readout, no header row; fixed-width uppercase label column. */
-.info-table { width: 100%; border-collapse: collapse; font: 400 var(--text-sm)/1.5 var(--font-mono); }
+.info-table { width: 100%; table-layout: fixed; border-collapse: collapse; font: 400 var(--text-sm)/1.5 var(--font-mono); }
 .info-table td {
   padding: 8px var(--space-3);
   border-bottom: 1px solid var(--line);
@@ -689,6 +689,9 @@ kbd {
   color: var(--text-faint);
   white-space: nowrap;
 }
+/* Value cells hold unbroken strings (paths, urls, hashes): fixed layout pins the table to the card
+   width, and wrapping at any point keeps those strings inside it instead of overflowing. */
+.info-table td:not(:first-child) { overflow-wrap: anywhere; }
 
 /* ---- Range slider ---- */
 .slider {

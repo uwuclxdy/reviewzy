@@ -16,6 +16,7 @@ export type EntryStatus = "draft" | "approved" | "applied" | "rejected";
 export type NewEntry = {
   readonly repo: string;
   readonly file: string;
+  readonly title: string | null;
   readonly anchorText: string;
   readonly anchorBefore: string;
   readonly anchorAfter: string;
@@ -48,6 +49,7 @@ export type EntryRow = {
   readonly batch_id: string;
   readonly repo: string;
   readonly file: string;
+  readonly title: string | null;
   readonly anchor_text: string;
   readonly anchor_before: string;
   readonly anchor_after: string;
@@ -189,16 +191,17 @@ function fileOneEntry(
     const now = Date.now();
     db.run(
       `INSERT INTO entries (
-        id, project_id, batch_id, repo, file, anchor_text, anchor_before, anchor_after,
+        id, project_id, batch_id, repo, file, title, anchor_text, anchor_before, anchor_after,
         anchor_hash, file_hash, agent_draft, human_text, status, context, constraints,
         filed_by, stale_note, created_at, updated_at, applied_at, archived_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, 'draft', ?, ?, ?, NULL, ?, ?, NULL, NULL)`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, 'draft', ?, ?, ?, NULL, ?, ?, NULL, NULL)`,
       [
         id,
         projectId,
         batchId,
         entry.repo,
         entry.file,
+        entry.title,
         entry.anchorText,
         entry.anchorBefore,
         entry.anchorAfter,
@@ -219,8 +222,8 @@ function fileOneEntry(
     // `COALESCE(?, column)`: a field the newer call did not carry (null) keeps the stored value.
     // The schema refuses explicit null, so a re-file can only move the fields it names.
     db.run(
-      "UPDATE entries SET agent_draft = COALESCE(?, agent_draft), context = COALESCE(?, context), constraints = COALESCE(?, constraints), updated_at = ? WHERE id = ?",
-      [entry.agentDraft, entry.contextJson, entry.constraintsJson, Date.now(), existing.id],
+      "UPDATE entries SET agent_draft = COALESCE(?, agent_draft), context = COALESCE(?, context), constraints = COALESCE(?, constraints), title = COALESCE(?, title), updated_at = ? WHERE id = ?",
+      [entry.agentDraft, entry.contextJson, entry.constraintsJson, entry.title, Date.now(), existing.id],
     );
     return { id: existing.id, status: "draft", deduped: true, updated: true };
   }
@@ -254,7 +257,7 @@ const APPROVED_PAGE_SIZE = 50;
 
 /** The columns `docs/mcp-contract.md`'s entry schema names; the one place the output row's shape is spelled out in SQL. */
 const ENTRY_COLUMNS = [
-  "id", "project_id", "batch_id", "repo", "file", "anchor_text", "anchor_before",
+  "id", "project_id", "batch_id", "repo", "file", "title", "anchor_text", "anchor_before",
   "anchor_after", "anchor_hash", "file_hash", "agent_draft", "human_text", "status",
   "context", "constraints", "filed_by", "stale_note", "applied_hash", "created_at", "updated_at", "applied_at", "archived_at",
 ] as const;
@@ -302,6 +305,21 @@ export function listEntries(store: Store, filter: ListEntriesFilter): ListEntrie
   const rows = store.db.query(sql).all(...params) as EntryRow[];
   const nextCursor = rows.length === filter.limit ? rows[rows.length - 1]!.id : null;
   return { rows, nextCursor };
+}
+
+/**
+ * The entries immediately before and after `id` in the ascending-id walk the list renders, for the
+ * editor's full-height prev/next rails; null at either boundary. The `id` column is a primary key,
+ * so both comparisons run on its unique index.
+ */
+export function adjacentEntryIds(store: Store, id: string): { prevId: string | null; nextId: string | null } {
+  const prev = store.db.query("SELECT id FROM entries WHERE id < ? ORDER BY id DESC LIMIT 1").get(id) as
+    | { id: string }
+    | null;
+  const next = store.db.query("SELECT id FROM entries WHERE id > ? ORDER BY id ASC LIMIT 1").get(id) as
+    | { id: string }
+    | null;
+  return { prevId: prev?.id ?? null, nextId: next?.id ?? null };
 }
 
 /**

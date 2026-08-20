@@ -46,6 +46,7 @@ afterEach(() => {
 const FIXTURE: NewEntry = {
   repo: "https://example.com/org/repo.git",
   file: "docs/setup.md",
+  title: null,
   anchorText: "Run bun install",
   anchorBefore: "Run this before anything else.",
   anchorAfter: "Then run the tests.",

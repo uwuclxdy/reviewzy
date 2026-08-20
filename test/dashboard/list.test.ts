@@ -34,6 +34,7 @@ function draft(over: Partial<NewEntry>): NewEntry {
   return {
     repo: "https://example.com/org/repo.git",
     file: "docs/readme.md",
+    title: null,
     anchorText: "anchor",
     anchorBefore: "",
     anchorAfter: "",
@@ -113,14 +114,14 @@ env.store.db.run("UPDATE entries SET status = 'rejected' WHERE id = ?", [batchB.
 // A second filer in batchB makes it a mixed-filer batch: the header names no filer, each row names its own.
 env.store.db.run("UPDATE entries SET filed_by = 'other-agent' WHERE id = ?", [batchB.results[0]!.id]);
 
-/** The rendered text of each fixture entry (human_text wins over agent_draft), keyed by entry id. */
+/** The rendered title of each fixture entry (the anchor text here, since none of these filed a title), keyed by entry id. */
 const RENDERED: { batchId: string; id: string; text: string }[] = [
-  { batchId: batchA.batchId, id: batchA.results[0]!.id, text: "Fix the wording of the setup section." },
-  { batchId: batchA.batchId, id: batchA.results[1]!.id, text: "Explain where the cache lives." },
-  { batchId: batchB.batchId, id: batchB.results[0]!.id, text: "Note the license." },
-  { batchId: batchB.batchId, id: batchB.results[1]!.id, text: "Add a status badge to the README." },
-  { batchId: batchC.batchId, id: batchC.results[0]!.id, text: "Describe the migration." },
-  { batchId: batchD.batchId, id: batchD.results[0]!.id, text: "Update the FAQ." },
+  { batchId: batchA.batchId, id: batchA.results[0]!.id, text: "Run bun install" },
+  { batchId: batchA.batchId, id: batchA.results[1]!.id, text: "The cache lives at" },
+  { batchId: batchB.batchId, id: batchB.results[0]!.id, text: "AGPL-3.0" },
+  { batchId: batchB.batchId, id: batchB.results[1]!.id, text: "shields badge" },
+  { batchId: batchC.batchId, id: batchC.results[0]!.id, text: "Run the migration" },
+  { batchId: batchD.batchId, id: batchD.results[0]!.id, text: "Frequently asked" },
 ];
 
 afterAll(() => {
@@ -244,17 +245,20 @@ describe("dashboard entry list", () => {
       expectOrder(html.slice(start, end), texts);
     });
 
-    // A row carries the select checkbox, the basename-prefixed proposed text, and the action slots.
+    // A row carries the select checkbox, the title, the file path, and the action slots.
     expect(html).toContain(">Select</th>");
-    expect(html).toContain(">Text</th>");
+    expect(html).toContain(">Title</th>");
+    expect(html).toContain(">File</th>");
     expect(html).toContain(">Actions</th>");
     expect(html).toContain('class="tag tag-warning"><span class="tag-dot"></span>Draft</span>');
     expect(html).toContain('class="tag tag-success"><span class="tag-dot"></span>Approved</span>');
     expect(html).toContain('class="tag tag-info"><span class="tag-dot"></span>Applied</span>');
     expect(html).toContain('class="tag tag-danger"><span class="tag-dot"></span>Rejected</span>');
-    // The prose is prefixed with the file basename, and the cell title carries the full path and anchor.
-    expect(html).toContain('<span class="entry-file">setup.md</span>');
+    // The title leads (the anchor text when no title was filed); the file path is a separate column,
+    // and the cell title carries the full path and anchor.
+    expect(html).toContain('<span class="entry-title">Run bun install</span>');
     expect(html).toContain('title="docs/setup.md — Run bun install"');
+    expect(html).toContain('<td class="cell-file" title="docs/setup.md">docs/setup.md</td>');
   });
 
   test("batch header shows the filer only when every entry agrees on one", async () => {
@@ -361,26 +365,26 @@ describe("dashboard entry list", () => {
   test("filters by search text over the same columns as the mcp tool", async () => {
     // agent_draft
     const byDraft = await (await env.get("/?q=wording")).text();
-    expect(byDraft).toContain("Fix the wording of the setup section.");
-    expect(byDraft).not.toContain("Explain where the cache lives.");
+    expect(byDraft).toContain("Run bun install");
+    expect(byDraft).not.toContain("The cache lives at");
     // file, case-insensitive
     const byFile = await (await env.get("/?q=CACHE")).text();
-    expect(byFile).toContain("Explain where the cache lives.");
-    expect(byFile).not.toContain("Fix the wording");
+    expect(byFile).toContain("The cache lives at");
+    expect(byFile).not.toContain("Run bun install");
     // anchor_text
     const byAnchor = await (await env.get("/?q=bun+install")).text();
-    expect(byAnchor).toContain("Fix the wording of the setup section.");
-    expect(byAnchor).not.toContain("Note the license.");
+    expect(byAnchor).toContain("Run bun install");
+    expect(byAnchor).not.toContain("AGPL-3.0");
     // human_text
     const byHuman = await (await env.get("/?q=where+the+cache")).text();
-    expect(byHuman).toContain("Explain where the cache lives.");
-    expect(byHuman).not.toContain("Fix the wording");
+    expect(byHuman).toContain("The cache lives at");
+    expect(byHuman).not.toContain("Run bun install");
   });
 
   test("filters by status", async () => {
     const html = await (await env.get("/?status=rejected")).text();
-    expect(html).toContain("Add a status badge to the README.");
-    expect(html).not.toContain("Fix the wording");
+    expect(html).toContain("shields badge");
+    expect(html).not.toContain("Run bun install");
     expect(html).toContain("Showing 1 of 6 entries");
     // The select reflects the active filter.
     expect(html).toContain('<option value="rejected" selected="">Rejected</option>');
@@ -388,16 +392,16 @@ describe("dashboard entry list", () => {
 
   test("filters by project", async () => {
     const html = await (await env.get("/?project=zeta")).text();
-    expect(html).toContain("Update the FAQ.");
-    expect(html).not.toContain("Fix the wording");
+    expect(html).toContain("Frequently asked");
+    expect(html).not.toContain("Run bun install");
     expect(html).not.toContain('<h2 class="project-name">alpha</h2>');
     expect(html).toContain('<option value="zeta" selected="">zeta</option>');
   });
 
   test("combines filters", async () => {
     const html = await (await env.get("/?q=setup&status=draft&project=alpha")).text();
-    expect(html).toContain("Fix the wording of the setup section.");
-    expect(html).not.toContain("Explain where the cache lives.");
+    expect(html).toContain("Run bun install");
+    expect(html).not.toContain("The cache lives at");
     expect(html).toContain("Showing 1 of 6 entries");
   });
 
@@ -406,15 +410,15 @@ describe("dashboard entry list", () => {
     const partial = await (await env.get("/?q=docs")).text();
     expect(partial).toContain("Showing 4 of 6 entries");
     expect(partial).toContain("Clear filters");
-    expect(partial).toContain("Fix the wording of the setup section.");
-    expect(partial).not.toContain("Note the license.");
+    expect(partial).toContain("Run bun install");
+    expect(partial).not.toContain("AGPL-3.0");
     expect(partial).toContain('value="docs"');
 
     // A filter matching everything is the success state, not partial.
     const full = await (await env.get("/?q=the")).text();
     expect(full).not.toContain("Showing ");
-    expect(full).toContain("Note the license.");
-    expect(full).toContain("Update the FAQ.");
+    expect(full).toContain("AGPL-3.0");
+    expect(full).toContain("Frequently asked");
 
     // No filters is the success state too.
     const plain = await (await env.get("/")).text();
@@ -426,7 +430,7 @@ describe("dashboard entry list", () => {
       const html = await (await env.get(query)).text();
       expect(html).toContain("No entries match");
       expect(html).toContain('<a href="/" class="btn btn-secondary btn-sm">Clear filters</a>');
-      expect(html).not.toContain("entry-text");
+      expect(html).not.toContain("entry-title");
     }
     // The search box keeps what was typed.
     expect(await (await env.get("/?q=zzz")).text()).toContain('value="zzz"');
@@ -438,7 +442,7 @@ describe("dashboard entry list", () => {
       const html = await (await fresh.get("/")).text();
       expect(html).toContain("No entries yet");
       expect(html).toContain("mcp endpoint");
-      expect(html).not.toContain("entry-text");
+      expect(html).not.toContain("entry-title");
       // Zero entries at all reads as "no entries yet" even under a filter: nothing exists to filter.
       const filtered = await (await fresh.get("/?q=zzz&status=draft")).text();
       expect(filtered).toContain("No entries yet");
@@ -451,7 +455,7 @@ describe("dashboard entry list", () => {
     const res = await env.get("/?q=wording", { "HX-Request": "true" });
     expect(res.status).toBe(200);
     const html = await res.text();
-    expect(html).toContain("Fix the wording of the setup section.");
+    expect(html).toContain("Run bun install");
     expect(html).toContain("Showing 1 of 6 entries");
     // A fragment is the list region only, not the page shell.
     expect(html).not.toContain("<!doctype html>");
@@ -512,13 +516,15 @@ describe("dashboard entry list", () => {
           anchorHash: "h-xss",
           fileHash: "f-xss",
           agentDraft: 'He said "hi" <script>alert("xss")</script>',
+          title: 'He said "hi" <script>alert("title")</script>',
         }),
       ]);
       const html = await (await xs.get("/")).text();
-      expect(html).not.toContain('<script>alert("xss")</script>');
+      // The full-text preview is gone, so the title and the file path are the user-reachable
+      // strings left in the list; both escape.
+      expect(html).not.toContain('<script>alert("title")</script>');
       expect(html).not.toContain('<img src=x');
-      expect(html).toContain("&lt;script&gt;alert(&quot;xss&quot;)&lt;/script&gt;");
-      expect(html).toContain("&lt;img src=x");
+      expect(html).toContain("&lt;script&gt;alert(&quot;title&quot;)&lt;/script&gt;");
       expect(html).toContain('weird&quot;file.md');
     } finally {
       xs.close();
@@ -575,8 +581,8 @@ describe("dashboard entry list", () => {
       const html = await (await big.get("/")).text();
       // The whole walk renders: all 201 rows (one entry row each), page 2's row included. A walk
       // that stops after the first page renders exactly one row short, whatever the id order.
-      expect(html.match(/class="cell-text"/g) ?? []).toHaveLength(201);
-      const page2Text = page2.rows[0]!.agent_draft;
+      expect(html.match(/class="cell-title"/g) ?? []).toHaveLength(201);
+      const page2Text = page2.rows[0]!.anchor_text;
       expect(page2Text).not.toBeNull();
       expect(html).toContain(page2Text!);
 
@@ -591,8 +597,8 @@ describe("dashboard entry list", () => {
 
   test("a whitespace-only search is no filter at all", async () => {
     const html = await (await env.get("/?q=%20%20")).text();
-    expect(html).toContain("Fix the wording of the setup section.");
-    expect(html).toContain("Update the FAQ.");
+    expect(html).toContain("Run bun install");
+    expect(html).toContain("Frequently asked");
     expect(html).not.toContain("Showing ");
   });
 });
