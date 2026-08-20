@@ -250,10 +250,10 @@ describe("dashboard entry list", () => {
     expect(html).toContain(">Title</th>");
     expect(html).toContain(">File</th>");
     expect(html).toContain(">Actions</th>");
-    expect(html).toContain('class="tag tag-warning"><span class="tag-dot"></span>Draft</span>');
-    expect(html).toContain('class="tag tag-success"><span class="tag-dot"></span>Approved</span>');
-    expect(html).toContain('class="tag tag-info"><span class="tag-dot"></span>Applied</span>');
-    expect(html).toContain('class="tag tag-danger"><span class="tag-dot"></span>Rejected</span>');
+    expect(html).toContain('class="tag tag-warning">Draft</span>');
+    expect(html).toContain('class="tag tag-success">Approved</span>');
+    expect(html).toContain('class="tag tag-info">Applied</span>');
+    expect(html).toContain('class="tag tag-danger">Rejected</span>');
     // The title leads (the anchor text when no title was filed); the file path is a separate column,
     // and the cell title carries the full path and anchor.
     expect(html).toContain('<span class="entry-title">Run bun install</span>');

@@ -67,7 +67,9 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.entry-head .tag { flex-shrink: 0; }
+/* A uniform width (the widest label, Approved, plus breathing room) so the pill's left edge is
+   constant across rows and the title column truncates at one consistent point. */
+.entry-head .tag { flex-shrink: 0; min-width: 74px; justify-content: center; }
 .entry-filer {
   flex-shrink: 0;
   font-size: var(--text-xs);

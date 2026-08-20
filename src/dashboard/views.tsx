@@ -472,7 +472,6 @@ function EntryRowView({ entry, filerInline }: { entry: EntryRow; filerInline: bo
           <span class="entry-title">{title}</span>
           {filerInline && entry.filed_by !== null ? <span class="entry-filer"> · {entry.filed_by}</span> : null}
           <span class={`tag ${STATUS_TAG[entry.status]}`}>
-            <span class="tag-dot"></span>
             {STATUS_LABEL[entry.status]}
           </span>
         </div>
@@ -812,7 +811,6 @@ function EditorRegion({ vm, state }: { vm: EditorViewModel; state: EditorState |
         <div class="card-header">
           <div class="card-title editor-title">{entryTitle(vm.entry)}</div>
           <span class={`tag ${STATUS_TAG[vm.entry.status]}`}>
-            <span class="tag-dot"></span>
             {STATUS_LABEL[vm.entry.status]}
           </span>
         </div>
