@@ -88,7 +88,51 @@
    .htmx-request while the request is in flight, and pointer-events drops the duplicate click a
    double-click would otherwise fire. */
 .htmx-request { pointer-events: none; }
-.cell-select input[type="checkbox"] { accent-color: var(--accent); }
+/* The cloudy-ui custom checkbox: an appearance:none box on the sunk plane, accent-filled with a
+   clip-path check when checked. The select-all also takes a dash in its indeterminate state (a
+   partially selected batch), which the native accent-color box could not express. */
+.cell-select input[type="checkbox"],
+.batch-header .select-all {
+  width: 15px;
+  height: 15px;
+  appearance: none;
+  background: var(--bg-sunken);
+  border: 1px solid var(--line);
+  border-radius: calc(var(--radius) * 0.5);
+  cursor: pointer;
+  flex-shrink: 0;
+  position: relative;
+  transition: border-color var(--dur-fast) var(--ease), background var(--dur-fast) var(--ease);
+}
+.cell-select input[type="checkbox"]:hover,
+.batch-header .select-all:hover { border-color: var(--line-strong); }
+.cell-select input[type="checkbox"]:checked,
+.batch-header .select-all:checked,
+.cell-select input[type="checkbox"]:indeterminate,
+.batch-header .select-all:indeterminate {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.cell-select input[type="checkbox"]:checked::after,
+.batch-header .select-all:checked::after {
+  content: '';
+  position: absolute;
+  inset: 3px;
+  background: var(--text-on-accent);
+  clip-path: polygon(14% 44%, 0 65%, 50% 100%, 100% 16%, 80% 0%, 43% 62%);
+}
+.cell-select input[type="checkbox"]:indeterminate::after,
+.batch-header .select-all:indeterminate::after {
+  content: '';
+  position: absolute;
+  left: 3px;
+  right: 3px;
+  top: 50%;
+  height: 2px;
+  transform: translateY(-50%);
+  background: var(--text-on-accent);
+  border-radius: 1px;
+}
 .cell-actions { white-space: nowrap; }
 .cell-actions .btn + .btn { margin-left: var(--space-2); }
 .table-wrap tbody td.cell-actions { padding-left: var(--space-1); padding-right: var(--space-1); }
@@ -104,7 +148,7 @@
   padding: var(--space-2) 0;
   background: var(--bg);
 }
-.batch-header .select-all { accent-color: var(--accent); align-self: center; cursor: pointer; }
+.batch-header .select-all { align-self: center; }
 .notice-list { margin: 0; padding-left: var(--space-5); display: flex; flex-direction: column; gap: var(--space-1); }
 
 /* ---- Diff view: the anchored snippet vs the entry's text, mono on sunken, anchor line distinct ---- */
