@@ -107,9 +107,12 @@ const batchD = fileEntries(env.store, "zeta", "probe-agent", [
 
 // Force a same-millisecond pair so the ordering tiebreak is reachable: batchC's id is rewritten
 // to share batchA's ms prefix (minted prefixes tie only by luck, so the pair is crafted) and its
-// entry backdated, so only the batch's newest created_at can separate them. Direct UPDATEs are
-// the fixture's own pattern — statuses and filers move the same way below.
-const batchCId = `${batchA.batchId.slice(0, 10)}ABCDEFGHIJKLMNOP`;
+// entry backdated, so only the batch's newest created_at can separate them. The tail is the
+// maximal Crockford char repeated (a shape the ulid writer can mint), so removing the tiebreak —
+// falling back to full-id order — would also flip the pair and the pin below catches presence as
+// well as direction. Direct UPDATEs are the fixture's own pattern — statuses and filers move the
+// same way below.
+const batchCId = `${batchA.batchId.slice(0, 10)}ZZZZZZZZZZZZZZZZ`;
 env.store.db.run(
   "UPDATE entries SET batch_id = ?, created_at = (SELECT MIN(created_at) FROM entries WHERE batch_id = ?) - 1000 WHERE id = ?",
   [batchCId, batchA.batchId, batchC.results[0]!.id],
