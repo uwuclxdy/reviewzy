@@ -280,7 +280,7 @@ describe("the diff view", () => {
     expect(html).not.toContain("<script>before</script>");
     expect(html).not.toContain("<script>anchor</script>");
     expect(html).not.toContain("<script>draft</script>");
-    // The anchor line is the visually distinct one.
+    // The anchor is the visually distinct one.
     expect(html).toContain("diff-anchor");
     env.close();
   });

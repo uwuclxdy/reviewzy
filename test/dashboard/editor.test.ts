@@ -730,7 +730,7 @@ describe("saving from the editor", () => {
 });
 
 describe("the word diff", () => {
-  test("marks removed words red in the anchor line and added words green in the after card, leaving the shared words plain", async () => {
+  test("marks removed words red in the before card and added words green in the after card, leaving the shared words plain", async () => {
     // No constraints, so the save needs neither max_len room nor a placeholder.
     const { env, id } = envWithDraft({ constraintsJson: "{}" });
     const res = await env.post(`/entries/${id}/save`, saveForm("Run npm install"), HX);
