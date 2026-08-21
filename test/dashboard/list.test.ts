@@ -219,7 +219,7 @@ describe("dashboard entry list", () => {
     expect(appIdx).toBeGreaterThan(htmxIdx);
   });
 
-  test("lists entries grouped by project then batch, ordered by id", async () => {
+  test("lists entries grouped by project then batch, actionable first and newest batch first", async () => {
     const html = await (await env.get("/")).text();
 
     // Projects in slug order; each project header carries its entry count.
@@ -229,16 +229,52 @@ describe("dashboard entry list", () => {
     expect(html).toContain(">5 entries</span>");
     expect(html).toContain(">1 entry</span>");
 
-    // Batches in ascending batch_id order: alpha's three batches first, then zeta's.
-    const pageBatchOrder = [...[batchA.batchId, batchB.batchId, batchC.batchId].sort(), batchD.batchId];
+    // The batch order derives from the store, mirroring the view's own rule: a batch with any
+    // draft or approved entry is actionable and leads; both partitions sort newest first (ulid
+    // millisecond prefix descending, the batch's newest created_at breaking a same-ms tie, then
+    // the id), and projects stay in slug order.
+    const walked = listEntries(env.store, {
+      projectId: undefined,
+      status: undefined,
+      ids: undefined,
+      q: undefined,
+      cursor: undefined,
+      limit: 1000,
+    }).rows;
+    const batchOf = new Map<string, { statuses: string[]; createdAt: number }>();
+    for (const row of walked) {
+      const prev = batchOf.get(row.batch_id);
+      batchOf.set(row.batch_id, {
+        statuses: [...(prev?.statuses ?? []), row.status],
+        createdAt: Math.max(prev?.createdAt ?? 0, row.created_at),
+      });
+    }
+    const actionable = (id: string) =>
+      (batchOf.get(id)?.statuses ?? []).some((status) => status === "draft" || status === "approved");
+    const desc = (a: string, b: string) => (a < b ? 1 : a > b ? -1 : 0);
+    const newestFirst = (ids: readonly string[]) =>
+      [...ids].sort((a, b) => {
+        const timeCmp = desc(a.slice(0, 10), b.slice(0, 10));
+        if (timeCmp !== 0) return timeCmp;
+        const aCreated = batchOf.get(a)!.createdAt;
+        const bCreated = batchOf.get(b)!.createdAt;
+        if (aCreated !== bCreated) return bCreated - aCreated;
+        return desc(a, b);
+      });
+    const alphaBatches = [batchA.batchId, batchB.batchId, batchC.batchId];
+    const expectedOrder = [
+      ...newestFirst(alphaBatches.filter(actionable)),
+      ...newestFirst(alphaBatches.filter((id) => !actionable(id))),
+      ...newestFirst([batchD.batchId]),
+    ];
     const textsByBatch = new Map<string, { id: string; text: string }[]>();
     for (const item of RENDERED) {
       textsByBatch.set(item.batchId, [...(textsByBatch.get(item.batchId) ?? []), { id: item.id, text: item.text }]);
     }
-    pageBatchOrder.forEach((batchId, i) => {
+    expectedOrder.forEach((batchId, i) => {
       const start = html.indexOf(`aria-label="Select all drafts in batch ${shortUlid(batchId)}"`);
       expect(start, `batch ${batchId} rendered in batch order`).toBeGreaterThan(-1);
-      const end = i + 1 < pageBatchOrder.length ? html.indexOf(`aria-label="Select all drafts in batch ${shortUlid(pageBatchOrder[i + 1]!)}"`) : html.length;
+      const end = i + 1 < expectedOrder.length ? html.indexOf(`aria-label="Select all drafts in batch ${shortUlid(expectedOrder[i + 1]!)}"`) : html.length;
       const texts = textsByBatch
         .get(batchId)!
         .sort((a, b) => a.id.localeCompare(b.id))

@@ -51,7 +51,8 @@ const STATUS_LABEL: Record<EntryStatus, string> = {
   rejected: "Rejected",
 };
 
-type ProjectGroup = { slug: string; batches: { id: string; entries: EntryRow[] }[] };
+type ProjectBatch = { id: string; entries: EntryRow[] };
+type ProjectGroup = { slug: string; batches: ProjectBatch[] };
 
 export type ListViewModel = {
   readonly total: number;
@@ -88,9 +89,11 @@ function allEntries(
 }
 
 /**
- * Groups the filtered rows by project (slug order) then batch (batch_id order); within a batch the
- * rows keep the list query's ascending id order. The group order is deliberate: slugs and ulids
- * sort deterministically, so the same filter always renders the same page.
+ * Groups the filtered rows by project (slug order) then batch; within a batch the rows keep the
+ * list query's ascending id order. Within a project, batches split into two partitions: any batch
+ * holding a draft or approved entry is actionable and leads, terminal-only batches (applied and
+ * rejected) follow. Each partition sorts newest batch first, with a deterministic order for
+ * batches minted in the same millisecond, so the same filter always renders the same page.
  */
 function groupRows(rows: readonly EntryRow[], slugOf: Map<string, string>): ProjectGroup[] {
   const byProject = new Map<string, EntryRow[]>();
@@ -104,9 +107,36 @@ function groupRows(rows: readonly EntryRow[], slugOf: Map<string, string>): Proj
     for (const row of projectRows) {
       byBatch.set(row.batch_id, [...(byBatch.get(row.batch_id) ?? []), row]);
     }
-    const batches = [...byBatch.keys()].sort().map((batchId) => ({ id: batchId, entries: byBatch.get(batchId)! }));
-    return { slug: slugOf.get(projectId) ?? projectId, batches };
+    const batches = [...byBatch.keys()].map((batchId) => ({ id: batchId, entries: byBatch.get(batchId)! }));
+    const actionable = batches.filter(isActionableBatch).sort(newestBatchFirst);
+    const terminal = batches.filter((batch) => !isActionableBatch(batch)).sort(newestBatchFirst);
+    return { slug: slugOf.get(projectId) ?? projectId, batches: [...actionable, ...terminal] };
   });
+}
+
+/** A batch is actionable when any of its entries still needs a human: draft or approved. */
+function isActionableBatch(batch: ProjectBatch): boolean {
+  return batch.entries.some((entry) => entry.status === "draft" || entry.status === "approved");
+}
+
+/** Code-unit descending comparison: ulids are fixed-length Crockford base32, so this equals time order. */
+function compareDesc(a: string, b: string): number {
+  return a < b ? 1 : a > b ? -1 : 0;
+}
+
+/**
+ * Newest batch first. Batch ulids share a millisecond timestamp prefix, so a descending id is
+ * newest-first; batches minted in the same millisecond tie on that prefix, and the batch's
+ * newest `created_at` breaks the tie before the id itself, so a same-ms burst still renders in
+ * one fixed order.
+ */
+function newestBatchFirst(a: ProjectBatch, b: ProjectBatch): number {
+  const timeCmp = compareDesc(a.id.slice(0, 10), b.id.slice(0, 10));
+  if (timeCmp !== 0) return timeCmp;
+  const aCreated = Math.max(...a.entries.map((entry) => entry.created_at));
+  const bCreated = Math.max(...b.entries.map((entry) => entry.created_at));
+  if (aCreated !== bCreated) return bCreated - aCreated;
+  return compareDesc(a.id, b.id);
 }
 
 function loadList(store: Store, params: ListParams): ListViewModel {
