@@ -900,13 +900,12 @@ function RevisionHistory({ revisions }: { revisions: readonly RevisionRow[] }) {
   );
 }
 
-/** The constraint panel: what the entry's save enforces, plus the display-only tone and notes. */
+/** The constraint panel: what the entry's save enforces (length, placeholders), plus the display-only tone. The notes moved to their own card, so the enforced fields stay the card's lead. */
 function ConstraintsCard({ constraints, text }: { constraints: Constraints; text: string }) {
   const maxLen = constraints.maxLen;
   const placeholders = constraints.placeholders;
   const tone = constraints.tone;
-  const notes = constraints.notes;
-  const hasAny = maxLen !== undefined || placeholders.length > 0 || tone !== undefined || notes !== undefined;
+  const hasAny = maxLen !== undefined || placeholders.length > 0 || tone !== undefined;
   if (!hasAny) return null;
   return (
     <div class="card">
@@ -948,12 +947,54 @@ function ConstraintsCard({ constraints, text }: { constraints: Constraints; text
             <div class="constraint-value">{tone}</div>
           </div>
         ) : null}
-        {notes !== undefined ? (
-          <div class="constraint-row">
-            <div class="constraint-label">Notes</div>
-            <div class="constraint-value">{notes}</div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * The notes card: the agent's notes (from `constraints.notes`, read-only) above the human's own
+ * notes as an editable textarea with its own save. The textarea carries `hx-preserve`, so any swap
+ * (a text save, an image add) keeps the human's in-progress note; the save targets the whole
+ * editor view like the save form, so the saved value re-renders in place. The card always renders:
+ * the human's notes need a home even before the agent sent any.
+ */
+function NotesCard({ vm }: { vm: EditorViewModel }) {
+  return (
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">Notes</div>
+      </div>
+      <div class="card-content">
+        <div class="constraint-row">
+          <div class="constraint-label">Agent's notes</div>
+          <div class="constraint-value">{vm.constraints.notes ?? "None."}</div>
+        </div>
+        <form
+          id="notes-form"
+          method="post"
+          action={`/entries/${vm.entry.id}/notes`}
+          hx-post={`/entries/${vm.entry.id}/notes`}
+          hx-target="#editor-view"
+          hx-swap="outerHTML"
+        >
+          <div class="field notes-field">
+            <label class="field-label" for="editor-notes">Your notes</label>
+            <textarea
+              id="editor-notes"
+              class="input"
+              name="notes"
+              rows={4}
+              aria-label="Your notes"
+              hx-preserve="true"
+            >
+              {vm.entry.human_notes ?? ""}
+            </textarea>
           </div>
-        ) : null}
+          <div class="notes-actions">
+            <button class="btn btn-secondary btn-sm" type="submit">Save notes</button>
+          </div>
+        </form>
       </div>
     </div>
   );
@@ -1149,6 +1190,7 @@ function EditorView({ vm, state }: { vm: EditorViewModel; state: EditorState | u
         <aside class="editor-rail">
           <ContextCard entry={vm.entry} />
           <ConstraintsCard constraints={vm.constraints} text={text} />
+          <NotesCard vm={vm} />
           <ImagesCard entry={vm.entry} />
         </aside>
       </div>

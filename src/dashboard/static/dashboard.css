@@ -237,6 +237,11 @@
 /* The in-flight indicator for an approve or reject from the editor: htmx's own rules fade it in. */
 .editor-actions .htmx-indicator { display: inline-flex; align-items: center; gap: var(--space-2); font-size: var(--text-sm); color: var(--text-dim); }
 
+/* The notes card: the agent's row reuses the constraint row shape; the human's textarea and its
+   save button sit below it. */
+.notes-field { margin-top: var(--space-2); }
+.notes-actions { margin-top: var(--space-2); display: flex; justify-content: flex-end; }
+
 /* Constraint panel: live count and placeholder checklist; the server owns the refusal. */
 .constraint-row { display: flex; gap: var(--space-3); padding: 6px 0; }
 .constraint-row + .constraint-row { border-top: 1px solid var(--line); }

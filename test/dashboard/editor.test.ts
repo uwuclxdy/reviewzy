@@ -425,6 +425,98 @@ describe("entry images", () => {
   });
 });
 
+describe("human notes", () => {
+  function notesForm(notes: string): FormData {
+    const form = new FormData();
+    form.set("notes", notes);
+    return form;
+  }
+
+  test("renders the agent's notes read-only and the human's notes in its own card with its own save", async () => {
+    const { env, id } = envWithDraft();
+    env.store.db.run("UPDATE entries SET human_notes = ? WHERE id = ?", ["check the tone", id]);
+    const html = await (await env.get(`/entries/${id}`)).text();
+
+    // Both rows live in the notes card; the agent's carries the constraint note, the human's the
+    // stored scratchpad, editable and surviving swaps.
+    expect(html).toContain("Agent&#39;s notes");
+    expect(html).toContain("Keep it short.");
+    expect(html).toContain("Your notes");
+    expect(html).toContain('id="editor-notes"');
+    expect(html).toContain('hx-preserve="true"');
+    expect(html).toContain("check the tone");
+    expect(html).toContain(`hx-post="/entries/${id}/notes"`);
+    expect(html).toContain('hx-target="#editor-view"');
+    expect(html).toContain("Save notes");
+    // The notes row left the constraints card: the label no longer renders there.
+    expect(html).not.toContain('<div class="constraint-label">Notes</div>');
+    env.close();
+  });
+
+  test("shows a placeholder when the agent sent no notes", async () => {
+    const { env, id } = envWithDraft({ constraintsJson: "{}" });
+    const html = await (await env.get(`/entries/${id}`)).text();
+    expect(html).toContain("Agent&#39;s notes");
+    expect(html).toContain("None.");
+    env.close();
+  });
+
+  test("a notes save stores the note, moves updated_at, and changes nothing else", async () => {
+    const { env, id } = envWithDraft();
+    env.store.db.run("UPDATE entries SET updated_at = 1000 WHERE id = ?", [id]);
+
+    const res = await env.post(`/entries/${id}/notes`, notesForm("watch the em dash"), HX);
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain('<div id="editor-view">');
+    expect(html).toContain("watch the em dash");
+
+    const row = env.store.db.query("SELECT status, human_notes, updated_at FROM entries WHERE id = ?").get(id) as {
+      status: string;
+      human_notes: string | null;
+      updated_at: number;
+    };
+    expect(row.status).toBe("draft");
+    expect(row.human_notes).toBe("watch the em dash");
+    expect(row.updated_at).toBeGreaterThan(1_000_000);
+    expect(revisionCount(env.store, id)).toBe(0);
+    env.close();
+  });
+
+  test("notes save on an applied entry: the scratchpad outlives the status machine", async () => {
+    const { env, id } = envWithDraft();
+    env.store.db.run("UPDATE entries SET status = 'applied' WHERE id = ?", [id]);
+
+    const res = await env.post(`/entries/${id}/notes`, notesForm("still fine to note this"), HX);
+    expect(res.status).toBe(200);
+
+    const row = env.store.db.query("SELECT status, human_notes FROM entries WHERE id = ?").get(id) as {
+      status: string;
+      human_notes: string | null;
+    };
+    expect(row).toEqual({ status: "applied", human_notes: "still fine to note this" });
+    env.close();
+  });
+
+  test("an unknown id on notes save responds with the gone fragment in the editor view shape", async () => {
+    const env = openEnv();
+    const res = await env.post("/entries/does-not-exist/notes", notesForm("x"), HX);
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain("no longer exists");
+    expect(html).toContain('<div id="editor-view">');
+    env.close();
+  });
+
+  test("no-JS notes save redirects back to the editor", async () => {
+    const { env, id } = envWithDraft();
+    const res = await env.post(`/entries/${id}/notes`, notesForm("scratch"));
+    expect(res.status).toBe(303);
+    expect(res.headers.get("location")).toBe(`/entries/${id}`);
+    env.close();
+  });
+});
+
 describe("saving from the editor", () => {
   test("a save swaps in the diff after-side with the authored text, not the stale agent draft", async () => {
     const { env, id } = envWithDraft();

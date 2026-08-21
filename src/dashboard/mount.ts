@@ -2,7 +2,7 @@ import type { Context, Hono } from "hono";
 import { serveStatic } from "hono/bun";
 import { html } from "hono/html";
 import type { Config } from "../config.ts";
-import { appendEntryImage, approveEntry, batchApproveEntries, rejectEntry, removeEntryImage, saveHumanText } from "../db/human-save.ts";
+import { appendEntryImage, approveEntry, batchApproveEntries, rejectEntry, removeEntryImage, saveHumanNotes, saveHumanText } from "../db/human-save.ts";
 import type { ApproveOutcome, BatchApproveResult, RejectOutcome, TransitionRefusal } from "../db/human-save.ts";
 import { projectIdBySlug } from "../db/queries.ts";
 import { parseStyleGuideForm, upsertStyleGuide } from "../db/style-guide.ts";
@@ -262,6 +262,19 @@ export function mountDashboard(app: Hono, config: Config, store: Store): void {
       outcome.ok,
       outcome.ok ? undefined : { title: "Image not removed", body },
     );
+  });
+
+  // The human's notes: the store owns the write (it works on every status and refuses only an
+  // unknown id, so an empty string clears the notes), and this route only formats the outcome. A
+  // non-string part (a crafted multipart file) is treated as an empty note.
+  app.post("/entries/:id/notes", async (c) => {
+    const id = c.req.param("id");
+    const form = await c.req.formData();
+    const raw = form.get("notes");
+    const notes = typeof raw === "string" ? raw : "";
+    const outcome = saveHumanNotes(store, { id, notes });
+    if (!outcome.ok) return c.html(editorViewGoneFragment());
+    return editorWriteReply(c, store, id, auth.enabled, true, undefined);
   });
 
   // The two transitions. One route answers both the editor and the list: the buttons in the editor

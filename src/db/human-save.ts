@@ -305,3 +305,25 @@ export function removeEntryImage(
   ]);
   return { ok: true };
 }
+
+/**
+ * Saves the human's own notes. Deliberately unlike `saveHumanText`: the notes are a scratchpad, so
+ * the write works on every status (an applied or rejected entry's notes stay editable), an empty
+ * string clears them rather than refusing, and nothing else moves — no revision row (only prose
+ * saves make history), no status change, no status event (a waiter cares about approval, not about
+ * a note). `updated_at` moves so the row reflects the write. The only refusal is an unknown id.
+ */
+export function saveHumanNotes(
+  store: Store,
+  input: { readonly id: string; readonly notes: string },
+): { readonly ok: true } | { readonly ok: false; readonly refusal: { readonly kind: "unknown" } } {
+  const row = store.db.query("SELECT id FROM entries WHERE id = ?").get(input.id) as { id: string } | null;
+  if (row === null) return { ok: false, refusal: { kind: "unknown" } };
+
+  store.db.run("UPDATE entries SET human_notes = ?, updated_at = ? WHERE id = ?", [
+    input.notes,
+    Date.now(),
+    input.id,
+  ]);
+  return { ok: true };
+}

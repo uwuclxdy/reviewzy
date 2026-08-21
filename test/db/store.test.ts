@@ -134,7 +134,7 @@ describe("openStore", () => {
     const store = openTempStore();
     const version = (store.db.query("PRAGMA user_version").get() as { user_version: number })
       .user_version;
-    expect(version).toBe(5);
+    expect(version).toBe(6);
     store.close();
   });
 
@@ -201,7 +201,7 @@ describe("openStore", () => {
     const second = openStore(configWithDb(dbPath));
     const version = (second.db.query("PRAGMA user_version").get() as { user_version: number })
       .user_version;
-    expect(version).toBe(5);
+    expect(version).toBe(6);
 
     const row = second.db.query("SELECT slug FROM projects WHERE id = ?").get(project.id) as {
       slug: string;
@@ -527,20 +527,37 @@ describe("timestamps", () => {
     store.close();
   });
 
-  test("the archive sweep copies images across whole (migration 5)", () => {
+  test("human_notes exists and is nullable on entries and entries_archive (migration 6)", () => {
+    const store = openTempStore();
+    for (const table of ["entries", "entries_archive"]) {
+      const columns = (store.db.query(`PRAGMA table_info(${table})`).all() as { name: string; notnull: number }[]);
+      const humanNotes = columns.find((c) => c.name === "human_notes");
+      expect(humanNotes, `${table}.human_notes column`).toBeDefined();
+      expect(humanNotes?.notnull, `${table}.human_notes is nullable`).toBe(0);
+    }
+    store.close();
+  });
+
+  test("the archive sweep copies images and human_notes across whole (migrations 5-6)", () => {
     const store = openTempStore();
     const project = insertProject(store.db);
     const entry = insertEntry(store.db, project.id, { status: "applied", applied_at: 0 });
     const images = ["https://example.com/shot.png", "data:image/png;base64,AAAA"];
-    store.db.run("UPDATE entries SET images = ? WHERE id = ?", [JSON.stringify(images), entry.id]);
+    store.db.run("UPDATE entries SET images = ?, human_notes = ? WHERE id = ?", [
+      JSON.stringify(images),
+      "a scratch note",
+      entry.id,
+    ]);
 
     const moved = sweepArchive(store, Date.now(), 90);
 
     expect(moved).toBe(1);
-    const archived = store.db.query("SELECT images FROM entries_archive WHERE id = ?").get(entry.id) as {
+    const archived = store.db.query("SELECT images, human_notes FROM entries_archive WHERE id = ?").get(entry.id) as {
       images: string;
+      human_notes: string | null;
     };
     expect(JSON.parse(archived.images)).toEqual(images);
+    expect(archived.human_notes).toBe("a scratch note");
     store.close();
   });
 });

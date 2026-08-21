@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ulid } from "ulid";
 import { loadConfig } from "../../src/config.ts";
-import { listRevisions, saveHumanText } from "../../src/db/human-save.ts";
+import { listRevisions, saveHumanNotes, saveHumanText } from "../../src/db/human-save.ts";
 import type { HumanSaveOutcome } from "../../src/db/human-save.ts";
 import { openStore, STATUS_CHANGE_EVENT } from "../../src/db/store.ts";
 import type { Store } from "../../src/db/store.ts";
@@ -312,6 +312,61 @@ describe("saveHumanText writes", () => {
       const outcome = savedOutcome(saveHumanText(store, { id: entry.id, text: "any prose" }));
       expect(outcome.saved, constraints).toBe(true);
     }
+    store.close();
+  });
+});
+
+describe("saveHumanNotes", () => {
+  test.each(["draft", "approved", "applied", "rejected"] as const)(
+    "saves notes on a %s entry: no revision, no status change, no event, updated_at moves",
+    (status) => {
+      const store = openTempStore();
+      const project = insertProject(store, "alpha");
+      const entry = insertEntry(store, project.id, { status });
+      store.db.run("UPDATE entries SET updated_at = 1000 WHERE id = ?", [entry.id]);
+      const seen: { id: string; status: string }[] = [];
+      store.events.addEventListener(STATUS_CHANGE_EVENT, (event) => {
+        seen.push((event as CustomEvent).detail);
+      });
+
+      const outcome = saveHumanNotes(store, { id: entry.id, notes: "my scratch note" });
+
+      expect(outcome).toEqual({ ok: true });
+      const row = store.db.query("SELECT status, human_notes, updated_at FROM entries WHERE id = ?").get(entry.id) as {
+        status: string;
+        human_notes: string | null;
+        updated_at: number;
+      };
+      expect(row.status).toBe(status);
+      expect(row.human_notes).toBe("my scratch note");
+      expect(row.updated_at).toBeGreaterThan(1_000_000);
+      expect(revisionRows(store, entry.id)).toHaveLength(0);
+      expect(seen).toEqual([]);
+      store.close();
+    },
+  );
+
+  test("an empty note clears the stored value instead of refusing", () => {
+    const store = openTempStore();
+    const project = insertProject(store, "alpha");
+    const entry = insertEntry(store, project.id);
+
+    expect(saveHumanNotes(store, { id: entry.id, notes: "scratch" })).toEqual({ ok: true });
+    expect(saveHumanNotes(store, { id: entry.id, notes: "" })).toEqual({ ok: true });
+
+    const row = store.db.query("SELECT human_notes FROM entries WHERE id = ?").get(entry.id) as {
+      human_notes: string | null;
+    };
+    expect(row.human_notes).toBe("");
+    store.close();
+  });
+
+  test("refuses an unknown id", () => {
+    const store = openTempStore();
+    expect(saveHumanNotes(store, { id: "does-not-exist", notes: "x" })).toEqual({
+      ok: false,
+      refusal: { kind: "unknown" },
+    });
     store.close();
   });
 });

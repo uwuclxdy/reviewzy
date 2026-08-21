@@ -65,6 +65,7 @@ export type EntryRow = {
   readonly stale_note: string | null;
   readonly applied_hash: string | null;
   readonly images: string;
+  readonly human_notes: string | null;
   readonly created_at: number;
   readonly updated_at: number;
   readonly applied_at: number | null;
@@ -261,7 +262,7 @@ const APPROVED_PAGE_SIZE = 50;
 /** The columns `docs/mcp-contract.md`'s entry schema names; the one place the output row's shape is spelled out in SQL. */
 const ENTRY_COLUMNS = [
   "id", "project_id", "batch_id", "repo", "file", "title", "anchor_text", "anchor_before",
-  "anchor_after", "anchor_hash", "file_hash", "agent_draft", "human_text", "status",
+  "anchor_after", "anchor_hash", "file_hash", "agent_draft", "human_notes", "human_text", "status",
   "context", "constraints", "filed_by", "stale_note", "applied_hash", "images", "created_at",
   "updated_at", "applied_at", "archived_at",
 ] as const;
