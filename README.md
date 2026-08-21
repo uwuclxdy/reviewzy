@@ -13,7 +13,7 @@ bulk-audit and rewrite user-facing copy across CLIs, TUIs, web UIs, and websites
 
 ---
 
-reviewzy is a self-hosted dashboard and mcp server for human-in-the-loop copy review. a coding agent files the exact text it wants to write or rewrite. a human authors or approves each one on the dashboard. a later agent session fetches the approved words and applies them in place. no i18n keys, no content layer: each entry points at the string where it already lives.
+reviewzy is a self-hosted dashboard and mcp server for human-in-the-loop copy review. a coding agent files the exact text it wants to write or rewrite. a human authors or approves each one on the dashboard. a later agent session fetches the approved words and applies them in place. no i18n keys, no content layer: each entry points at the text where it already lives.
 
 file an entry:
 
@@ -170,9 +170,9 @@ the blocking human-in-the-loop mcp family pops a dialog per call: no queue, no p
 
 ## FAQ
 
-**How do I approve AI-generated text before it lands in my code?** the agent files strings as drafts, you author or approve them on the dashboard, the agent applies.
+**How do I approve AI-generated text before it lands in my code?** the agent files text as drafts, you author or approve them on the dashboard, the agent applies.
 
-**Can an AI agent rewrite my CLI help text without i18n keys?** yes. entries anchor on the exact current strings; apply-back is a targeted replace.
+**Can an AI agent rewrite my CLI help text without i18n keys?** yes. entries anchor on the exact current text; apply-back is a targeted replace.
 
 **How do I bulk-rewrite all user-facing copy in a codebase?** file batches per project, group by project or batch on the dashboard, approve in bulk with a before/after diff, then let a later agent session fetch and apply.
 
