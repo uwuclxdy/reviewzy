@@ -33,6 +33,9 @@ const PAGE_SIZE = 200;
 
 const STATUSES: readonly EntryStatus[] = ["draft", "approved", "applied", "rejected"];
 
+/** The default Active view: the two statuses that still need a human. */
+const ACTIVE_STATUSES: readonly EntryStatus[] = ["draft", "approved"];
+
 function isEntryStatus(value: string): value is EntryStatus {
   return (STATUSES as readonly string[]).includes(value);
 }
@@ -144,14 +147,19 @@ function loadList(store: Store, params: ListParams): ListViewModel {
   const qActive = q !== undefined && q.trim() !== "";
   const statusRaw = params.status;
   const statusActive = statusRaw !== undefined && statusRaw !== "";
-  const status = statusActive && isEntryStatus(statusRaw) ? statusRaw : undefined;
+  // `all` is the explicit "every status" filter value; the default (no status param, or an empty
+  // one) is the Active view of draft + approved only, which is not a filter and never renders the
+  // partial header. Both query every status; the Active view narrows the walked rows afterward.
+  const allStatuses = statusActive && statusRaw === "all";
+  const status = statusActive && !allStatuses && isEntryStatus(statusRaw) ? statusRaw : undefined;
   const projectRaw = params.project;
   const projectActive = projectRaw !== undefined && projectRaw !== "";
   const projectId = projectActive ? (projectIdBySlug(store, projectRaw) ?? undefined) : undefined;
 
   // A status or project value no filter can match is a settled no-match, not a page error.
-  const impossible = (statusActive && status === undefined) || (projectActive && projectId === undefined);
-  const rows = impossible ? [] : allEntries(store, { q: qActive ? q : undefined, status, projectId });
+  const impossible = (statusActive && !allStatuses && status === undefined) || (projectActive && projectId === undefined);
+  const walked = impossible ? [] : allEntries(store, { q: qActive ? q : undefined, status, projectId });
+  const rows = statusActive ? walked : walked.filter((row) => ACTIVE_STATUSES.includes(row.status));
 
   const projects = listProjects(store);
   const slugOf = new Map(projects.map((project) => [project.id, project.slug]));
@@ -249,7 +257,8 @@ function FilterForm({ vm }: { vm: ListViewModel }) {
       <div class="field">
         <label class="field-label" for="status">Status</label>
         <select class="input" id="status" name="status">
-          <option value="">All statuses</option>
+          <option value="" selected={vm.status === ""}>Active</option>
+          <option value="all" selected={vm.status === "all"}>All statuses</option>
           <option value="draft" selected={vm.status === "draft"}>Draft</option>
           <option value="approved" selected={vm.status === "approved"}>Approved</option>
           <option value="applied" selected={vm.status === "applied"}>Applied</option>
@@ -331,11 +340,12 @@ function NoticeCallout({ notice }: { notice: ListNotice }) {
 function ListRegion({ vm, notice }: { vm: ListViewModel; notice: ListNotice | undefined }) {
   if (vm.shown === 0) {
     // Zero entries at all is "no entries yet" even under a filter: nothing exists to filter, and
-    // the empty state explains how entries get here. Only a store with entries can have matches.
+    // the empty state explains how entries get here. A store with entries but no matches is either
+    // a filter miss or the default Active view over a store full of applied and rejected entries.
     return (
       <>
         {notice !== undefined ? <NoticeCallout notice={notice} /> : null}
-        {vm.total === 0 ? <EmptyAll /> : <EmptyMatch />}
+        {vm.total === 0 ? <EmptyAll /> : vm.filtersActive ? <EmptyMatch /> : <EmptyActive />}
       </>
     );
   }
@@ -390,6 +400,22 @@ function EmptyMatch() {
   );
 }
 
+/** The default Active view over a store whose entries are all applied or rejected: nothing to do, no filters to clear. */
+function EmptyActive() {
+  return (
+    <div class="card empty-state">
+      <div class="empty-icon" aria-hidden="true">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+          <circle cx="8" cy="8" r="6.5" />
+          <path d="M5 8l2 2 4-4" />
+        </svg>
+      </div>
+      <h3>Nothing to review</h3>
+      <p>Every filed entry is applied or rejected. New drafts appear here as agents file them.</p>
+    </div>
+  );
+}
+
 /**
  * The batch approve form wrapping the whole list region: the checkboxes post as `id`, the hidden
  * inputs carry the active filters so an action round re-renders the region under the same filter
@@ -432,53 +458,89 @@ function ProjectGroupView({ group }: { group: ProjectGroup }) {
         <span class="tag tag-data">
           {count} {count === 1 ? "entry" : "entries"}
         </span>
+        {/* Every section and batch ships open; dashboard.js collapses the ones this viewer
+            collapsed before (localStorage) and keeps the buttons inert without JS. */}
+        <button
+          type="button"
+          class="btn btn-icon collapse-toggle"
+          aria-expanded="true"
+          aria-controls={`project-batches-${group.slug}`}
+          aria-label={`Toggle ${group.slug} section`}
+          data-collapse-toggle
+          data-collapse-target={`project-batches-${group.slug}`}
+          data-collapse-key={`project:${group.slug}`}
+        >
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+            <path d="M3 6l5 5 5-5" />
+          </svg>
+        </button>
       </header>
-      {group.batches.map((batch) => {
-        // A batch names its filer in the header only when every entry agrees on one non-null
-        // value; a disagreement leaves the header filer-less and each row names its own inline.
-        const filedBy = batch.entries.map((entry) => entry.filed_by);
-        const allAgree = filedBy.every((filer) => filer === filedBy[0]);
-        const singleFiler = allAgree && filedBy[0] !== null ? filedBy[0] : null;
-        const mixedFilers = !allAgree && filedBy.some((filer) => filer !== null);
-        return (
-          <div class="batch" key={batch.id}>
-            <div class="batch-header">
-              {/* Select-all toggles only this batch's draft rows. No `name`, so it never submits as
-                  an entry id; dashboard.js derives checked/indeterminate from the draft checkboxes. */}
-              <input type="checkbox" class="select-all" aria-label={`Select all drafts in batch ${shortUlid(batch.id)}`} />
-              {singleFiler !== null ? <span class="batch-meta">{singleFiler}</span> : null}
-            </div>
-            <div class="table-wrap">
-              <table>
-                <colgroup>
-                  <col class="col-select" />
-                  <col />
-                  <col class="col-status" />
-                  <col class="col-file" />
-                  <col class="col-actions" />
-                </colgroup>
-                <thead>
-                  <tr>
-                    {/* The column header stays in the accessibility tree via the sr-only span; the
-                        checkbox column itself is too narrow for a visible label. */}
-                    <th><span class="visually-hidden">Select</span></th>
-                    <th>Title</th>
-                    <th>Status</th>
-                    <th>File</th>
-                    <th>Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {batch.entries.map((entry) => (
-                    <EntryRowView key={entry.id} entry={entry} filerInline={mixedFilers} />
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        );
-      })}
+      <div id={`project-batches-${group.slug}`} class="project-batches">
+        {group.batches.map((batch) => (
+          <BatchView key={batch.id} batch={batch} />
+        ))}
+      </div>
     </section>
+  );
+}
+
+function BatchView({ batch }: { batch: ProjectBatch }) {
+  // A batch names its filer in the header only when every entry agrees on one non-null
+  // value; a disagreement leaves the header filer-less and each row names its own inline.
+  const filedBy = batch.entries.map((entry) => entry.filed_by);
+  const allAgree = filedBy.every((filer) => filer === filedBy[0]);
+  const singleFiler = allAgree && filedBy[0] !== null ? filedBy[0] : null;
+  const mixedFilers = !allAgree && filedBy.some((filer) => filer !== null);
+  return (
+    <div class="batch">
+      <div class="batch-header">
+        {/* Select-all toggles only this batch's draft rows. No `name`, so it never submits as
+            an entry id; dashboard.js derives checked/indeterminate from the draft checkboxes. */}
+        <input type="checkbox" class="select-all" aria-label={`Select all drafts in batch ${shortUlid(batch.id)}`} />
+        {singleFiler !== null ? <span class="batch-meta">{singleFiler}</span> : null}
+        <button
+          type="button"
+          class="btn btn-icon collapse-toggle"
+          aria-expanded="true"
+          aria-controls={`batch-table-${batch.id}`}
+          aria-label={`Toggle batch ${shortUlid(batch.id)}`}
+          data-collapse-toggle
+          data-collapse-target={`batch-table-${batch.id}`}
+          data-collapse-key={`batch:${batch.id}`}
+        >
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+            <path d="M3 6l5 5 5-5" />
+          </svg>
+        </button>
+      </div>
+      <div class="table-wrap" id={`batch-table-${batch.id}`}>
+        <table>
+          <colgroup>
+            <col class="col-select" />
+            <col />
+            <col class="col-status" />
+            <col class="col-file" />
+            <col class="col-actions" />
+          </colgroup>
+          <thead>
+            <tr>
+              {/* The column header stays in the accessibility tree via the sr-only span; the
+                  checkbox column itself is too narrow for a visible label. */}
+              <th><span class="visually-hidden">Select</span></th>
+              <th>Title</th>
+              <th>Status</th>
+              <th>File</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {batch.entries.map((entry) => (
+              <EntryRowView key={entry.id} entry={entry} filerInline={mixedFilers} />
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
   );
 }
 

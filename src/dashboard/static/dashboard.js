@@ -247,4 +247,62 @@
   });
 
   document.addEventListener("htmx:afterSwap", refreshSelection);
+
+  // --- Collapsible project sections and batches ---
+  // The server renders every section and batch open; JS collapses the ones this viewer collapsed
+  // before, from localStorage, and persists each toggle. Re-applied after every swap because a
+  // filter or action round replaces the whole list region. Without JS the toggles stay inert and
+  // everything stays open.
+  const COLLAPSE_STORAGE = "reviewzy.list-collapsed";
+
+  function readCollapsed() {
+    try {
+      const raw = localStorage.getItem(COLLAPSE_STORAGE);
+      const parsed = raw ? JSON.parse(raw) : {};
+      return typeof parsed === "object" && parsed !== null ? parsed : {};
+    } catch {
+      return {};
+    }
+  }
+
+  function persistCollapsed(key, collapsed) {
+    const map = readCollapsed();
+    if (collapsed) {
+      map[key] = true;
+    } else {
+      delete map[key];
+    }
+    try {
+      localStorage.setItem(COLLAPSE_STORAGE, JSON.stringify(map));
+    } catch {
+      // Storage can be unavailable (private windows); the toggle still works for the page.
+    }
+  }
+
+  function applyCollapseState() {
+    const collapsed = readCollapsed();
+    for (const toggle of document.querySelectorAll("[data-collapse-toggle]")) {
+      const key = toggle.dataset.collapseKey ?? "";
+      const target = document.getElementById(toggle.dataset.collapseTarget ?? "");
+      if (!target) continue;
+      const hidden = collapsed[key] === true;
+      target.hidden = hidden;
+      toggle.setAttribute("aria-expanded", String(!hidden));
+    }
+  }
+
+  document.addEventListener("click", (event) => {
+    const target = event.target instanceof Element ? event.target : null;
+    const toggle = target ? target.closest("[data-collapse-toggle]") : null;
+    if (!toggle) return;
+    const el = document.getElementById(toggle.dataset.collapseTarget ?? "");
+    if (!el) return;
+    const hide = !el.hidden;
+    el.hidden = hide;
+    toggle.setAttribute("aria-expanded", String(!hide));
+    persistCollapsed(toggle.dataset.collapseKey ?? "", hide);
+  });
+
+  applyCollapseState();
+  document.addEventListener("htmx:afterSwap", applyCollapseState);
 })();

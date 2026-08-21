@@ -117,8 +117,11 @@ describe("list transitions", () => {
     const res = await env.post(`/entries/${id}/reject`, new FormData(), HX);
     const html = await res.text();
 
-    expect(html).toContain("Rejected");
+    // The fragment re-renders under the default Active view, which hides rejected entries: the
+    // last row rejected leaves the list, and the store carries the transition.
     expect(html).not.toContain('role="alert"');
+    expect(html).not.toContain(`href="/entries/${id}"`);
+    expect(html).toContain("Nothing to review");
     expect(statusOf(env.store, id)).toBe("rejected");
     env.close();
   });
@@ -202,7 +205,8 @@ describe("list transitions", () => {
   test("applied and rejected rows offer no transitions and no checkbox", async () => {
     const { env, id } = envWithDraft();
     env.store.db.run("UPDATE entries SET status = 'applied' WHERE id = ?", [id]);
-    const html = await (await env.get("/")).text();
+    // `status=all`: the default Active view hides applied rows entirely.
+    const html = await (await env.get("/?status=all")).text();
 
     expect(html).toContain(`href="/entries/${id}"`);
     expect(html).not.toContain(`hx-post="/entries/${id}/approve"`);

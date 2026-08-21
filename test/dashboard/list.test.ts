@@ -150,7 +150,7 @@ function batchHeader(html: string, batchId: string): string {
   const idMark = html.indexOf(`aria-label="Select all drafts in batch ${shortUlid(batchId)}"`);
   expect(idMark, `batch ${batchId} header rendered`).toBeGreaterThan(-1);
   const start = html.lastIndexOf('<div class="batch-header">', idMark);
-  const end = html.indexOf('<div class="table-wrap">', idMark);
+  const end = html.indexOf('<div class="table-wrap"', idMark);
   return html.slice(start, end);
 }
 
@@ -220,7 +220,8 @@ describe("dashboard entry list", () => {
   });
 
   test("lists entries grouped by project then batch, actionable first and newest batch first", async () => {
-    const html = await (await env.get("/")).text();
+    // `status=all` so the full fixture renders: the default Active view hides the terminal batch.
+    const html = await (await env.get("/?status=all")).text();
 
     // Projects in slug order; each project header carries its entry count.
     expect(html.indexOf('<h2 class="project-name">alpha</h2>')).toBeLessThan(
@@ -313,7 +314,8 @@ describe("dashboard entry list", () => {
   });
 
   test("a mixed-filer batch names no filer in the header and labels each row inline", async () => {
-    const html = await (await env.get("/")).text();
+    // `status=all`: batchB is the applied + rejected batch, hidden by the default Active view.
+    const html = await (await env.get("/?status=all")).text();
 
     // batchB holds two filers (probe-agent and other-agent): the header names neither.
     const bHeader = batchHeader(html, batchB.batchId);
@@ -344,7 +346,8 @@ describe("dashboard entry list", () => {
   });
 
   test("adds a per-batch select-all and keeps the approve button static and enabled without JS", async () => {
-    const html = await (await env.get("/")).text();
+    // `status=all` so all four batches render; the default Active view hides the terminal batch.
+    const html = await (await env.get("/?status=all")).text();
 
     // One select-all per batch (4), and it never carries `name`, so it is not submitted as an
     // entry id — the draft checkboxes alone post as `id`.
@@ -362,8 +365,23 @@ describe("dashboard entry list", () => {
     );
   });
 
-  test("renders three icon action slots per status", async () => {
+  test("every project section and batch ships a collapse toggle, expanded and with no JS state", async () => {
     const html = await (await env.get("/")).text();
+
+    // Two project toggles plus three batch toggles: the terminal batch is hidden by default.
+    const toggles = html.match(/data-collapse-toggle/g) ?? [];
+    expect(toggles).toHaveLength(5);
+    // The server renders everything expanded; dashboard.js owns the collapsed state.
+    expect(html.match(/aria-expanded="true"/g)?.length ?? 0).toBe(5);
+    expect(html).not.toContain('class="table-wrap" hidden');
+    expect(html).not.toContain('class="project-batches" hidden');
+    expect(html).toContain('aria-label="Toggle alpha section"');
+    expect(html).toContain(`aria-label="Toggle batch ${shortUlid(batchA.batchId)}"`);
+  });
+
+  test("renders three icon action slots per status", async () => {
+    // `status=all`: the applied and rejected fixture rows live in the hidden-by-default batch.
+    const html = await (await env.get("/?status=all")).text();
 
     // Draft: approve and reject are enabled, edit is always a live link.
     const draftId = batchA.results[0]!.id;
@@ -428,6 +446,32 @@ describe("dashboard entry list", () => {
     expect(html).toContain('<option value="rejected" selected="">Rejected</option>');
   });
 
+  test("the default view shows only active entries and reads as the success state", async () => {
+    const html = await (await env.get("/")).text();
+
+    // Draft and approved rows show; the applied and rejected batch is hidden.
+    expect(html).toContain("Run bun install");
+    expect(html).toContain("The cache lives at");
+    expect(html).toContain("Run the migration");
+    expect(html).toContain("Frequently asked");
+    expect(html).not.toContain("AGPL-3.0");
+    expect(html).not.toContain("shields badge");
+    // The default is not a filter: no partial header, and the select leads with Active.
+    expect(html).not.toContain("Showing ");
+    expect(html).toContain('<option value="" selected="">Active</option>');
+    expect(html).toContain('<option value="all">All statuses</option>');
+  });
+
+  test("status=all shows every status and the select reflects it", async () => {
+    const html = await (await env.get("/?status=all")).text();
+
+    expect(html).toContain("AGPL-3.0");
+    expect(html).toContain("shields badge");
+    expect(html).toContain('<option value="all" selected="">All statuses</option>');
+    // An explicit all-statuses filter matches the whole store, so no partial header either.
+    expect(html).not.toContain("Showing ");
+  });
+
   test("filters by project", async () => {
     const html = await (await env.get("/?project=zeta")).text();
     expect(html).toContain("Frequently asked");
@@ -452,8 +496,9 @@ describe("dashboard entry list", () => {
     expect(partial).not.toContain("AGPL-3.0");
     expect(partial).toContain('value="docs"');
 
-    // A filter matching everything is the success state, not partial.
-    const full = await (await env.get("/?q=the")).text();
+    // A filter matching everything is the success state, not partial. `status=all` makes the
+    // comparison explicit: the default Active view would legitimately hide the terminal rows.
+    const full = await (await env.get("/?q=the&status=all")).text();
     expect(full).not.toContain("Showing ");
     expect(full).toContain("AGPL-3.0");
     expect(full).toContain("Frequently asked");
@@ -489,6 +534,26 @@ describe("dashboard entry list", () => {
     }
   });
 
+  test("a store with only applied and rejected entries reads as nothing to review", async () => {
+    const done = serveApp();
+    try {
+      const batch = fileEntries(done.store, "alpha", "probe-agent", [
+        draft({ file: "docs/a.md", anchorText: "a", anchorHash: "hd", fileHash: "fd", agentDraft: "A note." }),
+      ]);
+      done.store.db.run("UPDATE entries SET status = 'applied' WHERE id = ?", [batch.results[0]!.id]);
+      const html = await (await done.get("/")).text();
+      expect(html).toContain("Nothing to review");
+      expect(html).not.toContain("entry-title");
+      // No filters are active, so the filter-miss escape hatch does not show either.
+      expect(html).not.toContain("Clear filters");
+      // The explicit all-statuses view still shows the row.
+      const all = await (await done.get("/?status=all")).text();
+      expect(all).toContain('class="entry-title">a</span>');
+    } finally {
+      done.close();
+    }
+  });
+
   test("answers a list fragment to htmx requests", async () => {
     const res = await env.get("/?q=wording", { "HX-Request": "true" });
     expect(res.status).toBe(200);
@@ -499,6 +564,16 @@ describe("dashboard entry list", () => {
     expect(html).not.toContain("<!doctype html>");
     expect(html).not.toContain('id="filters"');
     expect(html).not.toContain('class="navbar"');
+  });
+
+  test("wires the collapse toggles in dashboard.js", async () => {
+    const js = await Bun.file(
+      new URL("../../src/dashboard/static/dashboard.js", import.meta.url),
+    ).text();
+    expect(js).toContain("data-collapse-toggle");
+    expect(js).toContain("aria-expanded");
+    expect(js).toContain("localStorage");
+    expect(js).toContain("htmx:afterSwap");
   });
 
   test("serves static assets with the pinned vendor versions", async () => {
