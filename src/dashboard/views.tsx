@@ -738,7 +738,7 @@ export function formatSaveRefusal(refusal: Exclude<HumanSaveRefusal, { kind: "un
     case "status":
       return refusal.status === "applied"
         ? "This entry is already applied, so its text can't be changed here. If the anchor goes stale, the entry returns to approved and can be edited."
-        : "This entry was rejected, so its text can't be changed. A rejected entry stays rejected; file a new entry if the line still needs changing.";
+        : "This entry was rejected, so its text can't be changed. A rejected entry stays rejected; file a new entry if the passage still needs changing.";
   }
 }
 
@@ -764,7 +764,7 @@ export function formatTransitionRefusal(
             ? `Entry ${entryFile} is already applied, so it can't be approved. If the anchor goes stale, the entry returns to approved.`
             : `Entry ${entryFile} is already applied, so it can't be rejected. If the anchor goes stale, it returns to approved and can be rejected then.`;
         case "rejected":
-          return `Entry ${entryFile} was rejected, and a rejected entry stays rejected. File a new entry if the line still needs changing.`;
+          return `Entry ${entryFile} was rejected, and a rejected entry stays rejected. File a new entry if the passage still needs changing.`;
       }
   }
 }
@@ -1144,9 +1144,9 @@ function ContextCard({ entry }: { entry: EntryRow }) {
 
 /**
  * The before-and-after of the entry's text, above the editor: what the anchored region reads now
- * (the anchor line visually distinct) and what the entry's text will replace it with. Both sides
+ * (the anchor visually distinct) and what the entry's text will replace it with. Both sides
  * escape through JSX; the text is the stored bytes, shown as-is. The word-level marks come from
- * the server-side walk: words only the anchor has render red in its line, words only the proposal
+ * the server-side walk: words only the anchor has render red in the before card, words only the proposal
  * has render green in the after card, everything shared stays plain, so an identical pair renders
  * no marks at all.
  */
