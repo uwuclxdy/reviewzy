@@ -13,7 +13,7 @@ bulk-audit and rewrite user-facing copy across CLIs, TUIs, web UIs, and websites
 
 ---
 
-reviewzy is a self-hosted dashboard and mcp server for human-in-the-loop copy review. a coding agent files the exact strings it wants to write or rewrite. a human authors or approves each one on the dashboard. a later agent session fetches the approved words and applies them in place. no i18n keys, no content layer: each entry points at the string where it already lives.
+reviewzy is a self-hosted dashboard and mcp server for human-in-the-loop copy review. a coding agent files the exact text it wants to write or rewrite. a human authors or approves each one on the dashboard. a later agent session fetches the approved words and applies them in place. no i18n keys, no content layer: each entry points at the string where it already lives.
 
 file an entry:
 

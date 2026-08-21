@@ -5,7 +5,7 @@ description: This skill should be used when filing, rewriting, or applying user-
 
 # reviewzy
 
-agents file user-facing text, a human authors or approves it on the dashboard, a later session fetches the approved words and applies them in place. no i18n keys, no content layer: each entry points at the string where it already lives.
+agents file user-facing text, a human authors or approves it on the dashboard, a later session fetches the approved words and applies them in place. no i18n keys, no content layer: each entry points at the text where it already lives.
 
 load this skill whenever a copy change must wait on a human.
 
@@ -25,7 +25,7 @@ resource: `reviewzy://projects/{slug}/style-guide`, mime `text/markdown`. read i
 
 ## workflow
 
-1. file. gather the exact strings to write or rewrite, read the style guide, then call `file_entries` with the project slug and entries (`repo`, `file`, `anchor_text`, `agent_draft`, `context`, `constraints`). report the returned `dashboard_url` to the user.
+1. file. gather the exact text to write or rewrite, read the style guide, then call `file_entries` with the project slug and entries (`repo`, `file`, `anchor_text`, `agent_draft`, `context`, `constraints`). one entry is one edit: `anchor_text` is the whole passage being replaced, `agent_draft` the proposed replacement. report the returned `dashboard_url` to the user.
 2. hand off. a human authors or approves each entry on the dashboard. only the dashboard can reach `approved` or `rejected`; the server enforces this.
 3. fetch. in a later session, call `fetch_approved` with `project` and `since` to get everything approved, or `await_approved` with `ids` and `timeout_ms` to block a live session until those ids resolve.
 4. apply. re-read the file, match `anchor_text` inside its context window, replace it, then call `mark_applied` with `result: "applied"`. if the anchor no longer matches, call `mark_applied` with `result: "anchor_stale"`.
@@ -33,6 +33,7 @@ resource: `reviewzy://projects/{slug}/style-guide`, mime `text/markdown`. read i
 ## rules
 
 - an agent can never move an entry to `approved` or `rejected`. those transitions belong to the dashboard alone.
+- one entry is one edit. `anchor_text` and `agent_draft` may contain newlines: file a multi-line passage as a single entry, never one entry per line.
 - the identity key is `(project_id, repo, file, anchor_hash)`. re-filing an existing key never creates a second row: a `draft` overwrites in place, an `approved`/`applied`/`rejected` entry is a no-op that returns the existing status.
 - anchors go stale when the file moves underneath an entry. re-verify `anchor_text` before replacing, and report `anchor_stale` rather than guessing.
 - constraints (`max_len`, `placeholders`, `tone`) are enforced at approval. a save that exceeds `max_len` or drops a declared placeholder is refused.
