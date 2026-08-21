@@ -105,6 +105,16 @@ const batchD = fileEntries(env.store, "zeta", "probe-agent", [
   }),
 ]);
 
+// Force a same-millisecond pair so the ordering tiebreak is reachable: batchC's id is rewritten
+// to share batchA's ms prefix (minted prefixes tie only by luck, so the pair is crafted) and its
+// entry backdated, so only the batch's newest created_at can separate them. Direct UPDATEs are
+// the fixture's own pattern — statuses and filers move the same way below.
+const batchCId = `${batchA.batchId.slice(0, 10)}ABCDEFGHIJKLMNOP`;
+env.store.db.run(
+  "UPDATE entries SET batch_id = ?, created_at = (SELECT MIN(created_at) FROM entries WHERE batch_id = ?) - 1000 WHERE id = ?",
+  [batchCId, batchA.batchId, batchC.results[0]!.id],
+);
+
 // The approve flow is a later task, so statuses move here through the store directly; the
 // human_text replacement is what a sign-off will write.
 env.store.db.run("UPDATE entries SET status = 'approved', human_text = 'Explain where the cache lives.' WHERE id = ?", [
@@ -121,7 +131,7 @@ const RENDERED: { batchId: string; id: string; text: string }[] = [
   { batchId: batchA.batchId, id: batchA.results[1]!.id, text: "The cache lives at" },
   { batchId: batchB.batchId, id: batchB.results[0]!.id, text: "AGPL-3.0" },
   { batchId: batchB.batchId, id: batchB.results[1]!.id, text: "shields badge" },
-  { batchId: batchC.batchId, id: batchC.results[0]!.id, text: "Run the migration" },
+  { batchId: batchCId, id: batchC.results[0]!.id, text: "Run the migration" },
   { batchId: batchD.batchId, id: batchD.results[0]!.id, text: "Frequently asked" },
 ];
 
@@ -262,7 +272,7 @@ describe("dashboard entry list", () => {
         if (aCreated !== bCreated) return bCreated - aCreated;
         return desc(a, b);
       });
-    const alphaBatches = [batchA.batchId, batchB.batchId, batchC.batchId];
+    const alphaBatches = [batchA.batchId, batchB.batchId, batchCId];
     const expectedOrder = [
       ...newestFirst(alphaBatches.filter(actionable)),
       ...newestFirst(alphaBatches.filter((id) => !actionable(id))),
@@ -289,7 +299,10 @@ describe("dashboard entry list", () => {
     // same-ms tie order inside each partition.
     const mark = (batchId: string) => html.indexOf(`aria-label="Select all drafts in batch ${shortUlid(batchId)}"`);
     expect(mark(batchA.batchId)).toBeLessThan(mark(batchB.batchId));
-    expect(mark(batchC.batchId)).toBeLessThan(mark(batchB.batchId));
+    expect(mark(batchCId)).toBeLessThan(mark(batchB.batchId));
+    // The tiebreak direction, pinned explicitly: batchC's id shares batchA's millisecond prefix
+    // and its entry is backdated, so only the newer batch's created_at can put A first.
+    expect(mark(batchA.batchId)).toBeLessThan(mark(batchCId));
     expect(mark(batchB.batchId)).toBeLessThan(mark(batchD.batchId));
 
     // A row carries the select checkbox, the title, the file path, and the action slots.
@@ -317,7 +330,7 @@ describe("dashboard entry list", () => {
     expect(batchHeader(html, batchA.batchId).match(/probe-agent/g) ?? []).toHaveLength(1);
     expect(batchHeader(html, batchD.batchId).match(/probe-agent/g) ?? []).toHaveLength(1);
     // An all-null batch shows no filer slot at all.
-    const cHeader = batchHeader(html, batchC.batchId);
+    const cHeader = batchHeader(html, batchCId);
     expect(cHeader).not.toContain("filer");
     expect(cHeader).not.toContain("probe-agent");
   });
