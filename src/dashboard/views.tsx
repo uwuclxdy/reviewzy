@@ -976,7 +976,11 @@ function RepoValue({ repo }: { repo: string }) {
   );
 }
 
-/** The entry's context JSON plus its anchor metadata, as an info-table readout. */
+/**
+ * The entry's context JSON plus its anchor metadata, as an info-table readout. The anchor and the
+ * agent-supplied context rows lead — they are what the human authors against — then repo and file;
+ * the provenance rows (hash, filer, stale note) are secondary and sit collapsed behind a summary.
+ */
 function ContextCard({ entry }: { entry: EntryRow }) {
   const context = parseContext(entry.context);
   return (
@@ -986,6 +990,10 @@ function ContextCard({ entry }: { entry: EntryRow }) {
       </div>
       <div class="card-content">
         <table class="info-table">
+          <tr>
+            <td>Anchor</td>
+            <td>{entry.anchor_text}</td>
+          </tr>
           {Object.entries(context).map(([key, value]) => (
             <tr key={key}>
               <td>{key}</td>
@@ -1000,27 +1008,28 @@ function ContextCard({ entry }: { entry: EntryRow }) {
             <td>File</td>
             <td>{entry.file}</td>
           </tr>
-          <tr>
-            <td>Anchor</td>
-            <td>{entry.anchor_text}</td>
-          </tr>
-          <tr>
-            <td>File hash</td>
-            <td>{entry.file_hash}</td>
-          </tr>
-          {entry.filed_by !== null ? (
-            <tr>
-              <td>Filed by</td>
-              <td>{entry.filed_by}</td>
-            </tr>
-          ) : null}
-          {entry.stale_note !== null ? (
-            <tr>
-              <td>Stale note</td>
-              <td>{entry.stale_note}</td>
-            </tr>
-          ) : null}
         </table>
+        <details class="context-secondary">
+          <summary>More</summary>
+          <table class="info-table">
+            <tr>
+              <td>File hash</td>
+              <td>{entry.file_hash}</td>
+            </tr>
+            {entry.filed_by !== null ? (
+              <tr>
+                <td>Filed by</td>
+                <td>{entry.filed_by}</td>
+              </tr>
+            ) : null}
+            {entry.stale_note !== null ? (
+              <tr>
+                <td>Stale note</td>
+                <td>{entry.stale_note}</td>
+              </tr>
+            ) : null}
+          </table>
+        </details>
       </div>
     </div>
   );

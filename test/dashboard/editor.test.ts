@@ -119,11 +119,12 @@ describe("editor page", () => {
     // Status tag: the draft is still a draft.
     expect(html).toContain("Draft");
 
-    // Context pane renders the parsed context as key-value rows, then the anchor metadata. The
-    // diff view above the editor also carries the anchor text, so the order check is scoped to the
-    // pane itself.
+    // Context pane: the anchor leads, then the parsed context as key-value rows, then the anchor
+    // metadata. The diff view above the editor also carries the anchor text, so the order check is
+    // scoped to the pane itself, and the context value is matched with its cell markup since the
+    // anchor row contains the same words.
     const contextPane = html.slice(html.indexOf('<table class="info-table">'));
-    expectOrder(contextPane, ["where", "setup docs", "code", "bun install"]);
+    expectOrder(contextPane, ["<td>Anchor</td>", "<td>where</td>", "setup docs", "<td>code</td>", "<td>bun install</td>"]);
     expect(html).toContain("https://example.com/org/repo.git");
     expect(html).toContain("docs/setup.md");
     expect(html).toContain("Run bun install");

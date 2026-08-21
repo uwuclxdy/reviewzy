@@ -195,7 +195,7 @@
   white-space: nowrap;
   border: 0;
 }
-.editor-grid { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: var(--space-8); align-items: start; }
+.editor-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--space-8); align-items: start; }
 .editor-main { min-width: 0; }
 .editor-rail { display: flex; flex-direction: column; gap: var(--space-6); position: sticky; top: var(--space-8); }
 @media (max-width: 900px) {
@@ -248,6 +248,12 @@
 .placeholder-item { display: flex; align-items: center; gap: var(--space-2); }
 .placeholder-state { font-size: var(--text-xs); color: var(--text-dim); min-width: 52px; }
 .placeholder-state.is-present { color: var(--success); }
+
+/* The context card's secondary block: the provenance rows (hash, filer, stale note) collapsed
+   behind a summary, so the anchor and the agent-supplied context rows lead the card. */
+.context-secondary { margin-top: var(--space-3); }
+.context-secondary summary { cursor: pointer; font-size: var(--text-xs); color: var(--text-dim); }
+.context-secondary .info-table { margin-top: var(--space-2); }
 
 /* Repo row link: the brand icon beside the shortened owner/repo path, linking out to the host. */
 .repo-link { display: inline-flex; align-items: center; gap: 6px; color: var(--text); text-decoration: none; }

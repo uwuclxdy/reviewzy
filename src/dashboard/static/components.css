@@ -672,7 +672,8 @@ kbd {
 }
 
 /* ---- Key-value / metadata table ----
-   Mono readout, no header row; fixed-width uppercase label column. */
+   Mono readout, no header row; half-width uppercase label column, so key and value share the card
+   evenly. */
 .info-table { width: 100%; table-layout: fixed; border-collapse: collapse; font: 400 var(--text-sm)/1.5 var(--font-mono); }
 .info-table td {
   padding: 8px var(--space-3);
@@ -682,7 +683,7 @@ kbd {
 }
 .info-table tr:last-child td { border-bottom: none; }
 .info-table td:first-child {
-  width: 140px;
+  width: 50%;
   font: 450 11px/1.5 var(--font-sans);
   letter-spacing: 0.07em;
   text-transform: uppercase;
