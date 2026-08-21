@@ -154,6 +154,53 @@ async function probe(
   };
 }
 
+/** The probe without the JSON parse, for answers that are not JSON: the legacy leg's sse bodies. */
+async function sseProbe(
+  options: Probe = {},
+): Promise<{ status: number; headers: Headers; body: string }> {
+  const server = options.server ?? open;
+  const method = options.method ?? "POST";
+  const rpc = options.rpc ?? "tools/list";
+  const headers: Record<string, string> = {
+    "content-type": "application/json",
+    accept: "application/json, text/event-stream",
+    ...(options.mcpMethod === null ? {} : { "mcp-method": options.mcpMethod ?? rpc }),
+    ...options.headers,
+  };
+
+  const body =
+    options.rawBody ??
+    JSON.stringify({
+      jsonrpc: "2.0",
+      id: options.id ?? 1,
+      method: rpc,
+      params: { ...options.params, _meta: "meta" in options ? options.meta : META },
+    });
+
+  const response = await fetch(`http://${HOST}:${boundPort(server)}${options.path ?? "/mcp"}`, {
+    method,
+    headers,
+    ...(BODYLESS.has(method) ? {} : { body }),
+  });
+  return { status: response.status, headers: response.headers, body: await response.text() };
+}
+
+/** The `data:` payloads of an sse body, one per event with its lines joined. */
+function sseData(text: string): string {
+  const frames: string[] = [];
+  for (const event of text.split(/\r?\n\r?\n/)) {
+    const data = event
+      .split(/\r?\n/)
+      .filter((line) => line.startsWith("data:"))
+      .map((line) => line.slice("data:".length).replace(/^ /, ""));
+    if (data.length > 0) frames.push(data.join("\n"));
+  }
+  return frames.join("\n");
+}
+
+/** A JSON-RPC frame, for asserting on sse-relayed answers. */
+type Frame = { jsonrpc?: string; id?: number | string | null; result?: Record<string, unknown>; error?: { code: number; message?: string; data?: unknown } };
+
 describe("protocol conformance", () => {
   test("server/discover names the daemon, its instructions, and its capabilities", async () => {
     const { status, body } = await probe({ rpc: "server/discover" });
@@ -355,17 +402,19 @@ describe("the validation ladder", () => {
     expect(body?.error?.code).toBe(-32602);
   });
 
-  // The two halves of shape 3: an `_meta` object with no revision claim. Which rung catches it
-  // depends on where the era claim comes from — nowhere (headerless) means the revision rung fires
-  // with the same message as a missing `_meta`; the header carrying it moves the refusal to the
-  // envelope rung. The pair documents which surface supplies the claim.
-  test("an _meta with no revision and no header is -32022, indistinguishable from no _meta", async () => {
-    const { status, body } = await probe({
+  // The two halves of shape 3: an `_meta` object with no revision claim. Both are era-less, and
+  // the 2025 protocol has no `_meta` envelope at all, so an era-less request IS a legacy request:
+  // the legacy leg serves it. The header split below documents which surface supplies the claim
+  // the modern envelope rung would otherwise demand.
+  test("an _meta with no revision and no header is served by the legacy leg as an sse reply", async () => {
+    const { status, headers, body } = await sseProbe({
       meta: { "io.modelcontextprotocol/clientCapabilities": {} },
     });
-    expect(status).toBe(400);
-    expect(body?.error?.code).toBe(-32022);
-    expect((body?.error?.data as { supported: string[] }).supported).toEqual([REVISION]);
+    expect(status).toBe(200);
+    expect(headers.get("content-type")).toContain("text/event-stream");
+    const frame = JSON.parse(sseData(body)) as Frame;
+    expect(frame.id).toBe(1);
+    expect(Array.isArray(frame.result?.tools)).toBe(true);
   });
 
   test("an _meta with no revision but a version header is -32602 naming the missing key", async () => {
@@ -378,10 +427,13 @@ describe("the validation ladder", () => {
     expect(body?.error?.message).toContain("io.modelcontextprotocol/protocolVersion");
   });
 
-  test("a request claiming no revision at all is refused as legacy", async () => {
-    const { status, body } = await probe({ meta: undefined });
-    expect(status).toBe(400);
-    expect(body?.error?.code).toBe(-32022);
+  test("a request claiming no revision at all is served as legacy, like a 2025 client", async () => {
+    const { status, headers, body } = await sseProbe({ meta: undefined });
+    expect(status).toBe(200);
+    expect(headers.get("content-type")).toContain("text/event-stream");
+    const frame = JSON.parse(sseData(body)) as Frame;
+    expect(frame.id).toBe(1);
+    expect(Array.isArray(frame.result?.tools)).toBe(true);
   });
 
   test("an Mcp-Method header disagreeing with the body is -32020 at 400", async () => {
@@ -411,20 +463,22 @@ describe("the validation ladder", () => {
     expect((body?.error?.data as { supported: string[] }).supported).toEqual([REVISION]);
   });
 
-  test("a legacy initialize handshake is refused with the revisions this daemon speaks", async () => {
-    const response = await fetch(`http://${HOST}:${boundPort(open)}/mcp`, {
-      method: "POST",
-      headers: { "content-type": "application/json", "mcp-method": "initialize" },
-      body: JSON.stringify({
+  test("a legacy initialize handshake is served and names the 2025 revision it speaks", async () => {
+    const { status, headers, body } = await sseProbe({
+      rpc: "initialize",
+      rawBody: JSON.stringify({
         jsonrpc: "2.0",
         id: 1,
         method: "initialize",
         params: { protocolVersion: "2025-11-25", capabilities: {}, clientInfo: { name: "x", version: "0" } },
       }),
     });
-    const body = (await response.json()) as Body;
-    expect(body?.error?.code).toBe(-32022);
-    expect((body?.error?.data as { supported: string[] }).supported).toEqual([REVISION]);
+    expect(status).toBe(200);
+    expect(headers.get("content-type")).toContain("text/event-stream");
+    const frame = JSON.parse(sseData(body)) as Frame;
+    expect(frame.id).toBe(1);
+    expect(frame.result?.protocolVersion).toBe("2025-11-25");
+    expect((frame.result?.serverInfo as { name: string }).name).toBe("reviewzy");
   });
 
   test("an unknown rpc method is -32601 at 404", async () => {

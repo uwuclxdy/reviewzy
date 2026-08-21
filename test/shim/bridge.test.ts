@@ -113,6 +113,48 @@ describe("forwardLine", () => {
     expect(frame.error?.code).toBeDefined();
   });
 
+  test("unwraps the legacy leg's sse answer into its json-rpc data frame", async () => {
+    const initialize = JSON.stringify({
+      jsonrpc: "2.0",
+      id: 6,
+      method: "initialize",
+      params: { protocolVersion: "2025-11-25", capabilities: {}, clientInfo: { name: "x", version: "0" } },
+    });
+    const line = await forwardLine(initialize, open.server.port!);
+    const frame = JSON.parse(line!) as Frame;
+    expect(frame.id).toBe(6);
+    expect(frame.error).toBeUndefined();
+    expect((frame.result as { protocolVersion: string }).protocolVersion).toBe("2025-11-25");
+  });
+
+  test("relays a legacy tools/list through the daemon's legacy leg as a json frame", async () => {
+    const list = JSON.stringify({ jsonrpc: "2.0", id: 7, method: "tools/list", params: {} });
+    const line = await forwardLine(list, open.server.port!);
+    const frame = JSON.parse(line!) as Frame;
+    expect(frame.id).toBe(7);
+    expect(Array.isArray((frame.result as { tools: unknown[] }).tools)).toBe(true);
+  });
+
+  test("an sse reply carrying no data frame is a transport error frame, not silence", async () => {
+    const empty = Bun.serve({
+      hostname: "127.0.0.1",
+      port: 0,
+      fetch: () => new Response(": keep-alive\n\n", {
+        status: 200,
+        headers: { "content-type": "text/event-stream" },
+      }),
+    });
+    try {
+      const line = await forwardLine(discover("sse-empty"), empty.port!);
+      const frame = JSON.parse(line!) as Frame;
+      expect(frame.id).toBe("sse-empty");
+      expect(frame.error?.code).toBe(-32603);
+      expect(frame.error?.message).toContain("no data frame");
+    } finally {
+      void empty.stop(true);
+    }
+  });
+
   test("a 200 with an empty body for a request is a transport error frame, not silence", async () => {
     const empty = Bun.serve({
       hostname: "127.0.0.1",

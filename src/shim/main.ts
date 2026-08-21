@@ -6,11 +6,12 @@ import { VERSION } from "../version.ts";
 
 /**
  * The shim owns zero protocol logic: one stdin JSON-RPC line in, one POST to the daemon's `/mcp`,
- * whatever the daemon answered back out on stdout. The only interpretation it does is mechanical
- * transport mapping, because the Streamable HTTP transport demands headers a stdio frame does not
- * carry: `Mcp-Method` from the frame's method, `MCP-Protocol-Version` from its `_meta` revision,
- * `Mcp-Name` from `params.name`/`params.uri` on the named calls. Validation of all of it stays
- * server-side, where the security control lives.
+ * the daemon's answer back out on stdout. The only interpretation it does is mechanical transport
+ * mapping, because the Streamable HTTP transport demands headers a stdio frame does not carry:
+ * `Mcp-Method` from the frame's method, `MCP-Protocol-Version` from its `_meta` revision,
+ * `Mcp-Name` from `params.name`/`params.uri` on the named calls, and an SSE answer from the legacy
+ * leg unwrapped into its `data:` frames. Validation of all of it stays server-side, where the
+ * security control lives.
  */
 type LooseFrame = {
   method?: unknown;
@@ -102,6 +103,25 @@ export async function forwardLine(line: string, port: number, token?: string): P
   // silence (a notification still gets silence, since transportError drops those).
   if (text === "") {
     return transportError(frame, `daemon replied http ${response.status} with an empty body`);
+  }
+
+  // The legacy leg answers every request as an SSE body: a stateless server has no session to
+  // hang a follow-up GET stream on, so the transport frames the reply inline. stdout carries
+  // JSON-RPC frames only, so each event's `data:` payload is relayed as its own line; events
+  // without data (comments, keep-alives) carry no frame and are skipped.
+  if ((response.headers.get("content-type") ?? "").startsWith("text/event-stream")) {
+    const frames: string[] = [];
+    for (const event of text.split(/\r?\n\r?\n/)) {
+      const data = event
+        .split(/\r?\n/)
+        .filter((line) => line.startsWith("data:"))
+        .map((line) => line.slice("data:".length).replace(/^ /, ""));
+      if (data.length > 0) frames.push(data.join("\n"));
+    }
+    if (frames.length === 0) {
+      return transportError(frame, `daemon replied http ${response.status} with an sse body carrying no data frame`);
+    }
+    return frames.join("\n");
   }
 
   let parsed: unknown;

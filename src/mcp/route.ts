@@ -58,17 +58,14 @@ export function mountMcp(
   store: Store,
   notifier: Notifier = new Notifier({ config, baseUrl: config.baseUrl }),
 ): void {
-  // `legacy: 'reject'` is the whole of the revision guard, so the endpoint serves only the one
-  // revision `docs/mcp-contract.md` freezes. `supportedProtocolVersions` on the server cannot do
-  // it and is deliberately unset: the SDK's `installDiscoverHandler` unions its served modern
-  // revisions back into that array regardless of what was passed, and on a legacy leg
-  // (`Server._oninitialize`) the list only picks WHICH 2025-era revision to answer with —
-  // `legacyVersions[0] ?? LATEST_PROTOCOL_VERSION`, and `LATEST_PROTOCOL_VERSION` is
-  // `"2025-11-25"`. A modern-only list empties `legacyVersions`, which is exactly what reaches
-  // that hardcoded fallback, so narrowing it is what would serve one.
+  // The native surface is the one revision `docs/mcp-contract.md` freezes, but `legacy: 'reject'`
+  // locked out the claude harness fleet, whose mcp client negotiates `2025-11-25` (measured
+  // 2026-08-21: 2.1.238 sends a legacy initialize and reads the refusal as a dead server).
+  // `legacy: 'stateless'` is the SDK default and answers 2025-era traffic from the same factory
+  // per request, so both legs stay stateless and no session is minted on either one.
   // The store is the daemon's own open handle (`startDaemon` opens it before the port binds), so
   // every tool call writes through the one connection the daemon will close on shutdown.
-  const handler = createMcpHandler(() => createMcpServer(config, store, notifier), { legacy: "reject" });
+  const handler = createMcpHandler(() => createMcpServer(config, store, notifier), { legacy: "stateless" });
 
   // The `Origin` rung is `originGate`, mounted app-wide in `createApp`; it runs before this
   // handler, so the pinned order (origin, then method, then credential) holds without a repeat of
