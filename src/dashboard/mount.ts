@@ -200,9 +200,10 @@ export function mountDashboard(app: Hono, config: Config, store: Store): void {
   });
 
   // The image upload: one multipart file, converted to a data url here at the boundary after the
-  // route's own mime and size checks, then appended by the store (which owns the unknown-id
-  // refusal). The cap matches the wire's per-item cap; here it measures the file's bytes, not the
-  // url string's.
+  // route's own mime and size checks, then appended by the store (which owns the refusals). The
+  // cap is the stored data url's length, the same quantity the wire's per-item validation
+  // measures: base64 grows a file by ~4/3, so a file under 5 MiB can still store as an over-cap
+  // url, and the exact length is computed before any conversion runs.
   app.post("/entries/:id/images", async (c) => {
     const id = c.req.param("id");
     const form = await c.req.formData();
@@ -220,16 +221,27 @@ export function mountDashboard(app: Hono, config: Config, store: Store): void {
         title: "Image not added",
         body: `The file type is ${file.type === "" ? "unknown" : file.type}; only images are accepted, at most 5 MiB.`,
       };
-    } else if (file.size > MAX_IMAGE_BYTES) {
-      outcome = {
-        ok: false,
-        title: "Image not added",
-        body: `The file is ${(file.size / 1024 / 1024).toFixed(1)} MiB; the limit is 5 MiB. Send a smaller image.`,
-      };
     } else {
-      const write = appendEntryImage(store, id, `data:${file.type};base64,${Buffer.from(await file.arrayBuffer()).toString("base64")}`);
-      if (!write.ok) return c.html(editorViewGoneFragment());
-      outcome = { ok: true };
+      const urlLength = `data:${file.type};base64,`.length + 4 * Math.ceil(file.size / 3);
+      if (urlLength > MAX_IMAGE_BYTES) {
+        outcome = {
+          ok: false,
+          title: "Image not added",
+          body: `The file is ${(file.size / 1024 / 1024).toFixed(1)} MiB, which stores as a ${(urlLength / 1024 / 1024).toFixed(1)} MiB data url; the limit is 5 MiB. Send a smaller image.`,
+        };
+      } else {
+        const write = appendEntryImage(store, id, `data:${file.type};base64,${Buffer.from(await file.arrayBuffer()).toString("base64")}`);
+        if (!write.ok) {
+          if (write.refusal.kind === "too_many") {
+            return editorWriteReply(c, store, id, auth.enabled, false, {
+              title: "Image not added",
+              body: "This entry already has 8 images; the limit is 8. Remove one and try again.",
+            });
+          }
+          return c.html(editorViewGoneFragment());
+        }
+        outcome = { ok: true };
+      }
     }
     return editorWriteReply(
       c,

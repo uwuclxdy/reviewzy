@@ -369,9 +369,62 @@ describe("entry images", () => {
     expect(html).toContain('role="alert"');
     expect(html).toContain("Image not added");
     expect(html).toContain("5 MiB");
+    expect(html).toContain("data url");
 
     const row = env.store.db.query("SELECT images FROM entries WHERE id = ?").get(id) as { images: string };
     expect(JSON.parse(row.images)).toEqual([]);
+    env.close();
+  });
+
+  test("caps the stored data url, not the file: a file under 5 MiB whose base64 crosses the cap is refused, one byte inside is accepted", async () => {
+    const { env, id } = envWithDraft();
+    // data:image/png;base64, is 22 bytes; the largest accepted file makes the url exactly
+    // 4*ceil(size/3) + 22 = 5,242,878 <= 5 MiB, and one byte more crosses it.
+    const accepted = await env.post(
+      `/entries/${id}/images`,
+      (() => {
+        const form = new FormData();
+        form.set("file", new File([new Uint8Array(3_932_142)], "edge.png", { type: "image/png" }));
+        return form;
+      })(),
+      HX,
+    );
+    expect(accepted.status).toBe(200);
+    expect(await accepted.text()).not.toContain("Image not added");
+
+    const refused = await env.post(
+      `/entries/${id}/images`,
+      (() => {
+        const form = new FormData();
+        form.set("file", new File([new Uint8Array(3_932_143)], "over.png", { type: "image/png" }));
+        return form;
+      })(),
+      HX,
+    );
+    const html = await refused.text();
+    expect(html).toContain("Image not added");
+    expect(html).toContain("5 MiB");
+
+    const row = env.store.db.query("SELECT images FROM entries WHERE id = ?").get(id) as { images: string };
+    expect(JSON.parse(row.images)).toHaveLength(1);
+    env.close();
+  });
+
+  test("refuses an upload past the 8-image cap, naming the limit", async () => {
+    const { env, id } = envWithDraft({
+      imagesJson: JSON.stringify(Array.from({ length: 8 }, (_, i) => `https://example.com/${i}.png`)),
+    });
+    const form = new FormData();
+    form.set("file", imageFile());
+
+    const res = await env.post(`/entries/${id}/images`, form, HX);
+    const html = await res.text();
+    expect(html).toContain('role="alert"');
+    expect(html).toContain("Image not added");
+    expect(html).toContain("already has 8 images");
+
+    const row = env.store.db.query("SELECT images FROM entries WHERE id = ?").get(id) as { images: string };
+    expect(JSON.parse(row.images)).toHaveLength(8);
     env.close();
   });
 

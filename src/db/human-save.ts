@@ -257,53 +257,78 @@ export function parseEntryImages(json: string): string[] {
   return parsed.filter((item): item is string => typeof item === "string");
 }
 
+/** The per-entry image cap `docs/mcp-contract.md` pins for `images`; the wire's boundary carries the same number in its own layer. */
+const MAX_ENTRY_IMAGES = 8;
+
 /** Everything the image writes refuse; the dashboard's upload and remove routes format the messages. */
 export type ImageWriteRefusal =
   | { readonly kind: "unknown" }
+  | { readonly kind: "too_many" }
   | { readonly kind: "no_image"; readonly index: number };
 
 /**
  * Appends one image the human uploaded to the entry's image list. A note-like write, not a save:
  * it works on every status, writes no revision row, changes no status, and fires no status event
  * (a waiter cares about approval, not about a new screenshot). `updated_at` moves so the row
- * reflects the write. The data url already passed the route's mime and size checks.
+ * reflects the write. The data url already passed the route's mime and size checks, and the
+ * stored list must stay inside the contract's image cap.
+ *
+ * The read and the write share one immediate transaction: a deferred one would let two racing
+ * uploads (a double submit) both read the old list and drop one image on the later write, while
+ * the immediate lock serializes them at the read.
  */
-export function appendEntryImage(store: Store, id: string, dataUrl: string): { readonly ok: true } | { readonly ok: false; readonly refusal: { readonly kind: "unknown" } } {
-  const row = store.db.query("SELECT images FROM entries WHERE id = ?").get(id) as { images: string } | null;
-  if (row === null) return { ok: false, refusal: { kind: "unknown" } };
+export function appendEntryImage(
+  store: Store,
+  id: string,
+  dataUrl: string,
+): { readonly ok: true } | { readonly ok: false; readonly refusal: ImageWriteRefusal } {
+  const write = store.db.transaction(() => {
+    const row = store.db.query("SELECT images FROM entries WHERE id = ?").get(id) as { images: string } | null;
+    if (row === null) return { ok: false as const, refusal: { kind: "unknown" as const } };
 
-  const images = parseEntryImages(row.images);
-  images.push(dataUrl);
-  store.db.run("UPDATE entries SET images = ?, updated_at = ? WHERE id = ?", [
-    JSON.stringify(images),
-    Date.now(),
-    id,
-  ]);
-  return { ok: true };
+    const images = parseEntryImages(row.images);
+    if (images.length >= MAX_ENTRY_IMAGES) {
+      return { ok: false as const, refusal: { kind: "too_many" as const } };
+    }
+    images.push(dataUrl);
+    store.db.run("UPDATE entries SET images = ?, updated_at = ? WHERE id = ?", [
+      JSON.stringify(images),
+      Date.now(),
+      id,
+    ]);
+    return { ok: true as const };
+  });
+  return write.immediate();
 }
 
 /**
  * Removes one image by its index in the stored array. Same write class as `appendEntryImage`: no
- * revision, no status change, no event; `updated_at` moves. An index past either end is a refusal
- * carrying the index the route's message names.
+ * revision, no status change, no event; `updated_at` moves, and the read + write share one
+ * immediate transaction for the same double-submit race the append guards. An index past either
+ * end is a refusal carrying the index the route's message names.
  */
 export function removeEntryImage(
   store: Store,
   id: string,
   index: number,
 ): { readonly ok: true } | { readonly ok: false; readonly refusal: ImageWriteRefusal } {
-  const row = store.db.query("SELECT images FROM entries WHERE id = ?").get(id) as { images: string } | null;
-  if (row === null) return { ok: false, refusal: { kind: "unknown" } };
+  const write = store.db.transaction(() => {
+    const row = store.db.query("SELECT images FROM entries WHERE id = ?").get(id) as { images: string } | null;
+    if (row === null) return { ok: false as const, refusal: { kind: "unknown" as const } };
 
-  const images = parseEntryImages(row.images);
-  if (index < 0 || index >= images.length) return { ok: false, refusal: { kind: "no_image", index } };
-  images.splice(index, 1);
-  store.db.run("UPDATE entries SET images = ?, updated_at = ? WHERE id = ?", [
-    JSON.stringify(images),
-    Date.now(),
-    id,
-  ]);
-  return { ok: true };
+    const images = parseEntryImages(row.images);
+    if (index < 0 || index >= images.length) {
+      return { ok: false as const, refusal: { kind: "no_image" as const, index } };
+    }
+    images.splice(index, 1);
+    store.db.run("UPDATE entries SET images = ?, updated_at = ? WHERE id = ?", [
+      JSON.stringify(images),
+      Date.now(),
+      id,
+    ]);
+    return { ok: true as const };
+  });
+  return write.immediate();
 }
 
 /**

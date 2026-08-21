@@ -1059,7 +1059,7 @@ function ImagesCard({ entry }: { entry: EntryRow }) {
           hx-swap="outerHTML"
         >
           <input class="input" type="file" name="file" accept="image/*" aria-label="Image file" />
-          <button class="btn btn-secondary btn-sm" type="submit">Add image</button>
+          <button class="btn btn-secondary btn-sm" type="submit" hx-disabled-elt="this">Add image</button>
         </form>
       </div>
     </div>
