@@ -515,3 +515,104 @@ describe("the json boundary", () => {
     expect(rows(first.store, "boundary")).toHaveLength(0);
   });
 });
+
+describe("entry images", () => {
+  const IMAGES = ["https://example.com/shot.png", "data:image/png;base64,AAAA"];
+
+  test("stores the images array verbatim as json", async () => {
+    const { body } = await fileEntries({
+      project: "images",
+      entries: [entry({ images: IMAGES })],
+    });
+    expect(body.result?.isError).toBeUndefined();
+    expect(JSON.parse(rows(first.store, "images")[0]!.images as string)).toEqual(IMAGES);
+  });
+
+  test("a first file without images stores the empty default", async () => {
+    const { body } = await fileEntries({ project: "images-bare", entries: [entry()] });
+    expect(body.result?.isError).toBeUndefined();
+    expect(JSON.parse(rows(first.store, "images-bare")[0]!.images as string)).toEqual([]);
+  });
+
+  test("refuses images that are not an array, naming the entry and the fix", async () => {
+    const { body } = await fileEntries({
+      project: "images-bad",
+      entries: [entry({ images: "https://example.com/shot.png" })],
+    });
+    expect(body.result?.isError).toBe(true);
+    const text = body.result?.content?.[0]?.text ?? "";
+    expect(text).toContain("images");
+    expect(text).toContain("src/app.ts");
+    expect(text).toMatch(/fix:/i);
+    expect(rows(first.store, "images-bad")).toHaveLength(0);
+  });
+
+  test("refuses more than 8 images, naming the limit", async () => {
+    const { body } = await fileEntries({
+      project: "images-many",
+      entries: [entry({ images: Array.from({ length: 9 }, (_, i) => `https://example.com/${i}.png`) })],
+    });
+    expect(body.result?.isError).toBe(true);
+    expect(body.result?.content?.[0]?.text).toContain("limit is 8");
+    expect(rows(first.store, "images-many")).toHaveLength(0);
+  });
+
+  test("refuses a non-string item, naming its position", async () => {
+    const { body } = await fileEntries({
+      project: "images-typed",
+      entries: [entry({ images: ["https://example.com/shot.png", 42] })],
+    });
+    expect(body.result?.isError).toBe(true);
+    expect(body.result?.content?.[0]?.text).toContain("images[1]");
+    expect(rows(first.store, "images-typed")).toHaveLength(0);
+  });
+
+  test.each(["javascript:alert(1)", "data:text/html,hi", "ftp://example.com/x.png", "shot.png"])(
+    "refuses an item whose prefix is not data:image/ or http(s): %s",
+    async (item) => {
+      const { body } = await fileEntries({
+        project: "images-prefix",
+        entries: [entry({ file: `src/${item.length}.ts`, anchor_text: `anchor ${item.length}`, images: [item] })],
+      });
+      expect(body.result?.isError).toBe(true);
+      expect(body.result?.content?.[0]?.text).toContain("images[0]");
+      expect(body.result?.content?.[0]?.text).toContain("data:image/");
+      expect(rows(first.store, "images-prefix")).toHaveLength(0);
+    },
+  );
+
+  test("refuses an item over 5 MiB, naming the limit", async () => {
+    const tooBig = `data:image/png;base64,${"A".repeat(5 * 1024 * 1024)}`;
+    const { body } = await fileEntries({
+      project: "images-big",
+      entries: [entry({ images: [tooBig] })],
+    });
+    expect(body.result?.isError).toBe(true);
+    expect(body.result?.content?.[0]?.text).toContain("5 MiB");
+    expect(rows(first.store, "images-big")).toHaveLength(0);
+  });
+
+  test("a draft re-file overwrites images when present and keeps them when absent", async () => {
+    const filed = (await fileEntries({ project: "images-refile", entries: [entry({ images: IMAGES })] })).body
+      .result?.structuredContent as Result;
+    const id = filed.results[0]!.id;
+    expect(JSON.parse(rows(first.store, "images-refile")[0]!.images as string)).toEqual(IMAGES);
+
+    // A re-file that omits images keeps the stored ones, like the other agent fields.
+    const redone = await fileEntries({ project: "images-refile", entries: [entry()] });
+    expect((redone.body.result?.structuredContent as Result).results[0]).toMatchObject({
+      id,
+      status: "draft",
+      deduped: true,
+      updated: true,
+    });
+    expect(JSON.parse(rows(first.store, "images-refile")[0]!.images as string)).toEqual(IMAGES);
+
+    // A re-file carrying new images overwrites them in place, minting no second row.
+    await fileEntries({ project: "images-refile", entries: [entry({ images: ["https://example.com/new.png"] })] });
+    expect(JSON.parse(rows(first.store, "images-refile")[0]!.images as string)).toEqual([
+      "https://example.com/new.png",
+    ]);
+    expect(rows(first.store, "images-refile")).toHaveLength(1);
+  });
+});

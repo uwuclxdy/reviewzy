@@ -7,6 +7,7 @@ import { ulid } from "ulid";
 import { loadConfig } from "../../src/config.ts";
 import { openStore, StoreError } from "../../src/db/store.ts";
 import type { Store } from "../../src/db/store.ts";
+import { sweepArchive } from "../../src/db/sweep.ts";
 
 const tempDirs: string[] = [];
 
@@ -133,7 +134,7 @@ describe("openStore", () => {
     const store = openTempStore();
     const version = (store.db.query("PRAGMA user_version").get() as { user_version: number })
       .user_version;
-    expect(version).toBe(4);
+    expect(version).toBe(5);
     store.close();
   });
 
@@ -200,7 +201,7 @@ describe("openStore", () => {
     const second = openStore(configWithDb(dbPath));
     const version = (second.db.query("PRAGMA user_version").get() as { user_version: number })
       .user_version;
-    expect(version).toBe(4);
+    expect(version).toBe(5);
 
     const row = second.db.query("SELECT slug FROM projects WHERE id = ?").get(project.id) as {
       slug: string;
@@ -511,6 +512,35 @@ describe("timestamps", () => {
       expect(title, `${table}.title column`).toBeDefined();
       expect(title?.notnull, `${table}.title is nullable`).toBe(0);
     }
+    store.close();
+  });
+
+  test("images exists with an '[]' default on entries and entries_archive (migration 5)", () => {
+    const store = openTempStore();
+    for (const table of ["entries", "entries_archive"]) {
+      const columns = (store.db.query(`PRAGMA table_info(${table})`).all() as { name: string; notnull: number; dflt_value: string | null }[]);
+      const images = columns.find((c) => c.name === "images");
+      expect(images, `${table}.images column`).toBeDefined();
+      expect(images?.notnull, `${table}.images is NOT NULL`).toBe(1);
+      expect(images?.dflt_value, `${table}.images defaults to '[]'`).toBe("'[]'");
+    }
+    store.close();
+  });
+
+  test("the archive sweep copies images across whole (migration 5)", () => {
+    const store = openTempStore();
+    const project = insertProject(store.db);
+    const entry = insertEntry(store.db, project.id, { status: "applied", applied_at: 0 });
+    const images = ["https://example.com/shot.png", "data:image/png;base64,AAAA"];
+    store.db.run("UPDATE entries SET images = ? WHERE id = ?", [JSON.stringify(images), entry.id]);
+
+    const moved = sweepArchive(store, Date.now(), 90);
+
+    expect(moved).toBe(1);
+    const archived = store.db.query("SELECT images FROM entries_archive WHERE id = ?").get(entry.id) as {
+      images: string;
+    };
+    expect(JSON.parse(archived.images)).toEqual(images);
     store.close();
   });
 });

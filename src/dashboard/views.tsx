@@ -1,6 +1,6 @@
 /** @jsxImportSource hono/jsx */
 import type { JSX } from "hono/jsx/jsx-runtime";
-import { listRevisions, parseConstraints } from "../db/human-save.ts";
+import { listRevisions, parseConstraints, parseEntryImages } from "../db/human-save.ts";
 import type { Constraints, HumanSaveRefusal, RevisionRow, TransitionRefusal } from "../db/human-save.ts";
 import {
   adjacentEntryIds,
@@ -959,6 +959,71 @@ function ConstraintsCard({ constraints, text }: { constraints: Constraints; text
   );
 }
 
+/** An image item renders only when it still matches the prefixes the wire validated; a foreign row can hold anything, so a non-matching item shows a note instead, never raw. */
+function isRenderableImage(item: string): boolean {
+  return item.startsWith("data:image/") || /^https?:\/\//.test(item);
+}
+
+/**
+ * The images attached to an entry, one card in the rail: each valid item as a real `img` (sized by
+ * css), an invalid one as a "not shown" note, a remove form per image, and the one-file upload
+ * form. A card of its own, not a strip in the context card: upload and remove need a stable home,
+ * and the context card stays lean for what the human authors against. Both forms target the whole
+ * editor view like the save form, so a change re-renders the card in place.
+ */
+function ImagesCard({ entry }: { entry: EntryRow }) {
+  const images = parseEntryImages(entry.images);
+  return (
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">Images</div>
+      </div>
+      <div class="card-content">
+        {images.length === 0 ? (
+          <p class="field-hint">No images yet.</p>
+        ) : (
+          <ul class="image-list">
+            {images.map((item, index) =>
+              isRenderableImage(item) ? (
+                <li class="image-item" key={index}>
+                  <img class="entry-image" src={item} alt={`Image ${index + 1}`} loading="lazy" />
+                  <form
+                    class="image-remove"
+                    method="post"
+                    action={`/entries/${entry.id}/images/${index}/remove`}
+                    hx-post={`/entries/${entry.id}/images/${index}/remove`}
+                    hx-target="#editor-view"
+                    hx-swap="outerHTML"
+                  >
+                    <button class="btn btn-ghost btn-sm" type="submit">Remove</button>
+                  </form>
+                </li>
+              ) : (
+                <li class="image-item" key={index}>
+                  <p class="image-skip">Image {index + 1} not shown: unsupported source.</p>
+                </li>
+              ),
+            )}
+          </ul>
+        )}
+        <form
+          class="image-upload"
+          method="post"
+          action={`/entries/${entry.id}/images`}
+          enctype="multipart/form-data"
+          hx-post={`/entries/${entry.id}/images`}
+          hx-encoding="multipart/form-data"
+          hx-target="#editor-view"
+          hx-swap="outerHTML"
+        >
+          <input class="input" type="file" name="file" accept="image/*" aria-label="Image file" />
+          <button class="btn btn-secondary btn-sm" type="submit">Add image</button>
+        </form>
+      </div>
+    </div>
+  );
+}
+
 /**
  * The repo row's value: a recognized remote renders as its brand icon beside the bare owner/repo
  * path, both linking out to the host; an unrecognized one renders as the raw string as filed.
@@ -1084,6 +1149,7 @@ function EditorView({ vm, state }: { vm: EditorViewModel; state: EditorState | u
         <aside class="editor-rail">
           <ContextCard entry={vm.entry} />
           <ConstraintsCard constraints={vm.constraints} text={text} />
+          <ImagesCard entry={vm.entry} />
         </aside>
       </div>
     </div>

@@ -8,10 +8,10 @@ export type EntryStatus = "draft" | "approved" | "applied" | "rejected";
 /**
  * One entry as it crosses into the store: every field already typed, hashed, and stringified.
  * The json boundary belongs to the tool that reads the wire (`src/mcp/file-entries.ts`); nothing
- * here re-parses what it already accepted. `agentDraft`, `contextJson`, and `constraintsJson` are
- * null when the caller did not send the field: a first filing stores the empty default, and a
- * draft re-file keeps the stored value (the schema refuses explicit null, so no caller can
- * express a wipe).
+ * here re-parses what it already accepted. `agentDraft`, `contextJson`, `constraintsJson`, and
+ * `imagesJson` are null when the caller did not send the field: a first filing stores the empty
+ * default, and a draft re-file keeps the stored value (the schema refuses explicit null, so no
+ * caller can express a wipe).
  */
 export type NewEntry = {
   readonly repo: string;
@@ -25,6 +25,7 @@ export type NewEntry = {
   readonly agentDraft: string | null;
   readonly contextJson: string | null;
   readonly constraintsJson: string | null;
+  readonly imagesJson: string | null;
 };
 
 export type FiledEntry = {
@@ -63,6 +64,7 @@ export type EntryRow = {
   readonly filed_by: string | null;
   readonly stale_note: string | null;
   readonly applied_hash: string | null;
+  readonly images: string;
   readonly created_at: number;
   readonly updated_at: number;
   readonly applied_at: number | null;
@@ -193,8 +195,8 @@ function fileOneEntry(
       `INSERT INTO entries (
         id, project_id, batch_id, repo, file, title, anchor_text, anchor_before, anchor_after,
         anchor_hash, file_hash, agent_draft, human_text, status, context, constraints,
-        filed_by, stale_note, created_at, updated_at, applied_at, archived_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, 'draft', ?, ?, ?, NULL, ?, ?, NULL, NULL)`,
+        filed_by, stale_note, images, created_at, updated_at, applied_at, archived_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, 'draft', ?, ?, ?, NULL, ?, ?, ?, NULL, NULL)`,
       [
         id,
         projectId,
@@ -211,6 +213,7 @@ function fileOneEntry(
         entry.contextJson ?? "{}",
         entry.constraintsJson ?? "{}",
         filedBy,
+        entry.imagesJson ?? "[]",
         now,
         now,
       ],
@@ -222,8 +225,8 @@ function fileOneEntry(
     // `COALESCE(?, column)`: a field the newer call did not carry (null) keeps the stored value.
     // The schema refuses explicit null, so a re-file can only move the fields it names.
     db.run(
-      "UPDATE entries SET agent_draft = COALESCE(?, agent_draft), context = COALESCE(?, context), constraints = COALESCE(?, constraints), title = COALESCE(?, title), updated_at = ? WHERE id = ?",
-      [entry.agentDraft, entry.contextJson, entry.constraintsJson, entry.title, Date.now(), existing.id],
+      "UPDATE entries SET agent_draft = COALESCE(?, agent_draft), context = COALESCE(?, context), constraints = COALESCE(?, constraints), title = COALESCE(?, title), images = COALESCE(?, images), updated_at = ? WHERE id = ?",
+      [entry.agentDraft, entry.contextJson, entry.constraintsJson, entry.title, entry.imagesJson, Date.now(), existing.id],
     );
     return { id: existing.id, status: "draft", deduped: true, updated: true };
   }
@@ -259,7 +262,8 @@ const APPROVED_PAGE_SIZE = 50;
 const ENTRY_COLUMNS = [
   "id", "project_id", "batch_id", "repo", "file", "title", "anchor_text", "anchor_before",
   "anchor_after", "anchor_hash", "file_hash", "agent_draft", "human_text", "status",
-  "context", "constraints", "filed_by", "stale_note", "applied_hash", "created_at", "updated_at", "applied_at", "archived_at",
+  "context", "constraints", "filed_by", "stale_note", "applied_hash", "images", "created_at",
+  "updated_at", "applied_at", "archived_at",
 ] as const;
 
 /**

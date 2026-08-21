@@ -261,6 +261,15 @@
 .repo-icon { width: 14px; height: 14px; flex-shrink: 0; fill: currentColor; opacity: 0.7; }
 .placeholder-token { font: 400 var(--text-sm)/1 var(--font-mono); color: var(--text); background: var(--bg-sunken); border: 1px solid var(--line); border-radius: var(--radius); padding: 2px 6px; }
 
+/* Entry images: one image per row at the card's width, a remove form below each, and the
+   one-file upload form closing the card. The file input flexes to whatever width remains. */
+.image-list { list-style: none; margin: 0 0 var(--space-3); padding: 0; display: flex; flex-direction: column; gap: var(--space-3); }
+.entry-image { display: block; max-width: 100%; height: auto; border: 1px solid var(--line); border-radius: var(--radius); }
+.image-skip { margin: 0; font-size: var(--text-xs); color: var(--text-dim); }
+.image-remove { margin-top: var(--space-1); }
+.image-upload { display: flex; gap: var(--space-2); align-items: center; }
+.image-upload .input { flex: 1; min-width: 0; }
+
 /* Revision history: newest first; the text clamps like the list's entry text. */
 .history-empty { font-size: var(--text-sm); color: var(--text-faint); padding: var(--space-2) 0; }
 .revision-list { list-style: none; margin: 0; padding: 0; }

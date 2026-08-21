@@ -48,6 +48,7 @@ const FIXTURE: NewEntry = {
   agentDraft: "Fix the wording of the setup section.",
   contextJson: JSON.stringify({ where: "setup docs" }),
   constraintsJson: "{}",
+  imagesJson: null,
 };
 
 function draftEntry(over: Partial<NewEntry> = {}): NewEntry {

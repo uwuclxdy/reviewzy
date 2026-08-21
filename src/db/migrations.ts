@@ -158,4 +158,17 @@ export const MIGRATIONS: Migration[] = [
       ALTER TABLE entries_archive ADD COLUMN title TEXT;
     `,
   },
+  {
+    version: 5,
+    name: "entry-images",
+    sql: `
+      -- Screenshots and links attached to an entry, filed by agents and appended to by the human
+      -- on the dashboard. A json array of strings, each a data:image/ data url or an http(s) url;
+      -- the wire boundary enforces the shape (max 8, max 5 MiB each). NOT NULL with an empty
+      -- array default: an entry without images stores [] like the other json columns. The archive
+      -- mirrors entries column-for-column, so it gains the column too.
+      ALTER TABLE entries ADD COLUMN images TEXT NOT NULL DEFAULT '[]';
+      ALTER TABLE entries_archive ADD COLUMN images TEXT NOT NULL DEFAULT '[]';
+    `,
+  },
 ];

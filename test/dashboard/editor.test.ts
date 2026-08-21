@@ -50,6 +50,7 @@ const FIXTURE: NewEntry = {
     tone: "neutral",
     notes: "Keep it short.",
   }),
+  imagesJson: null,
 };
 
 function draftEntry(over: Partial<NewEntry> = {}): NewEntry {
@@ -284,6 +285,142 @@ describe("list rows", () => {
     expect(html).toContain(`<a class="btn btn-icon" href="/entries/${id}" aria-label="Edit docs/setup.md" title="Edit">`);
     // Task 13 widened the column to the row's transitions, so the header names the whole cell.
     expect(html).toContain("<th>Actions</th>");
+    env.close();
+  });
+});
+
+describe("entry images", () => {
+  /** One small png as the browser would upload it. */
+  function imageFile(name = "shot.png"): File {
+    return new File([new Uint8Array([1, 2, 3])], name, { type: "image/png" });
+  }
+
+  test("renders valid items as images with real alts, and a not-shown note for foreign items, never raw", async () => {
+    const { env, id } = envWithDraft({
+      imagesJson: JSON.stringify(["data:image/png;base64,AAAA", "https://example.com/shot.png"]),
+    });
+    // A foreign row can hold anything; a stored item outside the validated prefixes renders as a
+    // note naming its position, and the raw value never reaches the page.
+    env.store.db.run("UPDATE entries SET images = ? WHERE id = ?", [
+      JSON.stringify(["data:image/png;base64,AAAA", "javascript:alert(1)", "https://example.com/shot.png"]),
+      id,
+    ]);
+    const html = await (await env.get(`/entries/${id}`)).text();
+
+    expect(html).toContain('<img class="entry-image" src="data:image/png;base64,AAAA" alt="Image 1"');
+    expect(html).toContain('src="https://example.com/shot.png" alt="Image 3"');
+    expect(html).toContain("Image 2 not shown: unsupported source.");
+    expect(html).not.toContain("javascript:alert(1)");
+    // The upload form rides below the list, wired for both htmx and a plain navigation.
+    expect(html).toContain(`hx-post="/entries/${id}/images"`);
+    expect(html).toContain('enctype="multipart/form-data"');
+    env.close();
+  });
+
+  test("shows the empty state and the upload form when the entry has no images", async () => {
+    const { env, id } = envWithDraft();
+    const html = await (await env.get(`/entries/${id}`)).text();
+    expect(html).toContain("No images yet.");
+    expect(html).toContain(`action="/entries/${id}/images"`);
+    env.close();
+  });
+
+  test("upload appends one multipart file as a data url and swaps the editor view", async () => {
+    const { env, id } = envWithDraft();
+    const form = new FormData();
+    form.set("file", imageFile());
+
+    const res = await env.post(`/entries/${id}/images`, form, HX);
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain('<div id="editor-view">');
+    expect(html).toContain('src="data:image/png;base64,AQID"');
+    expect(html).toContain('alt="Image 1"');
+
+    const row = env.store.db.query("SELECT images FROM entries WHERE id = ?").get(id) as { images: string };
+    expect(JSON.parse(row.images)).toEqual(["data:image/png;base64,AQID"]);
+    env.close();
+  });
+
+  test("refuses a non-image mime, naming the type and the size cap, and writes nothing", async () => {
+    const { env, id } = envWithDraft();
+    const form = new FormData();
+    form.set("file", new File(["x"], "doc.pdf", { type: "application/pdf" }));
+
+    const res = await env.post(`/entries/${id}/images`, form, HX);
+    const html = await res.text();
+    expect(html).toContain('role="alert"');
+    expect(html).toContain("Image not added");
+    expect(html).toContain("application/pdf");
+    expect(html).toContain("5 MiB");
+
+    const row = env.store.db.query("SELECT images FROM entries WHERE id = ?").get(id) as { images: string };
+    expect(JSON.parse(row.images)).toEqual([]);
+    env.close();
+  });
+
+  test("refuses a file over 5 MiB, naming the size and the cap", async () => {
+    const { env, id } = envWithDraft();
+    const form = new FormData();
+    form.set("file", new File([new Uint8Array(5 * 1024 * 1024 + 1)], "big.png", { type: "image/png" }));
+
+    const res = await env.post(`/entries/${id}/images`, form, HX);
+    const html = await res.text();
+    expect(html).toContain('role="alert"');
+    expect(html).toContain("Image not added");
+    expect(html).toContain("5 MiB");
+
+    const row = env.store.db.query("SELECT images FROM entries WHERE id = ?").get(id) as { images: string };
+    expect(JSON.parse(row.images)).toEqual([]);
+    env.close();
+  });
+
+  test("removes one image by its index", async () => {
+    const { env, id } = envWithDraft({
+      imagesJson: JSON.stringify(["data:image/png;base64,AAAA", "https://example.com/shot.png"]),
+    });
+
+    const res = await env.post(`/entries/${id}/images/1/remove`, new FormData(), HX);
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain('<div id="editor-view">');
+    expect(html).toContain('alt="Image 1"');
+    expect(html).not.toContain("https://example.com/shot.png");
+
+    const row = env.store.db.query("SELECT images FROM entries WHERE id = ?").get(id) as { images: string };
+    expect(JSON.parse(row.images)).toEqual(["data:image/png;base64,AAAA"]);
+    env.close();
+  });
+
+  test("removing an index past the list refuses, naming the position", async () => {
+    const { env, id } = envWithDraft();
+    const res = await env.post(`/entries/${id}/images/2/remove`, new FormData(), HX);
+    const html = await res.text();
+    expect(html).toContain('role="alert"');
+    expect(html).toContain("Image not removed");
+    expect(html).toContain("image 3");
+    env.close();
+  });
+
+  test("an unknown id on upload answers the gone fragment in the editor view shape", async () => {
+    const env = openEnv();
+    const form = new FormData();
+    form.set("file", imageFile());
+    const res = await env.post("/entries/does-not-exist/images", form, HX);
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain("no longer exists");
+    expect(html).toContain('<div id="editor-view">');
+    env.close();
+  });
+
+  test("no-JS upload redirects back to the editor on success", async () => {
+    const { env, id } = envWithDraft();
+    const form = new FormData();
+    form.set("file", imageFile());
+    const res = await env.post(`/entries/${id}/images`, form);
+    expect(res.status).toBe(303);
+    expect(res.headers.get("location")).toBe(`/entries/${id}`);
     env.close();
   });
 });

@@ -43,6 +43,7 @@ function draft(over: Partial<NewEntry>): NewEntry {
     agentDraft: "a draft",
     contextJson: "{}",
     constraintsJson: "{}",
+    imagesJson: null,
     ...over,
   };
 }

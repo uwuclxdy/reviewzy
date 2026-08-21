@@ -2,7 +2,7 @@ import type { Context, Hono } from "hono";
 import { serveStatic } from "hono/bun";
 import { html } from "hono/html";
 import type { Config } from "../config.ts";
-import { approveEntry, batchApproveEntries, rejectEntry, saveHumanText } from "../db/human-save.ts";
+import { appendEntryImage, approveEntry, batchApproveEntries, rejectEntry, removeEntryImage, saveHumanText } from "../db/human-save.ts";
 import type { ApproveOutcome, BatchApproveResult, RejectOutcome, TransitionRefusal } from "../db/human-save.ts";
 import { projectIdBySlug } from "../db/queries.ts";
 import { parseStyleGuideForm, upsertStyleGuide } from "../db/style-guide.ts";
@@ -199,6 +199,71 @@ export function mountDashboard(app: Hono, config: Config, store: Store): void {
     return c.html(editorViewFragment(vm, state));
   });
 
+  // The image upload: one multipart file, converted to a data url here at the boundary after the
+  // route's own mime and size checks, then appended by the store (which owns the unknown-id
+  // refusal). The cap matches the wire's per-item cap; here it measures the file's bytes, not the
+  // url string's.
+  app.post("/entries/:id/images", async (c) => {
+    const id = c.req.param("id");
+    const form = await c.req.formData();
+    const file = form.get("file");
+    const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
+
+    let outcome:
+      | { readonly ok: true }
+      | { readonly ok: false; readonly title: string; readonly body: string };
+    if (!(file instanceof File)) {
+      outcome = { ok: false, title: "Image not added", body: "The form carried no file. Choose an image file and submit again." };
+    } else if (!file.type.startsWith("image/")) {
+      outcome = {
+        ok: false,
+        title: "Image not added",
+        body: `The file type is ${file.type === "" ? "unknown" : file.type}; only images are accepted, at most 5 MiB.`,
+      };
+    } else if (file.size > MAX_IMAGE_BYTES) {
+      outcome = {
+        ok: false,
+        title: "Image not added",
+        body: `The file is ${(file.size / 1024 / 1024).toFixed(1)} MiB; the limit is 5 MiB. Send a smaller image.`,
+      };
+    } else {
+      const write = appendEntryImage(store, id, `data:${file.type};base64,${Buffer.from(await file.arrayBuffer()).toString("base64")}`);
+      if (!write.ok) return c.html(editorViewGoneFragment());
+      outcome = { ok: true };
+    }
+    return editorWriteReply(
+      c,
+      store,
+      id,
+      auth.enabled,
+      outcome.ok,
+      outcome.ok ? undefined : { title: outcome.title, body: outcome.body },
+    );
+  });
+
+  // One image removal, by its index in the stored array; an index past either end or one that
+  // never parsed as a number is a refusal naming the position, never a 500.
+  app.post("/entries/:id/images/:index/remove", async (c) => {
+    const id = c.req.param("id");
+    const index = Number(c.req.param("index"));
+    const validIndex = Number.isInteger(index) && index >= 0;
+    const outcome = validIndex
+      ? removeEntryImage(store, id, index)
+      : ({ ok: false as const, refusal: { kind: "no_image" as const } });
+    if (!outcome.ok && outcome.refusal.kind === "unknown") return c.html(editorViewGoneFragment());
+    const body = validIndex
+      ? `There is no image ${index + 1}. Refresh and try again.`
+      : "There is no image at that position. Refresh and try again.";
+    return editorWriteReply(
+      c,
+      store,
+      id,
+      auth.enabled,
+      outcome.ok,
+      outcome.ok ? undefined : { title: "Image not removed", body },
+    );
+  });
+
   // The two transitions. One route answers both the editor and the list: the buttons in the editor
   // form carry a `view=editor` marker (htmx includes the closest form's inputs), the list's buttons
   // carry the batch form's filters. Everything the store refuses is formatted here; the store's
@@ -342,6 +407,33 @@ function batchNotice(store: Store, results: readonly BatchApproveResult[]): List
     return formatTransitionRefusal("approve", r.refusal, entry?.file ?? r.id);
   });
   return { kind: "batch", approved, total: results.length, refused };
+}
+
+/**
+ * The image and notes routes' answer, in the save route's shapes: a vanished id answers the gone
+ * fragment, a plain navigation redirects on success and gets the full page with the callout on a
+ * refusal, and htmx gets the whole editor view swapped in either way. The store already refused an
+ * unknown id, so a null `vm` here is the same gone-fragment case, not a fresh read.
+ */
+function editorWriteReply(
+  c: Context,
+  store: Store,
+  id: string,
+  signedIn: boolean,
+  ok: boolean,
+  refusal: { readonly title: string; readonly body: string } | undefined,
+) {
+  const vm = loadEditor(store, id);
+  if (vm === null) return c.html(editorViewGoneFragment());
+  const state: EditorState = {
+    submittedText: vm.entry.human_text ?? vm.entry.agent_draft ?? "",
+    refusal,
+  };
+  if (c.req.header("HX-Request") === undefined) {
+    if (ok) return c.redirect(`/entries/${id}`, 303);
+    return c.html(html`<!doctype html>${editorPage(vm, state, signedIn)}`);
+  }
+  return c.html(editorViewFragment(vm, state));
 }
 
 /** A transition's answer to the editor: the region swapped in place, with any refusal on top. */

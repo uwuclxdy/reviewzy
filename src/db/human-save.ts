@@ -240,3 +240,68 @@ export function listRevisions(store: Store, entryId: string): RevisionRow[] {
     )
     .all(entryId) as RevisionRow[];
 }
+
+/**
+ * The tolerant parse for `entries.images`, mirroring `parseConstraints`: the column holds foreign
+ * data (it is also fed by the wire), and an unparseable or shape-broken value must read as no
+ * images, never as a 500. Non-string items are dropped rather than propagated.
+ */
+export function parseEntryImages(json: string): string[] {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(json);
+  } catch {
+    return [];
+  }
+  if (!Array.isArray(parsed)) return [];
+  return parsed.filter((item): item is string => typeof item === "string");
+}
+
+/** Everything the image writes refuse; the dashboard's upload and remove routes format the messages. */
+export type ImageWriteRefusal =
+  | { readonly kind: "unknown" }
+  | { readonly kind: "no_image"; readonly index: number };
+
+/**
+ * Appends one image the human uploaded to the entry's image list. A note-like write, not a save:
+ * it works on every status, writes no revision row, changes no status, and fires no status event
+ * (a waiter cares about approval, not about a new screenshot). `updated_at` moves so the row
+ * reflects the write. The data url already passed the route's mime and size checks.
+ */
+export function appendEntryImage(store: Store, id: string, dataUrl: string): { readonly ok: true } | { readonly ok: false; readonly refusal: { readonly kind: "unknown" } } {
+  const row = store.db.query("SELECT images FROM entries WHERE id = ?").get(id) as { images: string } | null;
+  if (row === null) return { ok: false, refusal: { kind: "unknown" } };
+
+  const images = parseEntryImages(row.images);
+  images.push(dataUrl);
+  store.db.run("UPDATE entries SET images = ?, updated_at = ? WHERE id = ?", [
+    JSON.stringify(images),
+    Date.now(),
+    id,
+  ]);
+  return { ok: true };
+}
+
+/**
+ * Removes one image by its index in the stored array. Same write class as `appendEntryImage`: no
+ * revision, no status change, no event; `updated_at` moves. An index past either end is a refusal
+ * carrying the index the route's message names.
+ */
+export function removeEntryImage(
+  store: Store,
+  id: string,
+  index: number,
+): { readonly ok: true } | { readonly ok: false; readonly refusal: ImageWriteRefusal } {
+  const row = store.db.query("SELECT images FROM entries WHERE id = ?").get(id) as { images: string } | null;
+  if (row === null) return { ok: false, refusal: { kind: "unknown" } };
+
+  const images = parseEntryImages(row.images);
+  if (index < 0 || index >= images.length) return { ok: false, refusal: { kind: "no_image", index } };
+  images.splice(index, 1);
+  store.db.run("UPDATE entries SET images = ?, updated_at = ? WHERE id = ?", [
+    JSON.stringify(images),
+    Date.now(),
+    id,
+  ]);
+  return { ok: true };
+}

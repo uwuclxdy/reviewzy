@@ -51,6 +51,7 @@ const FileEntryArgs = z.object({
   file_hash: z.string().optional(),
   context: z.unknown().optional(),
   constraints: z.unknown().optional(),
+  images: z.unknown().optional(),
 });
 
 const FiledOutput = z.object({
@@ -84,6 +85,10 @@ const CONSTRAINT_FIX: Record<string, string> = {
   tone: "send constraints.tone as a string",
   notes: "send constraints.notes as a string",
 };
+
+/** The caps `docs/mcp-contract.md` pins for `images`: at most 8 per entry, each at most 5 MiB. */
+const MAX_IMAGES_PER_ENTRY = 8;
+const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 
 /** Turns zod's issues into the named-field refusal the contract's error row promises. */
 function refuseConstraints(index: number, file: string, anchorText: string, issues: readonly z.ZodIssue[]): never {
@@ -122,6 +127,50 @@ function validateEntry(index: number, raw: z.output<typeof FileEntryArgs>): NewE
   const constraints = ConstraintsJson.safeParse(raw.constraints ?? {});
   if (!constraints.success) {
     refuseConstraints(index, raw.file, raw.anchor_text, constraints.error.issues);
+  }
+
+  // Held loose like context and constraints, so the refusal names the entry and the fix instead
+  // of stopping at the sdk's field-path error. Absent (or explicit null) means "the newer call
+  // does not carry this field": a draft re-file then keeps the stored images.
+  let imagesJson: string | null;
+  if (raw.images == null) {
+    imagesJson = null;
+  } else {
+    if (!Array.isArray(raw.images)) {
+      refuse(
+        where,
+        "images must be an array of image urls or data urls",
+        'send an array such as ["https://example.com/screenshot.png"], or omit images',
+      );
+    }
+    if (raw.images.length > MAX_IMAGES_PER_ENTRY) {
+      refuse(
+        where,
+        `images has ${raw.images.length} items; the limit is ${MAX_IMAGES_PER_ENTRY}`,
+        `send at most ${MAX_IMAGES_PER_ENTRY} images per entry`,
+      );
+    }
+    raw.images.forEach((item, imageIndex) => {
+      if (typeof item !== "string") {
+        refuse(where, `images[${imageIndex}] must be a string`, "send each image as a string url or data url");
+      }
+      if (!item.startsWith("data:image/") && !/^https?:\/\//.test(item)) {
+        refuse(
+          where,
+          `images[${imageIndex}] must start with "data:image/" or an http(s) url, got "${item.slice(0, 40)}"`,
+          "send a data:image/ data url or an http(s) url",
+        );
+      }
+      const bytes = Buffer.byteLength(item, "utf8");
+      if (bytes > MAX_IMAGE_BYTES) {
+        refuse(
+          where,
+          `images[${imageIndex}] is ${bytes} bytes; the limit is ${MAX_IMAGE_BYTES} bytes (5 MiB)`,
+          "send a smaller image, or link an http(s) url instead",
+        );
+      }
+    });
+    imagesJson = JSON.stringify(raw.images);
   }
 
   let fileHash: string;
@@ -164,6 +213,7 @@ function validateEntry(index: number, raw: z.output<typeof FileEntryArgs>): NewE
     // re-file then keeps the stored value, per the COALESCE in src/db/queries.ts.
     contextJson: raw.context == null ? null : JSON.stringify(context.data),
     constraintsJson: raw.constraints == null ? null : JSON.stringify(constraints.data),
+    imagesJson,
   };
 }
 
@@ -179,7 +229,7 @@ export function registerFileEntriesTool(server: McpServer, baseUrl: string, stor
     {
       title: "File entries for review",
       description:
-        "File draft entries for a human to author or approve. Each entry names one exact string to replace: repo (git remote url preferred), file path, an optional title (a human-readable label the dashboard shows in place of the file path), anchor_text, and anchor_before/anchor_after context lines. Identity is (project, repo, file, sha256(anchor_text)): re-filing a known draft overwrites the agent draft, context, and constraints in place; an entry already approved, applied, or rejected is returned untouched with its own status, and a rejected anchor stays rejected — stop proposing a turned-down line. file provenance: send exactly one of file_content (the whole file at filing time; the server hashes it) or file_hash (its sha256 hex). constraints: {max_len?, placeholders?: string[], tone?, notes?} — a save breaking max_len or dropping a placeholder is refused later, so declare what the copy must keep. Keys the schema does not list are ignored.",
+        "File draft entries for a human to author or approve. Each entry names one exact string to replace: repo (git remote url preferred), file path, an optional title (a human-readable label the dashboard shows in place of the file path), anchor_text, and anchor_before/anchor_after context lines. Identity is (project, repo, file, sha256(anchor_text)): re-filing a known draft overwrites the agent draft, context, and constraints in place; an entry already approved, applied, or rejected is returned untouched with its own status, and a rejected anchor stays rejected — stop proposing a turned-down line. file provenance: send exactly one of file_content (the whole file at filing time; the server hashes it) or file_hash (its sha256 hex). constraints: {max_len?, placeholders?: string[], tone?, notes?} — a save breaking max_len or dropping a placeholder is refused later, so declare what the copy must keep. images: up to 8 per entry, each a data:image/ data url or an http(s) url of at most 5 MiB, rendered on the dashboard. Keys the schema does not list are ignored.",
       inputSchema: z.object({
         project: z.string().min(1),
         entries: z.array(FileEntryArgs).min(1),

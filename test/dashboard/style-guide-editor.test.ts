@@ -50,6 +50,7 @@ const FIXTURE: NewEntry = {
   agentDraft: "Fix the wording of the setup section.",
   contextJson: JSON.stringify({}),
   constraintsJson: JSON.stringify({}),
+  imagesJson: null,
 };
 
 /** Creates a project the way entries do: a filing auto-mints it, and the editor never mints one itself. */
