@@ -459,7 +459,9 @@ function ProjectGroupView({ group }: { group: ProjectGroup }) {
                 </colgroup>
                 <thead>
                   <tr>
-                    <th>Select</th>
+                    {/* The column header stays in the accessibility tree via the sr-only span; the
+                        checkbox column itself is too narrow for a visible label. */}
+                    <th><span class="visually-hidden">Select</span></th>
                     <th>Title</th>
                     <th>Status</th>
                     <th>File</th>

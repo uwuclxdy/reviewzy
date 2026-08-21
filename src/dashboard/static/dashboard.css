@@ -37,6 +37,20 @@
 .partial-header { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); margin-bottom: var(--space-4); }
 .partial-count { font-size: var(--text-sm); color: var(--text-dim); }
 
+/* ---- Screen-reader-only ---- */
+/* Present in the DOM and the accessibility tree, absent from layout, and never focusable. */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 /* ---- Project groups ---- */
 .project-group { margin-bottom: var(--space-10); }
 .project-header { display: flex; align-items: center; gap: var(--space-3); margin-bottom: var(--space-4); }
@@ -49,7 +63,7 @@
    The table lays out fixed with a colgroup so the title column takes the remainder and the row
    never overflows; select, status, file, and actions are the fixed columns. The status pill has
    its own column, so the title truncates at one consistent point and the pill stays tight. */
-.col-select { width: 80px; }
+.col-select { width: 48px; }
 .col-status { width: 106px; }
 .col-file { width: 200px; }
 .col-actions { width: 120px; }
@@ -183,18 +197,7 @@
 .callout-actions { margin-top: var(--space-2); }
 
 /* ---- Entry editor ---- */
-/* The one live region: present in the DOM, absent from layout, and never focusable. */
-.visually-hidden {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  margin: -1px;
-  padding: 0;
-  overflow: hidden;
-  clip: rect(0 0 0 0);
-  white-space: nowrap;
-  border: 0;
-}
+/* The one live region, kept out of sight by the shared .visually-hidden utility above. */
 .editor-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--space-8); align-items: start; }
 .editor-main { min-width: 0; }
 .editor-rail { display: flex; flex-direction: column; gap: var(--space-6); position: sticky; top: var(--space-8); }
