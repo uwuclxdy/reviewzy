@@ -267,6 +267,35 @@ describe("a first file", () => {
     expect(JSON.parse(row.context as string)).toEqual({});
     expect(JSON.parse(row.constraints as string)).toEqual({});
   });
+
+  test("stores anchor_text and agent_draft containing newlines verbatim, and fetch_approved returns the anchor unstripped", async () => {
+    const anchor = "line one\nline two\nline three";
+    const draft = "first line\nsecond line";
+    const filed = (await fileEntries({
+      project: "multiline",
+      entries: [entry({ anchor_text: anchor, agent_draft: draft })],
+    })).body.result?.structuredContent as Result;
+    const id = filed.results[0]!.id;
+
+    // The store keeps both as filed: the anchor_hash covers the newlines too.
+    const row = rows(first.store, "multiline")[0]!;
+    expect(row.anchor_text).toBe(anchor);
+    expect(row.agent_draft).toBe(draft);
+    expect(row.anchor_hash).toBe(sha256(anchor));
+
+    // The dashboard save's flip (borrowed from fetch-approved.test.ts's approve): fetch_approved
+    // returns only approved rows, so the apply-back path reads the same stored newlines.
+    first.store.db.run("UPDATE entries SET status = 'approved', human_text = ? WHERE id = ?", [draft, id]);
+    const { body } = await first.call(
+      "tools/call",
+      { name: "fetch_approved", arguments: { project: "multiline" } },
+      "fetch_approved",
+    );
+    const wire = body.result?.structuredContent as unknown as { entries: { anchor_text: string; text: string | null }[] };
+    expect(wire.entries).toHaveLength(1);
+    expect(wire.entries[0]?.anchor_text).toBe(anchor);
+    expect(wire.entries[0]?.text).toBe(draft);
+  });
 });
 
 describe("re-file semantics", () => {

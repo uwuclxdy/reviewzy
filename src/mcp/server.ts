@@ -16,7 +16,7 @@ import { NAME, VERSION } from "../version.ts";
  */
 const INSTRUCTIONS = `reviewzy is a review queue for user-facing text. Agents draft, a human signs off.
 
-File the strings you want to change as draft entries against a project. A human authors or approves the wording on the dashboard, then you fetch those words back and apply them in place. You can create a draft, move an approved entry to applied, and report an anchor that no longer matches. You can never approve or reject an entry, and a rejected anchor stays rejected: re-filing it returns the existing entry instead of proposing the line again.`;
+File the text you want to change as draft entries against a project. One entry is one edit: anchor_text is the whole passage being replaced and agent_draft the proposed replacement; either may be a single line or span many lines, and a multi-line block is ONE entry, never one entry per line. A human authors or approves the wording on the dashboard, then you fetch those words back and apply them in place. You can create a draft, move an approved entry to applied, and report an anchor that no longer matches. You can never approve or reject an entry, and a rejected anchor stays rejected: re-filing it returns the existing entry instead of proposing the passage again.`;
 
 /**
  * A fresh server per request, since the 2026-07-28 revision is stateless and `createMcpHandler`
