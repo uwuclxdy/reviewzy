@@ -1,6 +1,7 @@
 import type { McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
 import { listEntries, projectIdBySlug } from "../db/queries.ts";
+import type { EntryRow } from "../db/queries.ts";
 import type { Store } from "../db/store.ts";
 
 /**
@@ -18,7 +19,42 @@ const ListEntriesArgs = z.object({
   cursor: z.string().min(1).optional(),
 });
 
-/** The wire row is the stored row, `context` and `constraints` kept as their stored JSON strings — no re-parse on the way out. */
+/**
+ * The one mapping from stored rows to the wire shape: every field spelled out, so a new store
+ * column reaches the wire only when someone adds it here deliberately — `human_notes` must never
+ * (the contract pins it dashboard-only), and `images` is carried on purpose. The SDK passes
+ * structuredContent through untouched, so this projection is the strip, not the schema.
+ */
+function toWireEntry(row: EntryRow): z.infer<typeof Entry> {
+  return {
+    id: row.id,
+    project_id: row.project_id,
+    batch_id: row.batch_id,
+    repo: row.repo,
+    file: row.file,
+    title: row.title,
+    anchor_text: row.anchor_text,
+    anchor_before: row.anchor_before,
+    anchor_after: row.anchor_after,
+    anchor_hash: row.anchor_hash,
+    file_hash: row.file_hash,
+    agent_draft: row.agent_draft,
+    human_text: row.human_text,
+    status: row.status,
+    context: row.context,
+    constraints: row.constraints,
+    filed_by: row.filed_by,
+    stale_note: row.stale_note,
+    applied_hash: row.applied_hash,
+    images: row.images,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+    applied_at: row.applied_at,
+    archived_at: row.archived_at,
+  };
+}
+
+/** The wire row shape, `context`, `constraints`, and `images` kept as their stored JSON strings — no re-parse on the way out. */
 const Entry = z.object({
   id: z.string(),
   project_id: z.string(),
@@ -39,6 +75,7 @@ const Entry = z.object({
   filed_by: z.string().nullable(),
   stale_note: z.string().nullable(),
   applied_hash: z.string().nullable(),
+  images: z.string(),
   created_at: z.number(),
   updated_at: z.number(),
   applied_at: z.number().nullable(),
@@ -66,7 +103,7 @@ export function registerListEntriesTool(server: McpServer, store: Store): void {
     {
       title: "List entries for review",
       description:
-        "List entries in the review queue, ordered by ascending entry id (ulid, i.e. filing order) — the same order a cursor walk covers. Every filter is optional and they combine with AND: project (a slug with no project is refused: read tools never create one), status (draft, approved, applied, rejected), ids (exact entry ids), q (case-insensitive substring, ASCII-only case fold: a row matches when any of file, anchor_text, agent_draft, human_text contains it), limit (default 50, max 200 — a higher value is refused), cursor (keyset pagination: pass the previous page's next_cursor to continue from after the last entry returned). next_cursor is present only when the page returned exactly limit rows, meaning more may exist; absent means the walk is exhausted — stop paging then, never craft a cursor of your own. Each entry carries its stored fields as stored: id, project_id, batch_id, repo, file, title, anchor_text, anchor_before, anchor_after, anchor_hash, file_hash, agent_draft, human_text, status, context, constraints, filed_by, stale_note, applied_hash, created_at, updated_at, applied_at, archived_at — with context and constraints as their stored JSON strings, not parsed objects.",
+        "List entries in the review queue, ordered by ascending entry id (ulid, i.e. filing order) — the same order a cursor walk covers. Every filter is optional and they combine with AND: project (a slug with no project is refused: read tools never create one), status (draft, approved, applied, rejected), ids (exact entry ids), q (case-insensitive substring, ASCII-only case fold: a row matches when any of file, anchor_text, agent_draft, human_text contains it), limit (default 50, max 200 — a higher value is refused), cursor (keyset pagination: pass the previous page's next_cursor to continue from after the last entry returned). next_cursor is present only when the page returned exactly limit rows, meaning more may exist; absent means the walk is exhausted — stop paging then, never craft a cursor of your own. Each entry carries its stored fields as stored: id, project_id, batch_id, repo, file, title, anchor_text, anchor_before, anchor_after, anchor_hash, file_hash, agent_draft, human_text, status, context, constraints, filed_by, stale_note, applied_hash, images, created_at, updated_at, applied_at, archived_at — with context, constraints, and images as their stored JSON strings, not parsed objects. The human's own notes (human_notes) are dashboard-only and never appear in a listed entry.",
       inputSchema: ListEntriesArgs,
       outputSchema: ListEntriesOutput,
     },
@@ -96,7 +133,7 @@ export function registerListEntriesTool(server: McpServer, store: Store): void {
       // An exhausted walk carries no `next_cursor` key at all: absent is the signal to stop, so an
       // empty page must never smuggle one in.
       const output = {
-        entries: rows,
+        entries: rows.map(toWireEntry),
         ...(nextCursor === null ? {} : { next_cursor: nextCursor }),
       };
       return {

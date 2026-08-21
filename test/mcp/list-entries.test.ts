@@ -148,7 +148,7 @@ describe("the returned rows", () => {
     const FIELDS = [
       "id", "project_id", "batch_id", "repo", "file", "title", "anchor_text", "anchor_before",
       "anchor_after", "anchor_hash", "file_hash", "agent_draft", "human_text", "status",
-      "context", "constraints", "filed_by", "stale_note", "applied_hash", "created_at", "updated_at", "applied_at", "archived_at",
+      "context", "constraints", "filed_by", "stale_note", "applied_hash", "images", "created_at", "updated_at", "applied_at", "archived_at",
     ];
     for (const field of FIELDS) {
       expect(out[field], field).toBe(stored[field]);
@@ -171,9 +171,34 @@ describe("the returned rows", () => {
       ?.structuredContent as ListResult;
     expect(retitled.entries[0]?.title).toBe("Dashboard label");
 
+    // images round-trip the same way: the contract's both-directions field is on the wire.
+    const images = ["https://example.com/shot.png", "data:image/png;base64,AAAA"];
+    first.store.db.run("UPDATE entries SET images = ? WHERE id = ?", [JSON.stringify(images), out.id as string]);
+    const reimaged = (await listEntries({ project: "fields" })).body.result
+      ?.structuredContent as ListResult;
+    expect(JSON.parse(reimaged.entries[0]?.images as string)).toEqual(images);
+
     expect(typeof out.context).toBe("string");
     expect(JSON.parse(out.context as string)).toEqual(entry().context);
     expect(JSON.parse(out.constraints as string)).toEqual(entry().constraints);
+  });
+
+  test("human_notes is dashboard-only: stored notes never reach either wire channel", async () => {
+    const filed = (await fileEntries({
+      project: "private",
+      entries: [entry({ images: ["https://example.com/shot.png"] })],
+    })).body.result?.structuredContent as FiledResult;
+    const id = filed.results[0]!.id;
+    first.store.db.run("UPDATE entries SET human_notes = 'private scratch' WHERE id = ?", [id]);
+
+    const { body } = await listEntries({ project: "private" });
+    const out = (body.result?.structuredContent as ListResult).entries[0]!;
+    expect(JSON.parse(out.images as string)).toEqual(["https://example.com/shot.png"]);
+    expect("human_notes" in out).toBe(false);
+    // The text channel is the same object JSON-stringified; the notes must not leak there either.
+    const text = body.result?.content?.[0]?.text ?? "";
+    expect(text).not.toContain("private scratch");
+    expect(text).not.toContain("human_notes");
   });
 });
 

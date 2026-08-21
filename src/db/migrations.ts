@@ -176,9 +176,10 @@ export const MIGRATIONS: Migration[] = [
     name: "entry-human-notes",
     sql: `
       -- The human's own scratchpad, dashboard-only: agents can neither set nor read it, so the
-      -- filing insert leaves it NULL and no mcp query selects it. Nullable, unlike the agent-fed
-      -- json columns: no agent ever sends a value, and NULL is what renders as "no notes yet".
-      -- The archive mirrors entries column-for-column, so it gains the column too.
+      -- filing insert leaves it NULL and the list_entries tool projects it out of the wire row.
+      -- Nullable, unlike the agent-fed json columns: no agent ever sends a value, and NULL is
+      -- what renders as "no notes yet". The archive mirrors entries column-for-column, so it
+      -- gains the column too.
       ALTER TABLE entries ADD COLUMN human_notes TEXT;
       ALTER TABLE entries_archive ADD COLUMN human_notes TEXT;
     `,
