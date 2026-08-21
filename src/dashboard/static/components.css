@@ -694,6 +694,12 @@ kbd {
    width, and wrapping at any point keeps those strings inside it instead of overflowing. */
 .info-table td:not(:first-child) { overflow-wrap: anywhere; }
 
+/* ---- Word-level diff marks ----
+   Removed words ride on the danger token, added on success; both keep the sunken-code text
+   readable. The marks are rendered server-side by the diff walk, never by client js. */
+.diff-removed { background: color-mix(in srgb, var(--danger) 22%, transparent); color: var(--text); border-radius: 2px; }
+.diff-added { background: color-mix(in srgb, var(--success) 22%, transparent); color: var(--text); border-radius: 2px; }
+
 /* ---- Range slider ---- */
 .slider {
   -webkit-appearance: none;

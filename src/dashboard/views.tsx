@@ -14,6 +14,7 @@ import { readStyleGuideSection } from "../db/style-guide.ts";
 import type { StyleGuideForm, StyleGuideFormRefusal, StyleGuideInput } from "../db/style-guide.ts";
 import type { Store } from "../db/store.ts";
 import { parseRepoLink, REPO_ICON } from "./repo-link.ts";
+import { diffWords } from "./word-diff.ts";
 import { NAME, VERSION } from "../version.ts";
 
 /**
@@ -1144,13 +1145,17 @@ function ContextCard({ entry }: { entry: EntryRow }) {
 /**
  * The before-and-after of the entry's text, above the editor: what the anchored region reads now
  * (the anchor line visually distinct) and what the entry's text will replace it with. Both sides
- * escape through JSX; the text is the stored bytes, shown as-is.
+ * escape through JSX; the text is the stored bytes, shown as-is. The word-level marks come from
+ * the server-side walk: words only the anchor has render red in its line, words only the proposal
+ * has render green in the after card, everything shared stays plain, so an identical pair renders
+ * no marks at all.
  */
 function DiffView({ entry }: { entry: EntryRow }) {
   const after = entry.human_text ?? entry.agent_draft;
   // No text at all means nothing to compare: a filed entry whose agent never drafted, or an
   // approved entry whose text was never set.
   if (after === null) return null;
+  const diff = diffWords(entry.anchor_text, after);
   return (
     <div class="diff-grid">
       <div class="card">
@@ -1159,7 +1164,15 @@ function DiffView({ entry }: { entry: EntryRow }) {
         </div>
         <pre class="diff-code">
           <span class="diff-line">{entry.anchor_before}</span>
-          <span class="diff-line diff-anchor">{entry.anchor_text}</span>
+          <span class="diff-line diff-anchor">
+            {diff.before.map((token, index) =>
+              token.kind === "removed" ? (
+                <span class="diff-removed" key={index}>{token.text}</span>
+              ) : (
+                token.text
+              ),
+            )}
+          </span>
           <span class="diff-line">{entry.anchor_after}</span>
         </pre>
       </div>
@@ -1167,7 +1180,15 @@ function DiffView({ entry }: { entry: EntryRow }) {
         <div class="card-header">
           <div class="card-title">After</div>
         </div>
-        <pre class="diff-code">{after}</pre>
+        <pre class="diff-code">
+          {diff.after.map((token, index) =>
+            token.kind === "added" ? (
+              <span class="diff-added" key={index}>{token.text}</span>
+            ) : (
+              token.text
+            ),
+          )}
+        </pre>
       </div>
     </div>
   );

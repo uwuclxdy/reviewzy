@@ -676,6 +676,46 @@ describe("saving from the editor", () => {
   });
 });
 
+describe("the word diff", () => {
+  test("marks removed words red in the anchor line and added words green in the after card, leaving the shared words plain", async () => {
+    // No constraints, so the save needs neither max_len room nor a placeholder.
+    const { env, id } = envWithDraft({ constraintsJson: "{}" });
+    const res = await env.post(`/entries/${id}/save`, saveForm("Run npm install"), HX);
+    const html = await res.text();
+
+    // "bun" exists only in the anchor, "npm" only in the proposal; the shared words render as
+    // plain text between the marks.
+    expect(html).toContain('Run <span class="diff-removed">bun</span> install');
+    expect(html).toContain('Run <span class="diff-added">npm</span> install');
+    env.close();
+  });
+
+  test("renders no marks for identical text", async () => {
+    const { env, id } = envWithDraft({ constraintsJson: "{}" });
+    const res = await env.post(`/entries/${id}/save`, saveForm("Run bun install"), HX);
+    const html = await res.text();
+
+    expect(html).not.toContain("diff-removed");
+    expect(html).not.toContain("diff-added");
+    env.close();
+  });
+
+  test("a pair too large for the LCS walk renders fully changed instead of hanging", async () => {
+    // 1100 words per side crosses the LCS cell ceiling, so the walk is skipped and each side reads
+    // fully changed: both mark classes render, and the page answers in linear time.
+    const word = (n: number) => Array.from({ length: n }, (_, i) => `w${i}`).join(" ");
+    const { env, id } = envWithDraft({
+      constraintsJson: "{}",
+      anchorText: word(1100),
+      agentDraft: `${word(1100)} tail`,
+    });
+    const html = await (await env.get(`/entries/${id}`)).text();
+    expect(html).toContain("diff-removed");
+    expect(html).toContain("diff-added");
+    env.close();
+  });
+});
+
 describe("no-JavaScript fallback", () => {
   test("a successful save redirects to the editor page", async () => {
     const { env, id } = envWithDraft();
