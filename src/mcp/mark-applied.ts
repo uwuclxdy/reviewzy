@@ -81,7 +81,7 @@ export function registerMarkAppliedTool(server: McpServer, store: Store): void {
           refuse(
             `entry "${args.id}"`,
             "status rejected: rejected is terminal and silences the agent",
-            "file a new entry with a new anchor if the line still needs changing",
+            "file a new entry with a new anchor if the passage still needs changing",
           );
         }
         // The only pair left is an applied entry reported applied again: anchor_stale on an
