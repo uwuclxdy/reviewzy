@@ -283,6 +283,15 @@ describe("dashboard entry list", () => {
       expectOrder(html.slice(start, end), texts);
     });
 
+    // The partition pins hardcode the fixture's known statuses instead of re-deriving them: alpha's
+    // actionable batches (A holds a draft and an approved entry, C a draft) render before its
+    // terminal batch (B holds the applied and rejected entries), and zeta's D follows, whatever the
+    // same-ms tie order inside each partition.
+    const mark = (batchId: string) => html.indexOf(`aria-label="Select all drafts in batch ${shortUlid(batchId)}"`);
+    expect(mark(batchA.batchId)).toBeLessThan(mark(batchB.batchId));
+    expect(mark(batchC.batchId)).toBeLessThan(mark(batchB.batchId));
+    expect(mark(batchB.batchId)).toBeLessThan(mark(batchD.batchId));
+
     // A row carries the select checkbox, the title, the file path, and the action slots.
     expect(html).toContain('<span class="visually-hidden">Select</span>');
     expect(html).toContain(">Title</th>");
@@ -460,6 +469,13 @@ describe("dashboard entry list", () => {
     expect(html).not.toContain("Showing ");
     expect(html).toContain('<option value="" selected="">Active</option>');
     expect(html).toContain('<option value="all">All statuses</option>');
+
+    // An explicit empty status param is the default too. The positive leg pins that it is the
+    // default, not an unknown-status no-match: the draft row still renders.
+    const empty = await (await env.get("/?status=")).text();
+    expect(empty).toContain("Run bun install");
+    expect(empty).not.toContain("AGPL-3.0");
+    expect(empty).not.toContain("Showing ");
   });
 
   test("status=all shows every status and the select reflects it", async () => {
@@ -549,6 +565,16 @@ describe("dashboard entry list", () => {
       // The explicit all-statuses view still shows the row.
       const all = await (await done.get("/?status=all")).text();
       expect(all).toContain('class="entry-title">a</span>');
+      // A search matching only terminal rows names the hiding view and offers the way onward
+      // (hono JSX escapes the href's ampersands).
+      const searched = await (await done.get("/?q=a")).text();
+      expect(searched).toContain("No entries match");
+      expect(searched).toContain("Applied and rejected entries are hidden from this view.");
+      expect(searched).toContain('href="/?q=a&amp;project=&amp;status=all"');
+      // A search that matches nothing keeps the plain filter-miss state.
+      const missed = await (await done.get("/?q=zzz")).text();
+      expect(missed).toContain("No entries match");
+      expect(missed).not.toContain("hidden from this view");
     } finally {
       done.close();
     }
@@ -567,6 +593,8 @@ describe("dashboard entry list", () => {
   });
 
   test("wires the collapse toggles in dashboard.js", async () => {
+    // String-level pin only: the suite has no DOM harness, so the applying and persisting of the
+    // collapsed state is covered by the presence of its hooks, not by executing them.
     const js = await Bun.file(
       new URL("../../src/dashboard/static/dashboard.js", import.meta.url),
     ).text();

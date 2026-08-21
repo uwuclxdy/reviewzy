@@ -259,7 +259,9 @@
     try {
       const raw = localStorage.getItem(COLLAPSE_STORAGE);
       const parsed = raw ? JSON.parse(raw) : {};
-      return typeof parsed === "object" && parsed !== null ? parsed : {};
+      // A parsed array is not a key map: property sets on it would survive only until the next
+      // JSON.stringify, which drops them, so persistence would silently stop.
+      return typeof parsed === "object" && parsed !== null && !Array.isArray(parsed) ? parsed : {};
     } catch {
       return {};
     }

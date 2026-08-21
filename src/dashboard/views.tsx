@@ -67,6 +67,8 @@ export type ListViewModel = {
   readonly status: string;
   readonly project: string;
   readonly filtersActive: boolean;
+  /** Whether the default Active view is what hides every match: a filter found rows, but all of them are applied or rejected. */
+  readonly hiddenByActiveView: boolean;
 };
 
 /** Runs the keyset walk to exhaustion: the mcp tool's own list query, page size 200, no pagination UI. */
@@ -127,6 +129,15 @@ function compareDesc(a: string, b: string): number {
   return a < b ? 1 : a > b ? -1 : 0;
 }
 
+/** The newest `created_at` in a batch, walked: a batch can hold thousands of entries, and a spread would overflow the call stack. */
+function maxCreatedAt(batch: ProjectBatch): number {
+  let max = 0;
+  for (const entry of batch.entries) {
+    if (entry.created_at > max) max = entry.created_at;
+  }
+  return max;
+}
+
 /**
  * Newest batch first. Batch ulids share a millisecond timestamp prefix, so a descending id is
  * newest-first; batches minted in the same millisecond tie on that prefix, and the batch's
@@ -136,8 +147,8 @@ function compareDesc(a: string, b: string): number {
 function newestBatchFirst(a: ProjectBatch, b: ProjectBatch): number {
   const timeCmp = compareDesc(a.id.slice(0, 10), b.id.slice(0, 10));
   if (timeCmp !== 0) return timeCmp;
-  const aCreated = Math.max(...a.entries.map((entry) => entry.created_at));
-  const bCreated = Math.max(...b.entries.map((entry) => entry.created_at));
+  const aCreated = maxCreatedAt(a);
+  const bCreated = maxCreatedAt(b);
   if (aCreated !== bCreated) return bCreated - aCreated;
   return compareDesc(a.id, b.id);
 }
@@ -172,6 +183,7 @@ function loadList(store: Store, params: ListParams): ListViewModel {
     status: statusRaw ?? "",
     project: projectRaw ?? "",
     filtersActive: qActive || statusActive || projectActive,
+    hiddenByActiveView: !statusActive && walked.length > 0 && rows.length === 0,
   };
 }
 
@@ -345,7 +357,19 @@ function ListRegion({ vm, notice }: { vm: ListViewModel; notice: ListNotice | un
     return (
       <>
         {notice !== undefined ? <NoticeCallout notice={notice} /> : null}
-        {vm.total === 0 ? <EmptyAll /> : vm.filtersActive ? <EmptyMatch /> : <EmptyActive />}
+        {vm.total === 0 ? (
+          <EmptyAll />
+        ) : vm.filtersActive ? (
+          <EmptyMatch
+            revealAllHref={
+              vm.hiddenByActiveView
+                ? `/?q=${encodeURIComponent(vm.q)}&project=${encodeURIComponent(vm.project)}&status=all`
+                : undefined
+            }
+          />
+        ) : (
+          <EmptyActive />
+        )}
       </>
     );
   }
@@ -384,7 +408,13 @@ function EmptyAll() {
   );
 }
 
-function EmptyMatch() {
+/**
+ * The filter-miss state, with a way onward. When the default Active view is what hides the
+ * matches (a search that only hits applied or rejected rows), the way onward is the all-statuses
+ * view under the same filters — clearing the filters alone would land back on the Active view
+ * and still show nothing.
+ */
+function EmptyMatch({ revealAllHref }: { revealAllHref: string | undefined }) {
   return (
     <div class="card empty-state">
       <div class="empty-icon" aria-hidden="true">
@@ -395,7 +425,13 @@ function EmptyMatch() {
       </div>
       <h3>No entries match</h3>
       <p>Try different search terms, or clear the filters.</p>
-      <a href="/" class="btn btn-secondary btn-sm">Clear filters</a>
+      {revealAllHref !== undefined ? <p>Applied and rejected entries are hidden from this view.</p> : null}
+      <div class="empty-actions">
+        <a href="/" class="btn btn-secondary btn-sm">Clear filters</a>
+        {revealAllHref !== undefined ? (
+          <a href={revealAllHref} class="btn btn-secondary btn-sm">Show all statuses</a>
+        ) : null}
+      </div>
     </div>
   );
 }
