@@ -33,10 +33,11 @@ resource: `reviewzy://projects/{slug}/style-guide`, mime `text/markdown`. read i
 
 ## rules
 
-- an agent can never move an entry to `approved` or `rejected`. those transitions belong to the dashboard alone.
+- an agent can never approve, reject, or move a `draft`: `mark_applied` refuses a draft, and no tool deletes one. a misfiled draft sits until a human rejects it. those transitions belong to the dashboard alone.
 - one entry is one edit. `anchor_text` and `agent_draft` may contain newlines: file a multi-line passage as a single entry, never one entry per line.
-- the identity key is `(project_id, repo, file, anchor_hash)`. re-filing an existing key never creates a second row: a `draft` overwrites in place, an `approved`/`applied`/`rejected` entry is a no-op that returns the existing status.
+- the identity key is `(project_id, repo, file, anchor_hash)`, and `anchor_hash` is sha256 of `anchor_text`. re-filing an existing key never creates a second row: a `draft` overwrites in place, an `approved`/`applied`/`rejected` entry is a no-op that returns the existing status.
+- identity follows the text, not the file: editing the passage after filing orphans the entry. re-filing the edited text creates a second row under a new hash, and the old row stays a draft until a human rejects it. file only once the text is final.
 - anchors go stale when the file moves underneath an entry. re-verify `anchor_text` before replacing, and report `anchor_stale` rather than guessing.
 - constraints (`max_len`, `placeholders`, `tone`) are enforced at approval. a save that exceeds `max_len` or drops a declared placeholder is refused.
 - `await_approved` times out to `resolved: false` plus per-id statuses plus `poll_again_after_ms`; a timeout is never an error.
-- every entry carries exactly one file provenance: `file_content` (the whole file at filing time) or `file_hash` (sha256 hex). sending both or neither is refused.
+- every entry carries exactly one file provenance: `file_content` (the whole file at filing time) or `file_hash` (sha256 hex). sending both or neither is refused. a `draft` re-file never refreshes `file_hash`: the overwrite touches only the agent draft, context, constraints, title, and images, so the stored hash stays from the first filing even when the newer call sends fresh `file_content`.
