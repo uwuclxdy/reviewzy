@@ -672,9 +672,9 @@ kbd {
 }
 
 /* ---- Key-value / metadata table ----
-   Mono readout, no header row; half-width uppercase label column, so key and value share the card
-   evenly. */
-.info-table { width: 100%; table-layout: fixed; border-collapse: collapse; font: 400 var(--text-sm)/1.5 var(--font-mono); }
+   Mono readout, no header row; the label column starts at 15% of the card and grows to its
+   longest label, so key and value split about 15:85 without clipping a label. */
+.info-table { width: 100%; border-collapse: collapse; font: 400 var(--text-sm)/1.5 var(--font-mono); }
 .info-table td {
   padding: 8px var(--space-3);
   border-bottom: 1px solid var(--line);
@@ -683,15 +683,16 @@ kbd {
 }
 .info-table tr:last-child td { border-bottom: none; }
 .info-table td:first-child {
-  width: 50%;
+  width: 15%;
   font: 450 11px/1.5 var(--font-sans);
   letter-spacing: 0.07em;
   text-transform: uppercase;
   color: var(--text-faint);
   white-space: nowrap;
 }
-/* Value cells hold unbroken strings (paths, urls, hashes): fixed layout pins the table to the card
-   width, and wrapping at any point keeps those strings inside it instead of overflowing. */
+/* Value cells hold unbroken strings (paths, urls, hashes): auto layout hands the value column the
+   width the labels leave, and wrapping at any point keeps those strings inside the card instead
+   of overflowing. */
 .info-table td:not(:first-child) { overflow-wrap: anywhere; }
 
 /* ---- Word-level diff marks ----
