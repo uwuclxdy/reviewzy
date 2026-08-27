@@ -26,10 +26,10 @@ resource: `reviewzy://projects/{slug}/style-guide`, mime `text/markdown`. read i
 
 ## workflow
 
-1. file. gather the exact text to write or rewrite, read the style guide, then call `file_entries` with the project slug and entries (`repo`, `file`, `anchor_text`, `agent_draft`, `context`, `constraints`). one entry is one edit: `anchor_text` is the whole passage being replaced, `agent_draft` the proposed replacement. report the returned `dashboard_url` to the user.
+1. file. gather the exact text to write or rewrite, read the style guide, then call `file_entries` with the project slug and entries (`repo`, `file`, `anchor_text`, `agent_draft`, `context`, `constraints`). one entry is one edit: `anchor_text` is the whole passage being replaced, `agent_draft` the proposed replacement. copy `anchor_text` byte-exact from the file, comment lines inside the span included, and verify it occurs exactly once before filing; a hand-transcribed span that skips comment lines fails the apply-side match later. report the returned `dashboard_url` to the user.
 2. hand off. a human authors or approves each entry on the dashboard. only the dashboard can reach `approved` or `rejected`; the server enforces this.
 3. fetch. in a later session, call `fetch_approved` with `project` and `since` to get everything approved, or `await_approved` with `ids` and `timeout_ms` to block a live session until those ids resolve.
-4. apply. re-read the file, match `anchor_text` inside its context window, replace it, then call `mark_applied` with `result: "applied"`. if the anchor no longer matches, call `mark_applied` with `result: "anchor_stale"`.
+4. apply. re-read the file, match `anchor_text` inside its context window, replace it, then call `mark_applied` with `result: "applied"`. if the anchor no longer matches, call `mark_applied` with `result: "anchor_stale"`. if the anchor's copy fields all match the file but its span skipped comment lines, apply the copy comment-preserving and mark `applied`; reserve `anchor_stale` for real copy drift.
 
 ## rules
 
