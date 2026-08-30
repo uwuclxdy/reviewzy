@@ -116,7 +116,7 @@ curl http://127.0.0.1:3123/health
 ```
 
 ```json
-{"name":"reviewzy","version":"0.1.0","pid":4172598,"nonce":"881f0e93-8dde-4c75-b559-d2e3d3b223f0","startedAt":"2026-08-16T19:31:28.640Z"}
+{"name":"reviewzy","version":"0.2.0","pid":4172598,"nonce":"881f0e93-8dde-4c75-b559-d2e3d3b223f0","startedAt":"2026-08-16T19:31:28.640Z"}
 ```
 
 open http://127.0.0.1:3123/ for the dashboard.

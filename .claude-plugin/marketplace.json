@@ -9,7 +9,7 @@
     {
       "name": "reviewzy",
       "source": "./",
-      "version": "0.1.0",
+      "version": "0.2.0",
       "category": "productivity",
       "description": "human-in-the-loop mcp review for user-facing text"
     }

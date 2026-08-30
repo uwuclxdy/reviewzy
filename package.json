@@ -1,6 +1,6 @@
 {
   "name": "reviewzy",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "agents draft user-facing copy, humans sign off on a dashboard, agents apply the approved words back in place",
   "license": "AGPL-3.0-only",
   "type": "module",
