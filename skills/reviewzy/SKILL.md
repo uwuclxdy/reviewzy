@@ -1,6 +1,6 @@
 ---
 name: reviewzy
-description: "This skill should be used when filing, rewriting, or applying user-facing copy (CLI help, TUI strings, web UI strings, error messages, microcopy) through reviewzy's human-in-the-loop MCP tools."
+description: "Files, rewrites, and applies user-facing copy (CLI help, TUI strings, web UI strings, error messages, microcopy) through reviewzy's human-in-the-loop MCP tools."
 when_to_use: "Use when a copy change must not land until a human approves it."
 ---
 
