@@ -1,4 +1,6 @@
 /** @jsxImportSource hono/jsx */
+import { readFileSync } from "node:fs";
+import { raw } from "hono/html";
 import type { JSX } from "hono/jsx/jsx-runtime";
 import { listRevisions, parseConstraints, parseEntryImages } from "../db/human-save.ts";
 import type { Constraints, HumanSaveRefusal, RevisionRow, TransitionRefusal } from "../db/human-save.ts";
@@ -15,7 +17,7 @@ import type { StyleGuideForm, StyleGuideFormRefusal, StyleGuideInput } from "../
 import type { Store } from "../db/store.ts";
 import { parseRepoLink, REPO_ICON } from "./repo-link.ts";
 import { diffWords } from "./word-diff.ts";
-import { NAME, VERSION } from "../version.ts";
+import { NAME } from "../version.ts";
 
 /**
  * The three dashboard filters, straight off the query string. `status` and `project` are the raw
@@ -213,23 +215,26 @@ function shortUlid(id: string): string {
 /** The section the current page belongs to, marking the matching navbar link. */
 type NavSection = "entries" | "style-guide" | "none";
 
+/** The icon sprite, pasted into every full page's body as its first child, read off the vendored file so the two can never drift. */
+const ICON_SPRITE = readFileSync(new URL("./static/icons.svg", import.meta.url), "utf8");
+
 function Navbar({ signedIn, active }: { signedIn: boolean; active: NavSection }) {
   return (
     <nav class="navbar">
-      <div class="navbar-brand">
-        <div class="logo-name">{NAME}</div>
-        <div class="logo-version">v{VERSION}</div>
+      <div class="navbar-inner">
+        <div class="navbar-brand">
+          <div class="logo-name">{NAME}</div>
+        </div>
+        <div class="navbar-nav" id="navbar-nav">
+          <a class={`navbar-link${active === "entries" ? " active" : ""}`} href="/">Entries</a>
+          <a class={`navbar-link${active === "style-guide" ? " active" : ""}`} href="/style-guide">Style guide</a>
+        </div>
+        {signedIn ? (
+          <form method="post" action="/logout" class="navbar-actions">
+            <button class="btn btn-secondary btn-sm" type="submit">Sign out</button>
+          </form>
+        ) : null}
       </div>
-      <div class="navbar-nav" id="navbar-nav">
-        <a class={`navbar-link${active === "entries" ? " active" : ""}`} href="/">Entries</a>
-        <a class={`navbar-link${active === "style-guide" ? " active" : ""}`} href="/style-guide">Style guide</a>
-        <div class="navbar-ink" id="navbar-ink"></div>
-      </div>
-      {signedIn ? (
-        <form method="post" action="/logout" class="navbar-actions">
-          <button class="btn btn-ghost btn-sm" type="submit">Sign out</button>
-        </form>
-      ) : null}
     </nav>
   );
 }
@@ -237,8 +242,12 @@ function Navbar({ signedIn, active }: { signedIn: boolean; active: NavSection })
 function PageHeader({ total }: { total: number }) {
   return (
     <header class="page-header">
-      <h1 class="page-title">Entries</h1>
-      <span class="page-count">{total} {total === 1 ? "entry" : "entries"}</span>
+      <div class="page-header-body">
+        <h1 class="page-title">Entries</h1>
+        <div class="page-meta">
+          <span class="page-meta-item">{total} {total === 1 ? "entry" : "entries"}</span>
+        </div>
+      </div>
     </header>
   );
 }
@@ -312,11 +321,8 @@ function NoticeCallout({ notice }: { notice: ListNotice }) {
   if (notice.refused.length === 0) {
     return (
       <div class="callout callout-success" role="status">
-        <div class="callout-icon" style="color: var(--success)">
-          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
-            <circle cx="8" cy="8" r="6.5" />
-            <path d="M5 8l2 2 4-4" />
-          </svg>
+        <div class="callout-icon">
+          <svg aria-hidden="true"><use href="#i-success" /></svg>
         </div>
         <div class="callout-content">
           <div class="callout-title">
@@ -328,11 +334,8 @@ function NoticeCallout({ notice }: { notice: ListNotice }) {
   }
   return (
     <div class="callout callout-danger" role="alert">
-      <div class="callout-icon" style="color: var(--danger)">
-        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
-          <circle cx="8" cy="8" r="6.5" />
-          <path d="M10 6L6 10M6 6l4 4" />
-        </svg>
+      <div class="callout-icon">
+        <svg aria-hidden="true"><use href="#i-error" /></svg>
       </div>
       <div class="callout-content">
         <div class="callout-title">
@@ -396,14 +399,9 @@ function PartialHeader({ shown, total }: { shown: number; total: number }) {
 function EmptyAll() {
   return (
     <div class="card empty-state">
-      <div class="empty-icon" aria-hidden="true">
-        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
-          <rect x="1.5" y="2.5" width="13" height="11" />
-          <path d="M1.5 9.5h3.5l1 2h4l1-2h3.5" />
-        </svg>
-      </div>
-      <h3>No entries yet</h3>
-      <p>Agents file text through the reviewzy mcp endpoint. Filed entries appear here.</p>
+      <svg aria-hidden="true"><use href="#i-file" /></svg>
+      <div class="empty-title">No entries yet</div>
+      <div>Agents file text through the reviewzy mcp endpoint. Filed entries appear here.</div>
     </div>
   );
 }
@@ -417,15 +415,10 @@ function EmptyAll() {
 function EmptyMatch({ revealAllHref }: { revealAllHref: string | undefined }) {
   return (
     <div class="card empty-state">
-      <div class="empty-icon" aria-hidden="true">
-        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
-          <circle cx="6.5" cy="6.5" r="4.5" />
-          <path d="M11 11l3 3" />
-        </svg>
-      </div>
-      <h3>No entries match</h3>
-      <p>Try different search terms, or clear the filters.</p>
-      {revealAllHref !== undefined ? <p>Applied and rejected entries are hidden from this view.</p> : null}
+      <svg aria-hidden="true"><use href="#i-search" /></svg>
+      <div class="empty-title">No entries match</div>
+      <div>Try different search terms, or clear the filters.</div>
+      {revealAllHref !== undefined ? <div>Applied and rejected entries are hidden from this view.</div> : null}
       <div class="empty-actions">
         <a href="/" class="btn btn-secondary btn-sm">Clear filters</a>
         {revealAllHref !== undefined ? (
@@ -440,14 +433,9 @@ function EmptyMatch({ revealAllHref }: { revealAllHref: string | undefined }) {
 function EmptyActive() {
   return (
     <div class="card empty-state">
-      <div class="empty-icon" aria-hidden="true">
-        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
-          <circle cx="8" cy="8" r="6.5" />
-          <path d="M5 8l2 2 4-4" />
-        </svg>
-      </div>
-      <h3>Nothing to review</h3>
-      <p>Every filed entry is applied or rejected. New drafts appear here as agents file them.</p>
+      <svg aria-hidden="true"><use href="#i-success" /></svg>
+      <div class="empty-title">Nothing to review</div>
+      <div>Every filed entry is applied or rejected. New drafts appear here as agents file them.</div>
     </div>
   );
 }
@@ -506,12 +494,10 @@ function ProjectGroupView({ group }: { group: ProjectGroup }) {
           data-collapse-target={`project-batches-${group.slug}`}
           data-collapse-key={`project:${group.slug}`}
         >
-          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
-            <path d="M3 6l5 5 5-5" />
-          </svg>
+          <svg aria-hidden="true"><use href="#i-chevron-down" /></svg>
         </button>
       </header>
-      <div id={`project-batches-${group.slug}`} class="project-batches">
+      <div id={`project-batches-${group.slug}`}>
         {group.batches.map((batch) => (
           <BatchView key={batch.id} batch={batch} />
         ))}
@@ -532,7 +518,9 @@ function BatchView({ batch }: { batch: ProjectBatch }) {
       <div class="batch-header">
         {/* Select-all toggles only this batch's draft rows. No `name`, so it never submits as
             an entry id; dashboard.js derives checked/indeterminate from the draft checkboxes. */}
-        <input type="checkbox" class="select-all" aria-label={`Select all drafts in batch ${shortUlid(batch.id)}`} />
+        <label class="checkbox-label">
+          <input type="checkbox" class="select-all" aria-label={`Select all drafts in batch ${shortUlid(batch.id)}`} />
+        </label>
         {singleFiler !== null ? <span class="batch-meta">{singleFiler}</span> : null}
         <button
           type="button"
@@ -544,9 +532,7 @@ function BatchView({ batch }: { batch: ProjectBatch }) {
           data-collapse-target={`batch-table-${batch.id}`}
           data-collapse-key={`batch:${batch.id}`}
         >
-          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
-            <path d="M3 6l5 5 5-5" />
-          </svg>
+          <svg aria-hidden="true"><use href="#i-chevron-down" /></svg>
         </button>
       </div>
       <div class="table-wrap" id={`batch-table-${batch.id}`}>
@@ -562,11 +548,11 @@ function BatchView({ batch }: { batch: ProjectBatch }) {
             <tr>
               {/* The column header stays in the accessibility tree via the sr-only span; the
                   checkbox column itself is too narrow for a visible label. */}
-              <th><span class="visually-hidden">Select</span></th>
-              <th>Title</th>
-              <th>Status</th>
-              <th>File</th>
-              <th>Actions</th>
+              <th class="cell-select" scope="col"><span class="sr-only">Select</span></th>
+              <th scope="col">Title</th>
+              <th scope="col">Status</th>
+              <th scope="col">File</th>
+              <th scope="col">Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -598,16 +584,18 @@ function EntryRowView({ entry, filerInline }: { entry: EntryRow; filerInline: bo
     <tr>
       <td class="cell-select">
         {approve ? (
-          <input type="checkbox" name="id" value={entry.id} aria-label={`Select ${entry.file}`} />
+          <label class="checkbox-label">
+            <input type="checkbox" name="id" value={entry.id} aria-label={`Select ${entry.file}`} />
+          </label>
         ) : null}
       </td>
-      <td class="cell-title" title={`${entry.file} — ${entry.anchor_text}`}>
+      <td title={`${entry.file} — ${entry.anchor_text}`}>
         <div class="entry-head">
           <span class="entry-title">{title}</span>
           {filerInline && entry.filed_by !== null ? <span class="entry-filer"> · {entry.filed_by}</span> : null}
         </div>
       </td>
-      <td class="cell-status">
+      <td>
         <span class={`tag ${STATUS_TAG[entry.status]}`}>{STATUS_LABEL[entry.status]}</span>
       </td>
       <td class="cell-file" title={entry.file}>{entry.file}</td>
@@ -618,26 +606,19 @@ function EntryRowView({ entry, filerInline }: { entry: EntryRow; filerInline: bo
             class="btn btn-icon"
             style="color: var(--success)"
             aria-label={`Approve ${entry.file}`}
-            title="Approve"
             hx-post={`/entries/${entry.id}/approve`}
             hx-target="#entries-list"
             hx-swap="innerHTML"
             hx-indicator="#entries-loading"
             hx-disabled-elt="this"
           >
-            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
-              <circle cx="8" cy="8" r="6.5" />
-              <path d="M5 8l2 2 4-4" />
-            </svg>
+            <svg aria-hidden="true"><use href="#i-check" /></svg>
           </button>
         ) : (
           // The approve slot stays occupied on every non-draft row: a double-click's second click
           // lands on the disabled button (pointer-events none) rather than the next slot.
-          <button type="button" class="btn btn-icon" style="color: var(--success)" aria-label={`Approve ${entry.file}`} title="Approve" disabled>
-            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
-              <circle cx="8" cy="8" r="6.5" />
-              <path d="M5 8l2 2 4-4" />
-            </svg>
+          <button type="button" class="btn btn-icon" style="color: var(--success)" aria-label={`Approve ${entry.file}`} disabled>
+            <svg aria-hidden="true"><use href="#i-check" /></svg>
           </button>
         )}
         {reject ? (
@@ -646,31 +627,22 @@ function EntryRowView({ entry, filerInline }: { entry: EntryRow; filerInline: bo
             class="btn btn-icon"
             style="color: var(--danger)"
             aria-label={`Reject ${entry.file}`}
-            title="Reject"
             hx-post={`/entries/${entry.id}/reject`}
             hx-target="#entries-list"
             hx-swap="innerHTML"
             hx-indicator="#entries-loading"
             hx-disabled-elt="this"
           >
-            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
-              <circle cx="8" cy="8" r="6.5" />
-              <path d="M10 6L6 10M6 6l4 4" />
-            </svg>
+            <svg aria-hidden="true"><use href="#i-x" /></svg>
           </button>
         ) : (
           // The reject slot stays occupied on applied and rejected rows for the same guard.
-          <button type="button" class="btn btn-icon" style="color: var(--danger)" aria-label={`Reject ${entry.file}`} title="Reject" disabled>
-            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
-              <circle cx="8" cy="8" r="6.5" />
-              <path d="M10 6L6 10M6 6l4 4" />
-            </svg>
+          <button type="button" class="btn btn-icon" style="color: var(--danger)" aria-label={`Reject ${entry.file}`} disabled>
+            <svg aria-hidden="true"><use href="#i-x" /></svg>
           </button>
         )}
-        <a class="btn btn-icon" href={`/entries/${entry.id}`} aria-label={`Edit ${entry.file}`} title="Edit">
-          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
-            <path d="M11.5 2.5l2 2L5 13H3v-2z" />
-          </svg>
+        <a class="btn btn-icon" href={`/entries/${entry.id}`} aria-label={`Edit ${entry.file}`}>
+          <svg aria-hidden="true"><use href="#i-edit" /></svg>
         </a>
       </td>
     </tr>
@@ -682,11 +654,8 @@ function ErrorBoxTemplate() {
   return (
     <template id="error-box">
       <div class="callout callout-danger" role="alert">
-        <div class="callout-icon" style="color: var(--danger)">
-          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
-            <circle cx="8" cy="8" r="6.5" />
-            <path d="M10 6L6 10M6 6l4 4" />
-          </svg>
+        <div class="callout-icon">
+          <svg aria-hidden="true"><use href="#i-error" /></svg>
         </div>
         <div class="callout-content">
           <div class="callout-title">The list could not be loaded</div>
@@ -700,6 +669,46 @@ function ErrorBoxTemplate() {
   );
 }
 
+/** The saved theme, restored before the stylesheet, or a light-theme visitor sees a dark flash. */
+const THEME_RESTORE = raw(
+  'const saved = localStorage.getItem("cloudy-theme"); if (saved) document.documentElement.dataset.theme = saved;',
+);
+
+/** The head shared by every full page: the three stylesheets in order, then htmx and the dashboard module. */
+function PageHead({ title }: { title: string }) {
+  return (
+    <head>
+      <meta charset="utf-8" />
+      <meta name="viewport" content="width=device-width, initial-scale=1" />
+      {/* The empty data: URL kills the browser's /favicon.ico probe, which would 404 under /static. */}
+      <link rel="icon" href="data:," />
+      <title>{title}</title>
+      <script>{THEME_RESTORE}</script>
+      <link rel="stylesheet" href="/static/tokens.css" />
+      <link rel="stylesheet" href="/static/components.css" />
+      <link rel="stylesheet" href="/static/cursor.css" />
+      <link rel="stylesheet" href="/static/dashboard.css" />
+      <script src="/static/htmx.min.js"></script>
+      <script type="module" src="/static/dashboard.js"></script>
+    </head>
+  );
+}
+
+/** The sprite as the body's first child; cursor.js creates its own canvas and nothing else may enter that slot. */
+function IconSprite() {
+  return <>{raw(ICON_SPRITE)}</>;
+}
+
+/** The two controller modules, at the end of the body, exactly as the wiring prescribes. */
+function PageModules() {
+  return (
+    <>
+      <script type="module" src="/static/cursor.js"></script>
+      <script type="module" src="/static/ui.js"></script>
+    </>
+  );
+}
+
 /** The full page for a plain navigation; the mount wraps it in the doctype. `signedIn` is whether the navbar offers sign-out. */
 export function dashboardPage(
   store: Store,
@@ -710,19 +719,9 @@ export function dashboardPage(
   const vm = loadList(store, params);
   return (
     <html lang="en" data-theme="dark">
-      <head>
-        <meta charset="utf-8" />
-        <meta name="viewport" content="width=device-width, initial-scale=1" />
-        {/* The empty data: URL kills the browser's /favicon.ico probe, which would 404 under /static. */}
-        <link rel="icon" href="data:," />
-        <title>Entries · {NAME}</title>
-        <link rel="stylesheet" href="/static/tokens.css" />
-        <link rel="stylesheet" href="/static/components.css" />
-        <link rel="stylesheet" href="/static/dashboard.css" />
-        <script src="/static/htmx.min.js"></script>
-        <script src="/static/dashboard.js" defer></script>
-      </head>
+      <PageHead title={`Entries · ${NAME}`} />
       <body>
+        <IconSprite />
         <div class="app-shell">
           <Navbar signedIn={signedIn} active="entries" />
           <main class="main">
@@ -740,6 +739,7 @@ export function dashboardPage(
             <ErrorBoxTemplate />
           </main>
         </div>
+        <PageModules />
       </body>
     </html>
   );
@@ -754,26 +754,18 @@ export function dashboardPage(
 export function loginPage(next: string | undefined, error: string | undefined = undefined): JSX.Element {
   return (
     <html lang="en" data-theme="dark">
-      <head>
-        <meta charset="utf-8" />
-        <meta name="viewport" content="width=device-width, initial-scale=1" />
-        {/* The empty data: URL kills the browser's /favicon.ico probe, which would 404 under /static. */}
-        <link rel="icon" href="data:," />
-        <title>Sign in · {NAME}</title>
-        <link rel="stylesheet" href="/static/tokens.css" />
-        <link rel="stylesheet" href="/static/components.css" />
-        <link rel="stylesheet" href="/static/dashboard.css" />
-        <script src="/static/htmx.min.js"></script>
-        <script src="/static/dashboard.js" defer></script>
-      </head>
+      <PageHead title={`Sign in · ${NAME}`} />
       <body>
+        <IconSprite />
         <div class="app-shell">
           <Navbar signedIn={false} active="none" />
           <main class="main login-main">
             <header class="page-header">
-              <div class="label page-eyebrow">Dashboard</div>
-              <h1 class="page-title">Sign in</h1>
-              <p class="page-lede">The dashboard is password protected. Enter the password to continue.</p>
+              <div class="page-header-body">
+                <div class="label page-eyebrow">Dashboard</div>
+                <h1 class="page-title">Sign in</h1>
+                <p class="page-lede">The dashboard is password protected. Enter the password to continue.</p>
+              </div>
             </header>
             {error !== undefined ? <DangerCallout title={error} /> : null}
             <form method="post" action="/login" class="card login-card">
@@ -796,6 +788,7 @@ export function loginPage(next: string | undefined, error: string | undefined = 
             </form>
           </main>
         </div>
+        <PageModules />
       </body>
     </html>
   );
@@ -902,11 +895,8 @@ export function formatTransitionRefusal(
 function DangerCallout({ title, body }: { title: string; body?: string }) {
   return (
     <div class="callout callout-danger" role="alert">
-      <div class="callout-icon" style="color: var(--danger)">
-        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
-          <circle cx="8" cy="8" r="6.5" />
-          <path d="M10 6L6 10M6 6l4 4" />
-        </svg>
+      <div class="callout-icon">
+        <svg aria-hidden="true"><use href="#i-error" /></svg>
       </div>
       <div class="callout-content">
         <div class="callout-title">{title}</div>
@@ -1017,7 +1007,7 @@ function RevisionHistory({ revisions }: { revisions: readonly RevisionRow[] }) {
                   <time class="revision-time" datetime={new Date(revision.created_at).toISOString()}>
                     {new Date(revision.created_at).toLocaleString()}
                   </time>
-                  <button class="btn btn-ghost btn-sm" type="button" data-use-revision title="Use this text">
+                  <button class="btn btn-secondary btn-sm" type="button" data-use-revision>
                     Use
                   </button>
                 </div>
@@ -1157,7 +1147,7 @@ function ImagesCard({ entry }: { entry: EntryRow }) {
           <ul class="image-list">
             {images.map((item, index) =>
               isRenderableImage(item) ? (
-                <li class="image-item" key={index}>
+                <li key={index}>
                   <img class="entry-image" src={item} alt={`Image ${index + 1}`} loading="lazy" />
                   <form
                     class="image-remove"
@@ -1167,11 +1157,11 @@ function ImagesCard({ entry }: { entry: EntryRow }) {
                     hx-target="#editor-view"
                     hx-swap="outerHTML"
                   >
-                    <button class="btn btn-ghost btn-sm" type="submit">Remove</button>
+                    <button class="btn btn-secondary btn-sm" type="submit">Remove</button>
                   </form>
                 </li>
               ) : (
-                <li class="image-item" key={index}>
+                <li key={index}>
                   <p class="image-skip">Image {index + 1} not shown: unsupported source.</p>
                 </li>
               ),
@@ -1297,7 +1287,7 @@ function DiffView({ entry }: { entry: EntryRow }) {
           <span class="diff-line diff-anchor">
             {diff.before.map((token, index) =>
               token.kind === "removed" ? (
-                <span class="diff-removed" key={index}>{token.text}</span>
+                <span class="diff-remove" key={index}>{token.text}</span>
               ) : (
                 token.text
               ),
@@ -1313,7 +1303,7 @@ function DiffView({ entry }: { entry: EntryRow }) {
         <pre class="diff-code">
           {diff.after.map((token, index) =>
             token.kind === "added" ? (
-              <span class="diff-added" key={index}>{token.text}</span>
+              <span class="diff-add" key={index}>{token.text}</span>
             ) : (
               token.text
             ),
@@ -1362,12 +1352,9 @@ function EditorNav({ prevId, nextId }: { prevId: string | null; nextId: string |
 /** One rail: a chevron on a full-height strip, or an inert placeholder at the boundary. */
 function EditorNavButton({ side, targetId }: { side: "prev" | "next"; targetId: string | null }) {
   const label = side === "prev" ? "Previous entry" : "Next entry";
-  const chevron = side === "prev" ? "M10 3L5 8l5 5" : "M6 3l5 5-5 5";
   const cls = `editor-nav-btn editor-nav-${side}`;
   const icon = (
-    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
-      <path d={chevron} />
-    </svg>
+    <svg aria-hidden="true"><use href={side === "prev" ? "#i-chevron-left" : "#i-chevron-right"} /></svg>
   );
   if (targetId === null) {
     return (
@@ -1377,7 +1364,7 @@ function EditorNavButton({ side, targetId }: { side: "prev" | "next"; targetId: 
     );
   }
   return (
-    <a class={cls} href={`/entries/${targetId}`} aria-label={label} title={label}>
+    <a class={cls} href={`/entries/${targetId}`} aria-label={label}>
       {icon}
     </a>
   );
@@ -1387,34 +1374,27 @@ function EditorNavButton({ side, targetId }: { side: "prev" | "next"; targetId: 
 export function editorPage(vm: EditorViewModel, state: EditorState | undefined = undefined, signedIn = false): JSX.Element {
   return (
     <html lang="en" data-theme="dark">
-      <head>
-        <meta charset="utf-8" />
-        <meta name="viewport" content="width=device-width, initial-scale=1" />
-        {/* The empty data: URL kills the browser's /favicon.ico probe, which would 404 under /static. */}
-        <link rel="icon" href="data:," />
-        <title>Edit entry · {NAME}</title>
-        <link rel="stylesheet" href="/static/tokens.css" />
-        <link rel="stylesheet" href="/static/components.css" />
-        <link rel="stylesheet" href="/static/dashboard.css" />
-        <script src="/static/htmx.min.js"></script>
-        <script src="/static/dashboard.js" defer></script>
-      </head>
+      <PageHead title={`Edit entry · ${NAME}`} />
       <body>
+        <IconSprite />
         <div class="app-shell">
           <Navbar signedIn={signedIn} active="entries" />
           <main class="main">
             <header class="page-header">
-              <div class="label page-eyebrow">Entry review</div>
-              <h1 class="page-title">Edit entry</h1>
-              <p class="page-lede">Saving the text approves the entry and releases it to agents.</p>
+              <div class="page-header-body">
+                <div class="label page-eyebrow">Entry review</div>
+                <h1 class="page-title">Edit entry</h1>
+                <p class="page-lede">Saving the text approves the entry and releases it to agents.</p>
+              </div>
             </header>
             <EditorView vm={vm} state={state} />
             <EditorNav prevId={vm.prevId} nextId={vm.nextId} />
             {/* The one live region: announcements on constraint-state flips only, so a screen reader
                 is not flooded with a per-keystroke value. Lives outside the swap region. */}
-            <span id="editor-live" class="visually-hidden" aria-live="polite"></span>
+            <span id="editor-live" class="sr-only" aria-live="polite"></span>
           </main>
         </div>
+        <PageModules />
       </body>
     </html>
   );
@@ -1434,30 +1414,23 @@ export function editorViewFragment(vm: EditorViewModel, state: EditorState | und
 export function notFoundPage(signedIn = false): JSX.Element {
   return (
     <html lang="en" data-theme="dark">
-      <head>
-        <meta charset="utf-8" />
-        <meta name="viewport" content="width=device-width, initial-scale=1" />
-        {/* The empty data: URL kills the browser's /favicon.ico probe, which would 404 under /static. */}
-        <link rel="icon" href="data:," />
-        <title>Entry not found · {NAME}</title>
-        <link rel="stylesheet" href="/static/tokens.css" />
-        <link rel="stylesheet" href="/static/components.css" />
-        <link rel="stylesheet" href="/static/dashboard.css" />
-        <script src="/static/htmx.min.js"></script>
-        <script src="/static/dashboard.js" defer></script>
-      </head>
+      <PageHead title={`Entry not found · ${NAME}`} />
       <body>
+        <IconSprite />
         <div class="app-shell">
           <Navbar signedIn={signedIn} active="entries" />
           <main class="main">
             <header class="page-header">
-              <div class="label page-eyebrow">Entry review</div>
-              <h1 class="page-title">Entry not found</h1>
-              <p class="page-lede">This entry doesn't exist. Return to the list to find it.</p>
-              <a href="/" class="btn btn-secondary">Back to entries</a>
+              <div class="page-header-body">
+                <div class="label page-eyebrow">Entry review</div>
+                <h1 class="page-title">Entry not found</h1>
+                <p class="page-lede">This entry doesn't exist. Return to the list to find it.</p>
+              </div>
             </header>
+            <a href="/" class="btn btn-secondary">Back to entries</a>
           </main>
         </div>
+        <PageModules />
       </body>
     </html>
   );
@@ -1543,11 +1516,8 @@ function sectionToForm(section: StyleGuideInput): StyleGuideForm {
 function InfoCallout({ title, body }: { title: string; body?: string }) {
   return (
     <div class="callout callout-info">
-      <div class="callout-icon" style="color: var(--info)">
-        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
-          <circle cx="8" cy="8" r="6.5" />
-          <path d="M8 7.5v3.5M8 5.5v.01" />
-        </svg>
+      <div class="callout-icon">
+        <svg aria-hidden="true"><use href="#i-info" /></svg>
       </div>
       <div class="callout-content">
         <div class="callout-title">{title}</div>
@@ -1607,11 +1577,8 @@ function StyleGuideRegion({ vm, state }: { vm: StyleGuideViewModel; state: Style
     <div id="style-guide-region">
       {state?.notice.kind === "saved" ? (
         <div class="callout callout-success" role="status">
-          <div class="callout-icon" style="color: var(--success)">
-            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
-              <circle cx="8" cy="8" r="6.5" />
-              <path d="M5 8l2 2 4-4" />
-            </svg>
+          <div class="callout-icon">
+            <svg aria-hidden="true"><use href="#i-success" /></svg>
           </div>
           <div class="callout-content">
             <div class="callout-title">Guide saved</div>
@@ -1686,11 +1653,8 @@ function StyleGuideErrorBoxTemplate() {
   return (
     <template id="style-guide-error-box">
       <div class="callout callout-danger" role="alert">
-        <div class="callout-icon" style="color: var(--danger)">
-          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
-            <circle cx="8" cy="8" r="6.5" />
-            <path d="M10 6L6 10M6 6l4 4" />
-          </svg>
+        <div class="callout-icon">
+          <svg aria-hidden="true"><use href="#i-error" /></svg>
         </div>
         <div class="callout-content">
           <div class="callout-title">The guide could not be saved</div>
@@ -1712,32 +1676,25 @@ export function styleGuidePage(
 ): JSX.Element {
   return (
     <html lang="en" data-theme="dark">
-      <head>
-        <meta charset="utf-8" />
-        <meta name="viewport" content="width=device-width, initial-scale=1" />
-        {/* The empty data: URL kills the browser's /favicon.ico probe, which would 404 under /static. */}
-        <link rel="icon" href="data:," />
-        <title>Style guide · {NAME}</title>
-        <link rel="stylesheet" href="/static/tokens.css" />
-        <link rel="stylesheet" href="/static/components.css" />
-        <link rel="stylesheet" href="/static/dashboard.css" />
-        <script src="/static/htmx.min.js"></script>
-        <script src="/static/dashboard.js" defer></script>
-      </head>
+      <PageHead title={`Style guide · ${NAME}`} />
       <body>
+        <IconSprite />
         <div class="app-shell">
           <Navbar signedIn={signedIn} active="style-guide" />
           <main class="main">
             <header class="page-header">
-              <div class="label page-eyebrow">Voice</div>
-              <h1 class="page-title">Style guide</h1>
-              <p class="page-lede">The voice agents read before drafting, starting with the global guide and adding each project's own rules below.</p>
+              <div class="page-header-body">
+                <div class="label page-eyebrow">Voice</div>
+                <h1 class="page-title">Style guide</h1>
+                <p class="page-lede">The voice agents read before drafting, starting with the global guide and adding each project's own rules below.</p>
+              </div>
             </header>
             <StyleGuideProjects vm={vm} />
             <StyleGuideRegion vm={vm} state={state} />
             <StyleGuideErrorBoxTemplate />
           </main>
         </div>
+        <PageModules />
       </body>
     </html>
   );

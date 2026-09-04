@@ -1,34 +1,10 @@
-// reviewzy dashboard behaviors. Load after htmx.min.js.
+// reviewzy dashboard behaviors. Loads as a module after htmx.min.js.
+// The navbar's ink, its dock state and the table header label boxes come from ui.js;
+// initTables is re-run after every htmx swap so a freshly rendered table head gets its boxes.
+import { initTables } from "./ui.js";
+
 (() => {
   "use strict";
-
-  // --- Navbar ink (cloudy-ui navbar component) ---
-  // Positions the sliding underline under the active link; re-positions on resize without animating.
-  const navbarNav = document.getElementById("navbar-nav");
-  const navbarInk = document.getElementById("navbar-ink");
-
-  function positionNavbarInk() {
-    if (!navbarNav || !navbarInk) return;
-    const active = navbarNav.querySelector(".navbar-link.active");
-    if (!active) {
-      navbarInk.style.opacity = "0";
-      return;
-    }
-    const navRect = navbarNav.getBoundingClientRect();
-    const linkRect = active.getBoundingClientRect();
-    navbarInk.style.left = `${linkRect.left - navRect.left}px`;
-    navbarInk.style.width = `${linkRect.width}px`;
-    navbarInk.style.opacity = "1";
-  }
-
-  window.addEventListener("resize", () => {
-    navbarInk.style.transition = "none";
-    positionNavbarInk();
-    requestAnimationFrame(() => {
-      navbarInk.style.transition = "";
-    });
-  });
-  requestAnimationFrame(positionNavbarInk);
 
   // --- Filter errors ---
   // A failed filter request (HTTP error or network error) replaces the list with the error box
@@ -307,4 +283,5 @@
 
   applyCollapseState();
   document.addEventListener("htmx:afterSwap", applyCollapseState);
+  document.addEventListener("htmx:afterSwap", initTables);
 })();

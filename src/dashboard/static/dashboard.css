@@ -2,17 +2,17 @@
    reviewzy — dashboard page styles
    ============================================================ */
 
-/* ---- Page shell (navbar shell per cloudy-ui) ---- */
+/* The one override that retunes the column: the navbar's card and inner
+   column, the page width and this shell all read it. */
+:root { --page-w: 1400px; }
+
+/* ---- Page shell (navbar shell) ---- */
 .app-shell { min-height: 100vh; display: flex; flex-direction: column; }
-.main { padding: var(--space-10) var(--space-12); max-width: 1400px; margin: 0 auto; width: 100%; }
+.main { padding: var(--space-10) var(--space-8); max-width: var(--page-w); margin: 0 auto; width: 100%; }
 
 /* ---- Page header: the eyebrow / title / lede triplet (login/editor pages) ---- */
-.page-header { margin-bottom: var(--space-8); padding-bottom: var(--space-5); border-bottom: 1px solid var(--line); }
-.page-eyebrow { color: var(--accent); margin-bottom: var(--space-2); }
-.page-title { font: 550 var(--text-2xl)/1.15 var(--font-sans); color: var(--text); letter-spacing: -0.02em; margin-bottom: var(--space-3); }
-.page-lede { font-size: var(--text-base); color: var(--text-dim); max-width: 540px; }
-/* The entries header is just the title plus the total count, no eyebrow or lede. */
-.page-count { font-size: var(--text-sm); color: var(--text-dim); }
+.page-eyebrow { color: var(--accent-text); margin-bottom: var(--space-2); }
+.page-lede { font-size: var(--t-3); color: var(--text-3); max-width: 540px; }
 
 /* ---- Filter form ---- */
 .filters { display: grid; grid-template-columns: minmax(0, 2fr) 200px 200px; gap: var(--space-3); align-items: end; margin-bottom: var(--space-8); }
@@ -21,43 +21,20 @@
 /* ---- Entries region ---- */
 /* The loading strip is hidden until htmx marks the request in flight (hx-indicator adds the
    .htmx-request class); it sits beside the swap target, so a swap never removes it. */
-#entries-loading { display: none; align-items: center; gap: var(--space-2); font-size: var(--text-sm); color: var(--text-dim); padding: var(--space-2) 0; }
+#entries-loading { display: none; align-items: center; gap: var(--space-2); font-size: var(--t-2); color: var(--text-3); padding: var(--space-2) 0; }
 #entries-loading.htmx-request { display: flex; }
-/* The spinner reuses the @keyframes spin components.css ships for .btn-loading. */
-.spinner {
-  width: 12px; height: 12px;
-  border: 2px solid var(--line-strong);
-  border-top-color: var(--accent);
-  border-radius: 50%;
-  animation: spin 0.6s linear infinite;
-  flex-shrink: 0;
-}
 
 /* ---- Partial state ---- */
 .partial-header { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); margin-bottom: var(--space-4); }
-.partial-count { font-size: var(--text-sm); color: var(--text-dim); }
-
-/* ---- Screen-reader-only ---- */
-/* Present in the DOM and the accessibility tree, absent from layout, and never focusable. */
-.visually-hidden {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  margin: -1px;
-  padding: 0;
-  overflow: hidden;
-  clip: rect(0 0 0 0);
-  white-space: nowrap;
-  border: 0;
-}
+.partial-count { font-size: var(--t-2); color: var(--text-3); }
 
 /* ---- Project groups ---- */
 .project-group { margin-bottom: var(--space-10); }
 .project-header { display: flex; align-items: center; gap: var(--space-3); margin-bottom: var(--space-4); }
-.project-name { font: 500 var(--text-lg)/1.2 var(--font-mono); color: var(--text); letter-spacing: -0.01em; }
+.project-name { font: 500 var(--t-5)/1.2 var(--font-mono); color: var(--text); letter-spacing: -0.01em; }
 .batch { margin-bottom: var(--space-6); }
 .batch-header { display: flex; align-items: baseline; gap: var(--space-3); margin-bottom: var(--space-2); }
-.batch-meta { font: 400 var(--text-xs)/1 var(--font-sans); color: var(--text-faint); }
+.batch-meta { font: 400 var(--t-2)/1 var(--font-sans); color: var(--text-4); }
 
 /* ---- Entry table cells ----
    The table lays out fixed with a colgroup so the title column takes the remainder and the row
@@ -75,7 +52,7 @@
 .entry-title {
   flex: 1 1 auto;
   min-width: 0;
-  font: 450 var(--text-base)/1.4 var(--font-sans);
+  font: 400 var(--t-3)/1.4 var(--font-sans);
   color: var(--text);
   white-space: nowrap;
   overflow: hidden;
@@ -83,14 +60,14 @@
 }
 .entry-filer {
   flex-shrink: 0;
-  font-size: var(--text-xs);
-  color: var(--text-faint);
+  font-size: var(--t-2);
+  color: var(--text-4);
   white-space: nowrap;
 }
 .cell-file {
   font-family: var(--font-mono);
-  font-size: var(--text-xs);
-  color: var(--text-faint);
+  font-size: var(--t-2);
+  color: var(--text-4);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -101,103 +78,53 @@
    .htmx-request while the request is in flight, and pointer-events drops the duplicate click a
    double-click would otherwise fire. */
 .htmx-request { pointer-events: none; }
-/* The cloudy-ui custom checkbox: an appearance:none box on the sunk plane, accent-filled with a
-   clip-path check when checked. The select-all also takes a dash in its indeterminate state (a
-   partially selected batch), which the native accent-color box could not express. */
-.cell-select input[type="checkbox"],
-.batch-header .select-all {
-  width: 15px;
-  height: 15px;
-  appearance: none;
-  background: var(--bg-sunken);
-  border: 1px solid var(--line);
-  border-radius: calc(var(--radius) * 0.5);
-  cursor: pointer;
-  flex-shrink: 0;
-  position: relative;
-  transition: border-color var(--dur-fast) var(--ease), background var(--dur-fast) var(--ease);
-}
-.cell-select input[type="checkbox"]:hover,
-.batch-header .select-all:hover { border-color: var(--line-strong); }
-.cell-select input[type="checkbox"]:checked,
-.batch-header .select-all:checked,
-.cell-select input[type="checkbox"]:indeterminate,
-.batch-header .select-all:indeterminate {
-  background: var(--accent);
-  border-color: var(--accent);
-}
-.cell-select input[type="checkbox"]:checked::after,
-.batch-header .select-all:checked::after {
-  content: '';
-  position: absolute;
-  inset: 3px;
-  background: var(--text-on-accent);
-  clip-path: polygon(14% 44%, 0 65%, 50% 100%, 100% 16%, 80% 0%, 43% 62%);
-}
-.cell-select input[type="checkbox"]:indeterminate::after,
-.batch-header .select-all:indeterminate::after {
-  content: '';
-  position: absolute;
-  left: 3px;
-  right: 3px;
-  top: 50%;
-  height: 2px;
-  transform: translateY(-50%);
-  background: var(--text-on-accent);
-  border-radius: 1px;
-}
-.cell-actions { white-space: nowrap; }
-.cell-actions .btn + .btn { margin-left: var(--space-2); }
+.cell-actions { white-space: nowrap; display: inline-flex; align-items: center; gap: var(--space-1); }
 .table-wrap tbody td.cell-actions { padding-left: var(--space-1); padding-right: var(--space-1); }
 .batch-bar {
   display: flex;
   align-items: center;
   margin-bottom: var(--space-4);
-  /* Sticks just below the 56px navbar so the approve button stays reachable while rows scroll
+  /* Sticks just below the navbar so the approve button stays reachable while rows scroll
      under it; the background and z-index stop table rows from showing through the bar. */
   position: sticky;
-  top: 56px;
+  top: var(--navbar-h);
   z-index: 10;
   padding: var(--space-2) 0;
   background: var(--bg);
 }
-.batch-header .select-all { align-self: center; }
+.batch-header .checkbox-label { align-self: center; }
 /* ---- Collapsible project sections and batches ----
    The chevron points down expanded and turns when collapsed; the state is applied by dashboard.js
    from localStorage, so the server ships everything open and the viewer's choice re-applies. */
 .collapse-toggle { align-self: center; }
-.collapse-toggle svg { transition: transform var(--dur-fast) var(--ease); }
+.collapse-toggle svg { transition: transform var(--dur-tint) var(--ease); }
 .collapse-toggle[aria-expanded="false"] svg { transform: rotate(-90deg); }
 .project-header .collapse-toggle, .batch-header .collapse-toggle { margin-left: auto; }
 .notice-list { margin: 0; padding-left: var(--space-5); display: flex; flex-direction: column; gap: var(--space-1); }
 
-/* ---- Diff view: the anchored snippet vs the entry's text, mono on sunken, anchor distinct ---- */
+/* ---- Diff view: the anchored snippet vs the entry's text, mono on the well, anchor distinct ---- */
 .diff-grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-4); margin-bottom: var(--space-8); }
 @media (max-width: 900px) { .diff-grid { grid-template-columns: 1fr; } }
 .diff-code {
-  font: 400 var(--text-sm)/1.6 var(--font-mono);
-  background: var(--bg-sunken);
+  font: 400 var(--t-2)/1.6 var(--font-mono);
+  background: var(--well);
   border: 1px solid var(--line);
-  border-radius: var(--radius);
+  border-radius: var(--r-1);
   padding: var(--space-4);
   white-space: pre-wrap;
   word-break: break-word;
-  color: var(--text-muted);
+  color: var(--text-2);
   margin: 0;
 }
 .diff-line { display: block; }
 .diff-anchor {
-  background: var(--accent-soft);
+  background: var(--accent-quiet);
   border-left: 2px solid var(--accent);
   color: var(--text);
   padding-left: var(--space-2);
 }
 
-/* ---- Empty states ---- */
-.empty-state { text-align: center; padding: var(--space-12) var(--space-6); }
-.empty-icon { margin: 0 auto var(--space-4); width: 32px; height: 32px; color: var(--text-faint); display: flex; align-items: center; justify-content: center; }
-.empty-state h3 { font: 500 var(--text-lg)/1.3 var(--font-sans); color: var(--text); margin-bottom: var(--space-2); }
-.empty-state p { font-size: var(--text-sm); color: var(--text-dim); max-width: 420px; margin: 0 auto var(--space-4); }
+/* ---- Empty state actions: the shipped .empty-state lays out one button, this row holds two ---- */
 .empty-actions { display: flex; gap: var(--space-2); justify-content: center; }
 
 /* ---- Error box (cloned from #error-box by dashboard.js) ---- */
@@ -205,7 +132,7 @@
 .callout-actions { margin-top: var(--space-2); }
 
 /* ---- Entry editor ---- */
-/* The one live region, kept out of sight by the shared .visually-hidden utility above. */
+/* The one live region, kept out of sight by the shipped .sr-only utility. */
 .editor-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--space-8); align-items: start; }
 .editor-main { min-width: 0; }
 .editor-rail { display: flex; flex-direction: column; gap: var(--space-6); position: sticky; top: var(--space-8); }
@@ -221,32 +148,32 @@
 #editor-text { font-family: var(--font-mono); }
 
 /* ---- Editor prev/next rails ----
-   One full-height fixed strip per side, below the 56px navbar, so the previous and next entries are
-   a single click away while reading. The strip sits inside the 48px page padding, clear of content. */
+   One full-height fixed strip per side, below the navbar, so the previous and next entries are
+   a single click away while reading. The strip sits inside the page's inline padding, clear of content. */
 .editor-nav-btn {
   position: fixed;
-  top: 56px;
+  top: var(--navbar-h);
   bottom: 0;
   width: 44px;
   display: flex;
   align-items: center;
   justify-content: center;
-  color: var(--text-dim);
+  color: var(--text-3);
   text-decoration: none;
   z-index: 40;
-  transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+  transition: background var(--dur-tint) var(--ease), color var(--dur-tint) var(--ease);
 }
 .editor-nav-prev { left: 0; }
 .editor-nav-next { right: 0; }
-.editor-nav-btn:hover { background: var(--bg-hover); color: var(--text); }
-.editor-nav-btn.is-disabled { color: var(--text-faint); opacity: 0.4; pointer-events: none; }
+.editor-nav-btn:hover { background: var(--surface-2); color: var(--text); }
+.editor-nav-btn.is-disabled { color: var(--text-4); opacity: 0.4; pointer-events: none; }
 .editor-nav-btn svg { width: 18px; height: 18px; }
 @media (max-width: 900px) { .editor-nav { display: none; } }
 #editor-region > .callout { margin-bottom: var(--space-4); }
 #editor-region > .btn { margin-top: var(--space-4); }
 .editor-actions { margin-top: var(--space-4); display: flex; align-items: center; gap: var(--space-2); }
 /* The in-flight indicator for an approve or reject from the editor: htmx's own rules fade it in. */
-.editor-actions .htmx-indicator { display: inline-flex; align-items: center; gap: var(--space-2); font-size: var(--text-sm); color: var(--text-dim); }
+.editor-actions .htmx-indicator { display: inline-flex; align-items: center; gap: var(--space-2); font-size: var(--t-2); color: var(--text-3); }
 
 /* The notes card: the agent's row reuses the constraint row shape; the human's textarea and its
    save button sit below it. */
@@ -256,51 +183,51 @@
 /* Constraint panel: live count and placeholder checklist; the server owns the refusal. */
 .constraint-row { display: flex; gap: var(--space-3); padding: 6px 0; }
 .constraint-row + .constraint-row { border-top: 1px solid var(--line); }
-.constraint-label { flex-shrink: 0; font: 450 11px/1.4 var(--font-sans); letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-dim); width: 96px; padding-top: 2px; }
-.constraint-value { min-width: 0; color: var(--text-muted); font-size: var(--text-sm); }
-.char-count { color: var(--text-muted); font-size: var(--text-sm); }
+.constraint-label { flex-shrink: 0; font: 500 11px/1.4 var(--font-sans); letter-spacing: var(--caps); text-transform: uppercase; color: var(--text-3); width: 96px; padding-top: 2px; }
+.constraint-value { min-width: 0; color: var(--text-2); font-size: var(--t-2); }
+.char-count { color: var(--text-2); font-size: var(--t-2); }
 .char-count.over { color: var(--danger); }
 .placeholder-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
 .placeholder-item { display: flex; align-items: center; gap: var(--space-2); }
-.placeholder-state { font-size: var(--text-xs); color: var(--text-dim); min-width: 52px; }
+.placeholder-state { font-size: var(--t-2); color: var(--text-3); min-width: 52px; }
 .placeholder-state.is-present { color: var(--success); }
 
 /* The context card's secondary block: the provenance rows (hash, filer, stale note) collapsed
    behind a summary, so the anchor and the agent-supplied context rows lead the card. */
 .context-secondary { margin-top: var(--space-3); }
-.context-secondary summary { cursor: pointer; font-size: var(--text-xs); color: var(--text-dim); }
+.context-secondary summary { cursor: pointer; font-size: var(--t-2); color: var(--text-3); }
 .context-secondary .info-table { margin-top: var(--space-2); }
 
 /* Repo row link: the brand icon beside the shortened owner/repo path, linking out to the host. */
 .repo-link { display: inline-flex; align-items: center; gap: 6px; color: var(--text); text-decoration: none; }
-.repo-link:hover { color: var(--accent); }
-.repo-icon { width: 14px; height: 14px; flex-shrink: 0; fill: currentColor; opacity: 0.7; }
-.placeholder-token { font: 400 var(--text-sm)/1 var(--font-mono); color: var(--text); background: var(--bg-sunken); border: 1px solid var(--line); border-radius: var(--radius); padding: 2px 6px; }
+.repo-link:hover { color: var(--accent-text); }
+.repo-icon { width: 14px; height: 14px; flex-shrink: 0; fill: currentColor; opacity: var(--icon-dim); }
+.placeholder-token { font: 400 var(--t-2)/1 var(--font-mono); color: var(--text); background: var(--well); border: 1px solid var(--line); border-radius: var(--r-1); padding: 2px 6px; }
 
 /* Entry images: one image per row at the card's width, a remove form below each, and the
    one-file upload form closing the card. The file input flexes to whatever width remains. */
 .image-list { list-style: none; margin: 0 0 var(--space-3); padding: 0; display: flex; flex-direction: column; gap: var(--space-3); }
-.entry-image { display: block; max-width: 100%; height: auto; border: 1px solid var(--line); border-radius: var(--radius); }
-.image-skip { margin: 0; font-size: var(--text-xs); color: var(--text-dim); }
+.entry-image { display: block; max-width: 100%; height: auto; border: 1px solid var(--line); border-radius: var(--r-1); }
+.image-skip { margin: 0; font-size: var(--t-2); color: var(--text-3); }
 .image-remove { margin-top: var(--space-1); }
 .image-upload { display: flex; gap: var(--space-2); align-items: center; }
 .image-upload .input { flex: 1; min-width: 0; }
 
 /* Revision history: newest first; the text clamps like the list's entry text. */
-.history-empty { font-size: var(--text-sm); color: var(--text-faint); padding: var(--space-2) 0; }
+.history-empty { font-size: var(--t-2); color: var(--text-4); padding: var(--space-2) 0; }
 .revision-list { list-style: none; margin: 0; padding: 0; }
 .revision { padding: var(--space-3) 0; }
 .revision + .revision { border-top: 1px solid var(--line); }
 .revision-head { display: flex; align-items: center; gap: var(--space-3); margin-bottom: var(--space-2); }
-.revision-time { font-size: var(--text-xs); color: var(--text-faint); }
+.revision-time { font-size: var(--t-2); color: var(--text-4); }
 .revision-head .btn { margin-left: auto; }
 .revision-text {
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
-  font-size: var(--text-sm);
-  color: var(--text-muted);
+  font-size: var(--t-2);
+  color: var(--text-2);
 }
 
 /* ---- Login page: the navbar shell, then one centered card ---- */

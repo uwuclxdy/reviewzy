@@ -1,0 +1,105 @@
+/* ============================================================
+   the ambient layer
+   The dot grid and the pointer ring. Load after components.css;
+   cursor.js boots both.
+   ============================================================ */
+
+/* ---- Cursor-reactive dot-grid background (sanctioned ambient; desktop only) ----
+   Canvas created and painted on demand by cursor.js; sits behind all content via
+   background propagation. Solid cards keep it to negative space. */
+#bg-dots { position: fixed; inset: 0; z-index: -1; pointer-events: none; }
+
+/* ---- Trailing pointer ring (desktop fine-pointer only) ----
+   ONE node is the whole cursor. It TIGHTENS over a target rather than growing, which keeps it
+   off the small ones, and over text it morphs into the caret bar itself. No dot in the middle
+   and no second node for the caret: another mark under the pointer competes with the thing
+   being pointed at, and a fade between two nodes throws away the morph.
+   Five states: idle, `.hover`, `.press`, `.blocked` over anything refusing the click, and
+   `.text` over a glyph run or a text field. `.text` is gated by a hit test against the glyphs,
+   never by tag name (see the JS).
+   EVERY STATE IS A WIDTH/HEIGHT CHANGE, never `transform: scale()`: a scaled 1px border
+   renders sub-pixel, so a ring that tightens by scale fades as it tightens. The ring is fixed
+   and childless, so nothing here touches page layout. */
+#cursor {
+  position: fixed;
+  top: 0; left: 0;
+  z-index: 10000;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity var(--dur-near) var(--ease);
+  --caret-h: 20px;
+}
+#cursor.visible { opacity: 1; }
+
+#cursor-ring {
+  position: fixed;
+  top: 0; left: 0;
+  width: 26px; height: 26px;
+  border: 1px solid var(--accent);
+  border-radius: 50%;
+  will-change: transform;
+  /* AN ACCENT HAIRLINE IS INVISIBLE OVER THE ACCENT FILLS - buttons, active chips, the sidebar
+     cursor, bar fills - and those are exactly the things worth pointing at, so a keyline in the
+     PAGE BACKGROUND rides just outside it. Whatever is underneath, exactly one of the two reads:
+     on the page the keyline is the background and only the hairline shows, on an accent fill the
+     hairline is the fill and only the keyline shows. It follows the shape through the caret
+     morph, and it is the surface colour rather than a dark one for the light theme's sake, where
+     a dark edge reads as a smudge and swallows the 1px line it was meant to protect. */
+  box-shadow: 0 0 0 1px var(--bg);
+  transition: width var(--dur-near) var(--ease), height var(--dur-near) var(--ease),
+              border-radius var(--dur-near) var(--ease), border-color var(--dur-tint) var(--ease),
+              background var(--dur-tint) var(--ease);
+}
+
+/* 4px per state: the tighten only has to be legible next to the state before it, and a deep one
+   reads as the ring flinching away from the target. The fill jumps as well, because size alone
+   stops separating press from hover once the steps are this small. */
+#cursor.hover #cursor-ring { width: 22px; height: 22px; background: color-mix(in srgb, var(--accent) 12%, transparent); }
+#cursor.hover.press #cursor-ring { width: 18px; height: 18px; background: color-mix(in srgb, var(--accent) 26%, transparent); }
+
+/* refuses the click: holds idle size on purpose. Not doing the tighten is the signal */
+#cursor.blocked #cursor-ring { border-color: var(--danger); }
+
+/* the ring IS the caret over text: the circle squeezes into the bar, and the transparent border
+   lets the fill through the full 2px. The JS drops the trail here, so it stands under the
+   pointer, where the click will put the real caret. */
+#cursor.text #cursor-ring {
+  width: 2px; height: var(--caret-h);
+  border-radius: 1px;
+  border-color: transparent;
+  background: var(--accent);
+}
+
+/* one-shot on release over a target, removed on animationend. Placed by left/top so the keyframe
+   owns the transform outright. Carries the ring's keyline: it fires over targets, and those are
+   the fills it would vanish into */
+.cursor-pulse {
+  position: fixed;
+  width: 26px; height: 26px;
+  margin: -13px 0 0 -13px;
+  border: 1px solid var(--accent);
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px var(--bg);
+  will-change: transform;
+  animation: cursor-pulse var(--dur-far) var(--ease-out) forwards;
+}
+/* Starts at 6.2px across, near enough to a point that the ripple reads as leaving the click
+   rather than as the pressed ring let go. The transform scales the stroke with it, so a 1px
+   border would draw a quarter-pixel line at that size and the small start would not paint at
+   all; the border-width runs the other way so the start still draws. Sampled every 2ms across
+   the run, the drawn stroke spans 0.96 to 2.6px, against 0.24px at the start without it. The
+   spread is Chrome flooring the animated border-width to whole pixels. */
+@keyframes cursor-pulse {
+  from { transform: scale(0.24); border-width: 4px; opacity: 0.85; }
+  to   { transform: scale(2.1); border-width: 0.5px; opacity: 0; }
+}
+
+/* `-webkit-user-drag`: a native drag puts the OS cursor and a ghost image back on screen, and
+   neither obeys `cursor: none`. The JS cancels dragstart too, for the engines ignoring this,
+   and refuses the pointerdown on a link, which is earlier than either.
+   Selection survives - it stops elements being dragged, not text being picked. */
+html.custom-cursor, html.custom-cursor * { cursor: none !important; -webkit-user-drag: none; }
+/* Unscoped: a native drag ghost carries its own OS cursor and defeats the ring
+   the moment it starts, class or no class. Selection survives. */
+a, img { -webkit-user-drag: none; }
+@media (hover: none), (pointer: coarse) { #cursor { display: none; } }

@@ -138,7 +138,7 @@ describe("editor page", () => {
     expect(html).toContain(`<span id="char-count" class="num char-count" data-max-len="200">`);
     expect(html).toContain(`${prefillLength} / 200`);
     // The one live region is the hidden span; it announces flips only, not each keystroke.
-    expect(html).toContain('<span id="editor-live" class="visually-hidden" aria-live="polite"></span>');
+    expect(html).toContain('<span id="editor-live" class="sr-only" aria-live="polite"></span>');
     expect(html).toContain('data-placeholder="command"');
     // The exact opening tag, so the placeholder state carries no aria-live of its own either: the
     // prefill lacks "command", so the rendered span is the no-class form.
@@ -282,9 +282,9 @@ describe("list rows", () => {
   test("each entry row links to its editor", async () => {
     const { env, id } = envWithDraft();
     const html = await (await env.get("/")).text();
-    expect(html).toContain(`<a class="btn btn-icon" href="/entries/${id}" aria-label="Edit docs/setup.md" title="Edit">`);
+    expect(html).toContain(`<a class="btn btn-icon" href="/entries/${id}" aria-label="Edit docs/setup.md">`);
     // Task 13 widened the column to the row's transitions, so the header names the whole cell.
-    expect(html).toContain("<th>Actions</th>");
+    expect(html).toContain("<th scope=\"col\">Actions</th>");
     env.close();
   });
 });
@@ -738,8 +738,8 @@ describe("the word diff", () => {
 
     // "bun" exists only in the anchor, "npm" only in the proposal; the shared words render as
     // plain text between the marks.
-    expect(html).toContain('Run <span class="diff-removed">bun</span> install');
-    expect(html).toContain('Run <span class="diff-added">npm</span> install');
+    expect(html).toContain('Run <span class="diff-remove">bun</span> install');
+    expect(html).toContain('Run <span class="diff-add">npm</span> install');
     env.close();
   });
 
@@ -748,8 +748,8 @@ describe("the word diff", () => {
     const res = await env.post(`/entries/${id}/save`, saveForm("Run bun install"), HX);
     const html = await res.text();
 
-    expect(html).not.toContain("diff-removed");
-    expect(html).not.toContain("diff-added");
+    expect(html).not.toContain("diff-remove");
+    expect(html).not.toContain("diff-add");
     env.close();
   });
 
@@ -763,8 +763,8 @@ describe("the word diff", () => {
       agentDraft: `${word(1100)} tail`,
     });
     const html = await (await env.get(`/entries/${id}`)).text();
-    expect(html).toContain("diff-removed");
-    expect(html).toContain("diff-added");
+    expect(html).toContain("diff-remove");
+    expect(html).toContain("diff-add");
     env.close();
   });
 });

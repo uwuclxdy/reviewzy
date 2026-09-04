@@ -187,16 +187,15 @@ describe("dashboard entry list", () => {
     expect(html).toContain('lang="en"');
     expect(html).toContain('data-theme="dark"');
 
-    // Navbar shell with brand, one nav link, and the sliding ink host.
+    // Navbar shell with brand and the two nav links; ui.js builds the sliding ink, so no markup carries it.
     expect(html).toContain('<nav class="navbar">');
     expect(html).toContain('<div class="logo-name">reviewzy</div>');
-    expect(html).toContain(`<div class="logo-version">v${manifest.version}</div>`);
     expect(html).toContain('<a class="navbar-link active" href="/">Entries</a>');
-    expect(html).toContain('id="navbar-ink"');
+    expect(html).not.toContain("navbar-ink");
 
-    // Page header: the title plus the total count, no eyebrow or lede.
+    // Page header: the title plus the total count in the metadata row, no eyebrow or lede.
     expect(html).toContain("<h1 class=\"page-title\">Entries</h1>");
-    expect(html).toContain('<span class="page-count">6 entries</span>');
+    expect(html).toContain('<span class="page-meta-item">6 entries</span>');
     expect(html).not.toContain("Review queue");
     expect(html).not.toContain("Agent drafts waiting for your approval.");
 
@@ -230,6 +229,11 @@ describe("dashboard entry list", () => {
     const appIdx = html.indexOf("/static/dashboard.js");
     expect(htmxIdx).toBeGreaterThan(0);
     expect(appIdx).toBeGreaterThan(htmxIdx);
+
+    // The saved theme is restored inline before the first stylesheet, or a light-theme visitor
+    // sees a dark flash; the modules below cannot run early enough to own this step.
+    expect(html).toContain('const saved = localStorage.getItem("cloudy-theme"); if (saved) document.documentElement.dataset.theme = saved;');
+    expect(html.indexOf('localStorage.getItem("cloudy-theme")')).toBeLessThan(html.indexOf('href="/static/tokens.css"'));
   });
 
   test("lists entries grouped by project then batch, actionable first and newest batch first", async () => {
@@ -309,7 +313,7 @@ describe("dashboard entry list", () => {
     expect(mark(batchB.batchId)).toBeLessThan(mark(batchD.batchId));
 
     // A row carries the select checkbox, the title, the file path, and the action slots.
-    expect(html).toContain('<span class="visually-hidden">Select</span>');
+    expect(html).toContain('<span class="sr-only">Select</span>');
     expect(html).toContain(">Title</th>");
     expect(html).toContain(">Status</th>");
     expect(html).toContain(">File</th>");
@@ -412,9 +416,9 @@ describe("dashboard entry list", () => {
     const draftId = batchA.results[0]!.id;
     const draftActions = entryActions(html, draftId);
     expect(draftActions).toContain('aria-label="Approve docs/setup.md"');
-    expect(draftActions).toContain(`title="Approve" hx-post="/entries/${draftId}/approve"`);
+    expect(draftActions).toContain(`aria-label="Approve docs/setup.md" hx-post="/entries/${draftId}/approve"`);
     expect(draftActions).toContain('aria-label="Reject docs/setup.md"');
-    expect(draftActions).toContain(`title="Reject" hx-post="/entries/${draftId}/reject"`);
+    expect(draftActions).toContain(`aria-label="Reject docs/setup.md" hx-post="/entries/${draftId}/reject"`);
     expect(draftActions).toContain('aria-label="Edit docs/setup.md"');
     expect(draftActions).toContain(`href="/entries/${draftId}"`);
 
@@ -422,9 +426,9 @@ describe("dashboard entry list", () => {
     const approvedId = batchA.results[1]!.id;
     const approvedActions = entryActions(html, approvedId);
     expect(approvedActions).toContain('aria-label="Approve docs/cache.md"');
-    expect(approvedActions).toContain('title="Approve" disabled');
+    expect(approvedActions).toContain('aria-label="Approve docs/cache.md" disabled');
     expect(approvedActions).not.toContain(`hx-post="/entries/${approvedId}/approve"`);
-    expect(approvedActions).toContain(`title="Reject" hx-post="/entries/${approvedId}/reject"`);
+    expect(approvedActions).toContain(`aria-label="Reject docs/cache.md" hx-post="/entries/${approvedId}/reject"`);
     expect(approvedActions).toContain(`href="/entries/${approvedId}"`);
 
     // Applied and rejected: approve and reject are both disabled; edit stays.
@@ -434,9 +438,9 @@ describe("dashboard entry list", () => {
     ] as const) {
       const actions = entryActions(html, id);
       expect(actions).toContain(`aria-label="Approve ${file}"`);
-      expect(actions).toContain('title="Approve" disabled');
+      expect(actions).toContain(`aria-label="Approve ${file}" disabled`);
       expect(actions).toContain(`aria-label="Reject ${file}"`);
-      expect(actions).toContain('title="Reject" disabled');
+      expect(actions).toContain(`aria-label="Reject ${file}" disabled`);
       expect(actions).not.toContain(`hx-post="/entries/${id}/approve"`);
       expect(actions).not.toContain(`hx-post="/entries/${id}/reject"`);
       expect(actions).toContain(`href="/entries/${id}"`);
@@ -624,11 +628,15 @@ describe("dashboard entry list", () => {
     const tokens = await env.get("/static/tokens.css");
     expect(tokens.status).toBe(200);
     expect(tokens.headers.get("content-type")).toContain("text/css");
-    expect(await tokens.text()).toContain("reviewzy — design tokens");
+    expect(await tokens.text()).toContain("design tokens");
 
     const components = await env.get("/static/components.css");
     expect(components.status).toBe(200);
-    expect(await components.text()).toContain("reviewzy — component styles");
+    expect(await components.text()).toContain("component styles");
+
+    const cursorCss = await env.get("/static/cursor.css");
+    expect(cursorCss.status).toBe(200);
+    expect(await cursorCss.text()).toContain("the ambient layer");
 
     const htmx = await env.get("/static/htmx.min.js");
     expect(htmx.status).toBe(200);
@@ -640,6 +648,11 @@ describe("dashboard entry list", () => {
     const appJsText = await appJs.text();
     expect(appJsText).toContain("htmx:responseError");
     expect(appJsText).toContain("htmx:sendError");
+
+    // The controller modules and the icon sprite are vendored beside the stylesheets.
+    for (const file of ["cursor.js", "cursor-rules.js", "ui.js", "icons.svg"]) {
+      expect((await env.get(`/static/${file}`)).status, file).toBe(200);
+    }
 
     const font = await env.get("/static/fonts/onest-latin.woff2");
     expect(font.status).toBe(200);
@@ -738,7 +751,7 @@ describe("dashboard entry list", () => {
       const html = await (await big.get("/")).text();
       // The whole walk renders: all 201 rows (one entry row each), page 2's row included. A walk
       // that stops after the first page renders exactly one row short, whatever the id order.
-      expect(html.match(/class="cell-title"/g) ?? []).toHaveLength(201);
+      expect(html.match(/class="entry-head"/g) ?? []).toHaveLength(201);
       const page2Text = page2.rows[0]!.anchor_text;
       expect(page2Text).not.toBeNull();
       expect(html).toContain(page2Text!);
