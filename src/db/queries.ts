@@ -43,7 +43,7 @@ export type FiledBatch = {
 type ProjectRow = { id: string };
 type IdentityRow = { id: string; status: EntryStatus };
 
-/** One entry row as `list_entries` returns it: the columns `docs/mcp-contract.md`'s entry schema lists, `archived_at` included (every v1 row carries null — the archive sweep is not built yet). */
+/** One entry row as the store's shared list query returns it: the columns `docs/mcp-contract.md`'s entry schema lists, `archived_at` included (every v1 row carries null — the archive sweep is not built yet). The dashboard consumes the full row; the mcp `list_entries` tool projects it down to the contract's lean index row. */
 export type EntryRow = {
   readonly id: string;
   readonly project_id: string;

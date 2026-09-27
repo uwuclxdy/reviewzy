@@ -104,6 +104,11 @@ const fileEntries = (args: Record<string, unknown>) =>
 const listEntries = (args: Record<string, unknown>) =>
   first.call("tools/call", { name: "list_entries", arguments: args }, "list_entries");
 
+const fetchApproved = (args: Record<string, unknown>) =>
+  first.call("tools/call", { name: "fetch_approved", arguments: args }, "fetch_approved");
+
+type FetchResult = { entries: { id: string; anchor_text: string; text: string | null }[]; style_guide?: string };
+
 /** Reads one project's rows straight out of the store, ordered like the tool orders them. */
 function rows(store: Store, project: string) {
   return store.db
@@ -135,7 +140,7 @@ describe("the tool surface", () => {
 });
 
 describe("the returned rows", () => {
-  test("carry the stored fields as stored, context and constraints as their json strings, archived_at null", async () => {
+  test("carry the lean index row: id, project slug, file, title, status, updated_at — nothing else", async () => {
     await fileEntries({ project: "fields", filed_by: "audit-agent", entries: [entry()] });
     const { body } = await listEntries({ project: "fields" });
     expect(body.error).toBeUndefined();
@@ -145,42 +150,45 @@ describe("the returned rows", () => {
     const out = (body.result?.structuredContent as ListResult).entries[0]!;
     const stored = rows(first.store, "fields")[0]!;
 
-    const FIELDS = [
-      "id", "project_id", "batch_id", "repo", "file", "title", "anchor_text", "anchor_before",
-      "anchor_after", "anchor_hash", "file_hash", "agent_draft", "human_text", "status",
-      "context", "constraints", "filed_by", "stale_note", "applied_hash", "images", "created_at", "updated_at", "applied_at", "archived_at",
-    ];
-    for (const field of FIELDS) {
-      expect(out[field], field).toBe(stored[field]);
-    }
-    // The frozen entry schema carries `archived_at`; every v1 row is null (no archive sweep yet).
-    expect("archived_at" in out).toBe(true);
-    expect(out.archived_at).toBeNull();
+    // Exactly the approved lean shape, by equality on the key set: short scalar fields only, no
+    // text payloads, no images — a listed page stays a page. A new store column reaches this wire
+    // only when someone adds it here deliberately.
+    expect(Object.keys(out).sort()).toEqual(["file", "id", "project", "status", "title", "updated_at"]);
+    expect(out.id).toBe(stored.id);
+    expect(out.project).toBe("fields");
+    expect(out.file).toBe(stored.file);
+    expect(out.title).toBeNull();
+    expect(out.status).toBe("draft");
+    expect(out.updated_at).toBe(stored.updated_at);
 
-    // applied_hash round-trips: a null wire value alone could hide a schema omission, so write a
-    // real hash the way mark_applied stores one and re-list it.
-    first.store.db.run("UPDATE entries SET applied_hash = ? WHERE id = ?", ["a".repeat(64), out.id as string]);
-    const relisted = (await listEntries({ project: "fields" })).body.result
-      ?.structuredContent as ListResult;
-    expect(relisted.entries[0]?.applied_hash).toBe("a".repeat(64));
+    // The text channel carries the same lean object: a payload the structured half dropped must
+    // not ride the stringified half either.
+    const text = body.result?.content?.[0]?.text ?? "";
+    expect(text).not.toContain("Click here to continue");
+    expect(text).not.toContain("Continue");
 
-    // title round-trips the same way: write one and re-list, so a null wire value cannot hide a
-    // schema omission.
+    // title round-trips: write one and re-list, so a null wire value cannot hide a schema omission.
     first.store.db.run("UPDATE entries SET title = ? WHERE id = ?", ["Dashboard label", out.id as string]);
-    const retitled = (await listEntries({ project: "fields" })).body.result
-      ?.structuredContent as ListResult;
+    const retitled = (await listEntries({ project: "fields" })).body.result?.structuredContent as ListResult;
     expect(retitled.entries[0]?.title).toBe("Dashboard label");
+  });
 
-    // images round-trip the same way: the contract's both-directions field is on the wire.
-    const images = ["https://example.com/shot.png", "data:image/png;base64,AAAA"];
-    first.store.db.run("UPDATE entries SET images = ? WHERE id = ?", [JSON.stringify(images), out.id as string]);
-    const reimaged = (await listEntries({ project: "fields" })).body.result
-      ?.structuredContent as ListResult;
-    expect(JSON.parse(reimaged.entries[0]?.images as string)).toEqual(images);
+  test("the apply-back row stays agent-reachable for an approved entry through fetch_approved, never through list", async () => {
+    const filed = (await fileEntries({ project: "full", entries: [entry()] })).body.result
+      ?.structuredContent as FiledResult;
+    const id = filed.results[0]!.id;
+    // Approve the way the dashboard's save would: the text channel is the human's, not the tool's.
+    first.store.db.run("UPDATE entries SET status = 'approved', human_text = 'Signed copy' WHERE id = ?", [id]);
 
-    expect(typeof out.context).toBe("string");
-    expect(JSON.parse(out.context as string)).toEqual(entry().context);
-    expect(JSON.parse(out.constraints as string)).toEqual(entry().constraints);
+    const listed = (await listEntries({ project: "full" })).body.result?.structuredContent as ListResult;
+    expect("anchor_text" in listed.entries[0]!).toBe(false);
+    expect("human_text" in listed.entries[0]!).toBe(false);
+
+    const fetched = (await fetchApproved({ project: "full", ids: [id] })).body.result
+      ?.structuredContent as FetchResult;
+    expect(fetched.entries[0]?.id).toBe(id);
+    expect(fetched.entries[0]?.anchor_text).toBe("Click here to continue");
+    expect(fetched.entries[0]?.text).toBe("Signed copy");
   });
 
   test("human_notes is dashboard-only: stored notes never reach either wire channel", async () => {
@@ -193,8 +201,11 @@ describe("the returned rows", () => {
 
     const { body } = await listEntries({ project: "private" });
     const out = (body.result?.structuredContent as ListResult).entries[0]!;
-    expect(JSON.parse(out.images as string)).toEqual(["https://example.com/shot.png"]);
+    // Images are stored for the dashboard and off the agent wire entirely; the notes never reach
+    // either channel.
+    expect("images" in out).toBe(false);
     expect("human_notes" in out).toBe(false);
+    expect(JSON.parse(rows(first.store, "private")[0]!.images as string)).toEqual(["https://example.com/shot.png"]);
     // The text channel is the same object JSON-stringified; the notes must not leak there either.
     const text = body.result?.content?.[0]?.text ?? "";
     expect(text).not.toContain("private scratch");

@@ -1,6 +1,6 @@
 import type { McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
-import { listEntries, projectIdBySlug } from "../db/queries.ts";
+import { listEntries, listProjects, projectIdBySlug } from "../db/queries.ts";
 import type { EntryRow } from "../db/queries.ts";
 import type { Store } from "../db/store.ts";
 
@@ -20,66 +20,36 @@ const ListEntriesArgs = z.object({
 });
 
 /**
- * The one mapping from stored rows to the wire shape: every field spelled out, so a new store
- * column reaches the wire only when someone adds it here deliberately — `human_notes` must never
- * (the contract pins it dashboard-only), and `images` is carried on purpose. The SDK passes
+ * The one mapping from stored rows to the wire's lean index row: every kept field spelled out, so
+ * a new store column reaches the wire only when someone adds it here deliberately — the default
+ * for a new column is OFF the wire (`human_notes` must never reach it; anchors, drafts, texts,
+ * context, constraints, hashes, and images stay fetch_approved/dashboard-side). The SDK passes
  * structuredContent through untouched, so this projection is the strip, not the schema.
  */
-function toWireEntry(row: EntryRow): z.infer<typeof Entry> {
+function toWireEntry(row: EntryRow, slugByProjectId: ReadonlyMap<string, string>): z.infer<typeof Entry> {
   return {
     id: row.id,
-    project_id: row.project_id,
-    batch_id: row.batch_id,
-    repo: row.repo,
+    project: slugByProjectId.get(row.project_id) ?? row.project_id,
     file: row.file,
     title: row.title,
-    anchor_text: row.anchor_text,
-    anchor_before: row.anchor_before,
-    anchor_after: row.anchor_after,
-    anchor_hash: row.anchor_hash,
-    file_hash: row.file_hash,
-    agent_draft: row.agent_draft,
-    human_text: row.human_text,
     status: row.status,
-    context: row.context,
-    constraints: row.constraints,
-    filed_by: row.filed_by,
-    stale_note: row.stale_note,
-    applied_hash: row.applied_hash,
-    images: row.images,
-    created_at: row.created_at,
     updated_at: row.updated_at,
-    applied_at: row.applied_at,
-    archived_at: row.archived_at,
   };
 }
 
-/** The wire row shape, `context`, `constraints`, and `images` kept as their stored JSON strings — no re-parse on the way out. */
+/**
+ * The contract's lean index row: short scalar fields only, no text payloads, no images — a listed
+ * page of 200 rows must stay a page. The apply-back row is not reachable through this tool at all:
+ * fetch_approved returns an approved entry's apply-back fields complete, and the dashboard reads
+ * the store directly.
+ */
 const Entry = z.object({
   id: z.string(),
-  project_id: z.string(),
-  batch_id: z.string(),
-  repo: z.string(),
+  project: z.string(),
   file: z.string(),
   title: z.string().nullable(),
-  anchor_text: z.string(),
-  anchor_before: z.string(),
-  anchor_after: z.string(),
-  anchor_hash: z.string(),
-  file_hash: z.string(),
-  agent_draft: z.string().nullable(),
-  human_text: z.string().nullable(),
   status: z.enum(["draft", "approved", "applied", "rejected"]),
-  context: z.string(),
-  constraints: z.string(),
-  filed_by: z.string().nullable(),
-  stale_note: z.string().nullable(),
-  applied_hash: z.string().nullable(),
-  images: z.string(),
-  created_at: z.number(),
   updated_at: z.number(),
-  applied_at: z.number().nullable(),
-  archived_at: z.number().nullable(),
 });
 
 const ListEntriesOutput = z.object({
@@ -103,7 +73,7 @@ export function registerListEntriesTool(server: McpServer, store: Store): void {
     {
       title: "List entries for review",
       description:
-        "List entries in the review queue, ordered by ascending entry id (ulid, i.e. filing order) — the same order a cursor walk covers. Every filter is optional and they combine with AND: project (a slug with no project is refused: read tools never create one), status (draft, approved, applied, rejected), ids (exact entry ids), q (case-insensitive substring, ASCII-only case fold: a row matches when any of file, anchor_text, agent_draft, human_text contains it), limit (default 50, max 200 — a higher value is refused), cursor (keyset pagination: pass the previous page's next_cursor to continue from after the last entry returned). next_cursor is present only when the page returned exactly limit rows, meaning more may exist; absent means the walk is exhausted — stop paging then, never craft a cursor of your own. Each entry carries its stored fields as stored: id, project_id, batch_id, repo, file, title, anchor_text, anchor_before, anchor_after, anchor_hash, file_hash, agent_draft, human_text, status, context, constraints, filed_by, stale_note, applied_hash, images, created_at, updated_at, applied_at, archived_at — with context, constraints, and images as their stored JSON strings, not parsed objects. The human's own notes (human_notes) are dashboard-only and never appear in a listed entry.",
+        "List entries in the review queue, ordered by ascending entry id (ulid, i.e. filing order) — the same order a cursor walk covers. Every filter is optional and they combine with AND: project (a slug with no project is refused: read tools never create one), status (draft, approved, applied, rejected), ids (exact entry ids), q (case-insensitive substring, ASCII-only case fold: a row matches when any of file, anchor_text, agent_draft, human_text contains it), limit (default 50, max 200 — a higher value is refused), cursor (keyset pagination: pass the previous page's next_cursor to continue from after the last entry returned). next_cursor is present only when the page returned exactly limit rows, meaning more may exist; absent means the walk is exhausted — stop paging then, never craft a cursor of your own. Each row is a lean index entry — id, project (the slug), file, title, status, updated_at — and nothing else: no anchors, drafts, human text, context, constraints, hashes, or images ride a list page. An approved entry's apply-back fields — the anchor and its hashes, the human-signed text, and the constraints — come back through fetch_approved with its ids; rejected and applied entries expose no agent-readable text anywhere (the dashboard owns authoring). The human's own notes (human_notes) are dashboard-only and never appear in a listed entry.",
       inputSchema: ListEntriesArgs,
       outputSchema: ListEntriesOutput,
     },
@@ -131,9 +101,11 @@ export function registerListEntriesTool(server: McpServer, store: Store): void {
       });
 
       // An exhausted walk carries no `next_cursor` key at all: absent is the signal to stop, so an
-      // empty page must never smuggle one in.
+      // empty page must never smuggle one in. The slug map mirrors the dashboard's own
+      // project_id → slug resolution (the store row carries the fk, never the slug).
+      const slugByProjectId = new Map(listProjects(store).map((p) => [p.id, p.slug]));
       const output = {
-        entries: rows.map(toWireEntry),
+        entries: rows.map((row) => toWireEntry(row, slugByProjectId)),
         ...(nextCursor === null ? {} : { next_cursor: nextCursor }),
       };
       return {
