@@ -11,12 +11,12 @@ import type { Store } from "../db/store.ts";
  * they meant.
  */
 const ListEntriesArgs = z.object({
-  project: z.string().min(1).optional(),
-  status: z.enum(["draft", "approved", "applied", "rejected"]).optional(),
-  ids: z.array(z.string().min(1)).min(1).optional(),
-  q: z.string().min(1).optional(),
-  limit: z.number().int().min(1).max(200).default(50),
-  cursor: z.string().min(1).optional(),
+  project: z.string().min(1).optional().describe("Only entries of this project slug."),
+  status: z.enum(["draft", "approved", "applied", "rejected"]).optional().describe("Only entries in this status: draft, approved, applied, or rejected. Unset = all statuses."),
+  ids: z.array(z.string().min(1)).min(1).optional().describe("Only these exact entry ids."),
+  q: z.string().min(1).optional().describe("Case-insensitive substring (ASCII-only case fold) over file, anchor_text, agent_draft, and human_text."),
+  limit: z.number().int().min(1).max(200).default(50).describe("Rows per page (max: 200, default 50)."),
+  cursor: z.string().min(1).optional().describe("Keyset pagination: pass the previous page's next_cursor to continue from after the last row returned."),
 });
 
 /**
@@ -88,7 +88,7 @@ export function registerListEntriesTool(server: McpServer, store: Store): void {
     {
       title: "List entries for review",
       description:
-        "List entries in the review queue, ordered by ascending entry id (ulid, i.e. filing order) — the same order a cursor walk covers. Every filter is optional and they combine with AND: project (a slug with no project is refused: read tools never create one), status (draft, approved, applied, rejected), ids (exact entry ids), q (case-insensitive substring, ASCII-only case fold: a row matches when any of file, anchor_text, agent_draft, human_text contains it), limit (default 50, max 200 — a higher value is refused), cursor (keyset pagination: pass the previous page's next_cursor to continue from after the last entry returned). next_cursor is present only when the page returned exactly limit rows, meaning more may exist; absent means the walk is exhausted — stop paging then, never craft a cursor of your own. Each row is a lean index entry — id, project (the slug), file, title, status, updated_at — and nothing else: no anchors, drafts, human text, context, constraints, hashes, or images ride a list page. Caller-supplied file and title are capped at 200 chars wire-side; a truncated value ends with '…+N chars' naming its remainder, and the store keeps the full value. An approved entry's apply-back fields — the anchor and its hashes, the human-signed text, and the constraints — come back through fetch_approved with its ids; rejected and applied entries expose no agent-readable text anywhere (the dashboard owns authoring). The human's own notes (human_notes) are dashboard-only and never appear in a listed entry.",
+        "List the review queue's entries, ordered by ascending entry id. Every filter is optional and combines with AND. Walk pages via next_cursor; the walk is exhausted when it stops coming back. Each row is a lean index: id, project slug, file, title, status, updated_at. Apply-back fields (anchor, hashes, human text, constraints) come back through fetch_approved, and rejected or applied entries expose no agent-readable text anywhere — the dashboard owns authoring.",
       inputSchema: ListEntriesArgs,
       outputSchema: ListEntriesOutput,
     },

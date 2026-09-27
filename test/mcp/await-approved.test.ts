@@ -204,7 +204,7 @@ function reject(store: Store, id: string): void {
 }
 
 describe("the tool surface", () => {
-  test("await_approved is advertised last, with the wait schemas and the boundary rules in the description", async () => {
+  test("await_approved is advertised last, with the wait schemas, the park clause in the description, and the cap documented on its parameter", async () => {
     const { body } = await first.call("tools/list", {});
     const tools = body.result?.tools ?? [];
     expect(tools.map((t) => t.name)).toEqual([
@@ -234,7 +234,11 @@ describe("the tool surface", () => {
 
     const description = tool.description ?? "";
     expect(description).toContain("approved");
-    expect(description).toContain("600000");
+    expect(description).toContain("park");
+
+    const timeout = input.properties?.timeout_ms as { description?: string };
+    expect(timeout.description ?? "").toContain("(max: 600000, default 60000)");
+    expect(timeout.description ?? "").toContain("clamped");
   });
 });
 

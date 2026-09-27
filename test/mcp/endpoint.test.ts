@@ -221,6 +221,13 @@ describe("protocol conformance", () => {
     });
     expect(result?.instructions).toBeString();
     expect(result?.instructions as string).toContain("reviewzy");
+    // The router: one line per tool a caller decides by, under the client's 2048-character cut.
+    const instructions = result?.instructions as string;
+    for (const name of ["file_entries", "await_approved", "fetch_approved", "mark_applied"]) {
+      expect(instructions).toContain(name);
+    }
+    expect(instructions).toContain("rejected stays rejected");
+    expect(instructions.length).toBeLessThan(2048);
 
     const meta = result?._meta as Record<string, { name: string; version: string }>;
     expect(meta["io.modelcontextprotocol/serverInfo"]).toEqual({
@@ -245,6 +252,36 @@ describe("protocol conformance", () => {
       "await_approved",
     ]);
     expect(body?.result?.resultType).toBe("complete");
+  });
+
+  test("tools/list documents every parameter on its schema field, entry fields included", async () => {
+    const { status, body } = await probe({ rpc: "tools/list" });
+    expect(status).toBe(200);
+    const tools = (body?.result?.tools ?? []) as {
+      name: string;
+      inputSchema?: {
+        properties?: Record<
+          string,
+          { description?: unknown; type?: string; items?: { properties?: Record<string, { description?: unknown }> } }
+        >;
+      };
+    }[];
+    const missing: string[] = [];
+    for (const tool of tools) {
+      for (const [param, prop] of Object.entries(tool.inputSchema?.properties ?? {})) {
+        if (typeof prop.description !== "string" || prop.description.length === 0) {
+          missing.push(`${tool.name}.${param}`);
+        }
+        if (prop.type === "array" && prop.items && typeof prop.items === "object") {
+          for (const [field, fieldProp] of Object.entries(prop.items.properties ?? {})) {
+            if (typeof fieldProp.description !== "string" || fieldProp.description.length === 0) {
+              missing.push(`${tool.name}.${param}[] .${field}`);
+            }
+          }
+        }
+      }
+    }
+    expect(missing).toEqual([]);
   });
 
   test("both cacheable results carry a usable ttlMs and cacheScope", async () => {

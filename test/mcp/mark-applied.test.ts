@@ -138,7 +138,7 @@ function expectUnchanged(store: Store, id: string, before: Record<string, unknow
 }
 
 describe("the tool surface", () => {
-  test("mark_applied is advertised beside the other three tools, with the loop-close schemas and the boundary rules in the description", async () => {
+  test("mark_applied is advertised beside the other four tools, with the loop-close schemas and the result arms on the parameter", async () => {
     const { body } = await first.call("tools/list", {});
     const tools = body.result?.tools ?? [];
     expect(tools.map((t) => t.name)).toEqual(["file_entries", "list_entries", "fetch_approved", "mark_applied", "await_approved"]);
@@ -156,8 +156,15 @@ describe("the tool surface", () => {
     expect(Object.keys(output.properties ?? {})).toEqual(["id", "status"]);
 
     const description = tool.description ?? "";
-    expect(description).toContain("applied");
-    expect(description).toContain("anchor_stale");
+    expect(description).toContain("approved");
+    expect(description).toContain("closing the loop");
+
+    const result = input.properties?.result as { description?: string };
+    expect(result.description ?? "").toContain("applied");
+    expect(result.description ?? "").toContain("anchor_stale");
+
+    const hash = input.properties?.applied_hash as { description?: string };
+    expect(hash.description ?? "").toContain("does not read repos");
   });
 });
 

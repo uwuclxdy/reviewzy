@@ -11,12 +11,17 @@ import type { Notifier } from "../notify.ts";
 import { NAME, VERSION } from "../version.ts";
 
 /**
- * Read by a client before it calls anything, so it states the rule an agent cannot discover from a
- * tool signature: prose belongs to the human, and filing a draft is not shipping it.
+ * Framing plus the router: one line per tool in the order a caller decides, and the one
+ * cross-tool fact no tool owns (a rejected anchor stays rejected). Nothing here restates a
+ * tool's own description, and the refusal text teaches what the boundary refuses by name.
  */
 const INSTRUCTIONS = `reviewzy is a review queue for user-facing text. Agents draft, a human signs off.
 
-File the text you want to change as draft entries against a project. One entry is one edit: anchor_text is the whole passage being replaced and agent_draft the proposed replacement; either may be a single line or span many lines, and a multi-line block is ONE entry, never one entry per line. A human authors or approves the wording on the dashboard, then you fetch those words back and apply them in place. You can create a draft, move an approved entry to applied, and report an anchor that no longer matches. You can never approve or reject an entry, and a rejected anchor stays rejected: re-filing it returns the existing entry instead of proposing the passage again.`;
+- \`file_entries\`: file the text you want to change as draft entries.
+- \`await_approved\`: wait when this session needs the human's sign-off before continuing.
+- \`fetch_approved\`: fetch whatever is approved and apply the text in place.
+- \`mark_applied\`: after applying, report the outcome (applied or anchor_stale).
+- rejected stays rejected: re-filing a rejected anchor returns the existing entry.`;
 
 /**
  * A fresh server per request, since the 2026-07-28 revision is stateless and `createMcpHandler`

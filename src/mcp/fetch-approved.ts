@@ -9,9 +9,9 @@ import type { Store } from "../db/store.ts";
  * style guide is per-project, and the applying agent needs the voice of the project it writes into.
  */
 const FetchApprovedArgs = z.object({
-  project: z.string().min(1),
-  ids: z.array(z.string().min(1)).min(1).optional(),
-  since: z.string().min(1).optional(),
+  project: z.string().min(1).describe("The project slug to fetch from."),
+  ids: z.array(z.string().min(1)).min(1).optional().describe("Only these exact entry ids. Combines with since: both filters apply."),
+  since: z.string().min(1).optional().describe("Resume a walk: pass the previous page's next_since to get the rows after it."),
 });
 
 /**
@@ -100,7 +100,7 @@ export function registerFetchApprovedTool(server: McpServer, store: Store): void
     {
       title: "Fetch approved entries to apply",
       description:
-        "Fetch the approved entries of a project, ready to apply: the human-signed prose (text), the anchor to locate and replace it by, and the constraints the replacement must keep. Only approved entries are ever returned — a draft, applied, or rejected entry never appears, and an id naming one simply contributes nothing. Entries come back ordered by ascending entry id, at most 50 per call (fixed server-side page); when exactly 50 come back, next_since holds the last entry's id, and the walk continues by passing that id back as since (rows with id > since) — when next_since is absent the walk is exhausted, stop fetching. ids (exact entry ids) combines with since by AND. The project slug is required and must already exist: an unknown slug is refused (read tools never create one). Each entry carries id, repo, file, anchor_text, anchor_before, anchor_after, anchor_hash, file_hash, text (the approved prose; null only on an approved row nobody ever wrote into), and constraints — parsed into {max_len?, placeholders?, tone?, notes?} so the apply-back can check the text against them, an unparseable stored value rendering as {}. style_guide is the same merged text the reviewzy://projects/{slug}/style-guide resource serves, embedded on a walk's first page (a call carrying neither ids nor since) so bulk rewrites pay it once per walk; continuation pages and ids-only fetches omit it.",
+        "Fetch a project's approved entries, ready to apply: the human-signed text, the anchor to locate and replace it by, and the constraints the replacement must keep. Only approved entries are returned: an id naming a draft, applied or rejected entry contributes nothing. At most 50 per page, ordered by ascending id; when next_since comes back, pass it back as since to continue. The merged style guide rides the first page of a walk (neither ids nor since) so bulk rewrites pay it once.",
       inputSchema: FetchApprovedArgs,
       outputSchema: FetchApprovedOutput,
     },

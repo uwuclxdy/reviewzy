@@ -25,8 +25,8 @@ export function clampTimeoutMs(ms: number): number {
 }
 
 const AwaitApprovedArgs = z.object({
-  ids: z.array(z.string().min(1)).min(1),
-  timeout_ms: z.number().int().min(1).default(AWAIT_TIMEOUT_DEFAULT_MS),
+  ids: z.array(z.string().min(1)).min(1).describe("The exact entry ids to wait for; duplicates are dropped."),
+  timeout_ms: z.number().int().min(1).default(AWAIT_TIMEOUT_DEFAULT_MS).describe("How long to block (max: 600000, default 60000). A larger value is clamped."),
 });
 
 const AwaitApprovedOutput = z.object({
@@ -127,7 +127,7 @@ export function registerAwaitApprovedTool(server: McpServer, store: Store): void
     {
       title: "Wait for entries to be approved or rejected",
       description:
-        "Block until every named entry reaches approved or rejected, holding the call open — the one long-poll on this server, for a live session that filed entries and wants to sleep until the human signs off instead of polling fetch_approved. ids: the exact entry ids to wait for; duplicates are deduped silently, and the status map carries one key per id. timeout_ms: how long to block, default 60000, capped at 600000 — a larger value is clamped, never refused. Resolves when every named id is approved or rejected: resolved true, statuses one per named id, and entries the approved rows only, each in fetch_approved's row shape (id, repo, file, anchor_text, anchor_before, anchor_after, anchor_hash, file_hash, text, constraints parsed) — a rejected id appears in statuses only, never in entries. On timeout: resolved false, the current per-id statuses, and poll_again_after_ms 5000 — never an error; call again with the same ids to keep waiting. A named id whose row no longer exists (the retention sweep archived it mid-wait) keeps the wait unresolved and is named in missing_ids on the timeout reply instead of sitting silently absent from statuses. Refused, naming the id and the fix: an id that does not exist at call time (a read tool never creates one). An entry in applied does not resolve the wait: only approved or rejected does.",
+        "Blocks until every named entry reaches approved or rejected; the client may park the call and deliver the result when it lands. This is the long-poll for a live session that filed entries and wants to sleep until the human signs off, rather than poll `fetch_approved`. Only approved or rejected resolves the wait; applied does not.",
       inputSchema: AwaitApprovedArgs,
       outputSchema: AwaitApprovedOutput,
     },

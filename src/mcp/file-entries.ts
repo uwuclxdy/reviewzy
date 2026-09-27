@@ -42,18 +42,18 @@ const ConstraintsJson = z.strictObject({
  * field path ("entries.0.constraints"), never the entry (file and anchor) and the fix.
  */
 const EntryShape = {
-  repo: z.string().min(1),
-  file: z.string().min(1),
-  title: z.string().min(1).optional(),
-  anchor_text: z.string().min(1),
-  anchor_before: z.string().optional(),
-  anchor_after: z.string().optional(),
-  agent_draft: z.string().optional(),
-  file_content: z.string().optional(),
-  file_hash: z.string().optional(),
-  context: z.unknown().optional(),
-  constraints: z.unknown().optional(),
-  images: z.unknown().optional(),
+  repo: z.string().min(1).describe("Which repo the entry is about: the git remote url preferred, the absolute path when the repo has no remote."),
+  file: z.string().min(1).describe("The path relative to the repo root."),
+  title: z.string().min(1).optional().describe("Optional human-readable label the dashboard shows in place of the file path."),
+  anchor_text: z.string().min(1).describe("The exact current text to replace: one line or many, the whole passage being replaced."),
+  anchor_before: z.string().optional().describe("3 lines of context above the anchor, disambiguating a repeated string."),
+  anchor_after: z.string().optional().describe("3 lines of context below the anchor, disambiguating a repeated string."),
+  agent_draft: z.string().optional().describe("The proposed replacement text; inert until a human touches it."),
+  file_content: z.string().optional().describe("The whole file at filing time; the server hashes it."),
+  file_hash: z.string().optional().describe("The sha256 of the whole file as 64 lowercase hex chars."),
+  context: z.unknown().optional().describe("A json object of free-form notes for the human: where the string renders, surrounding code."),
+  constraints: z.unknown().optional().describe("What the copy must keep: max_len (a length cap), placeholders (strings the text must contain), tone, notes — all optional."),
+  images: z.unknown().optional().describe("Screenshots and links for the human, shown on the dashboard, never returned by an mcp tool."),
 };
 const FileEntryArgs = z.looseObject(EntryShape);
 
@@ -252,11 +252,11 @@ export function registerFileEntriesTool(server: McpServer, baseUrl: string, stor
     {
       title: "File entries for review",
       description:
-        "File draft entries for a human to author or approve. One entry is one edit: anchor_text is the whole passage being replaced and agent_draft the proposed replacement; either may be a single line or span many lines, and a multi-line block is ONE entry, never one entry per line. Each entry names repo (git remote url preferred), file path, an optional title (a human-readable label the dashboard shows in place of the file path), anchor_text, and anchor_before/anchor_after context lines. Identity is (project, repo, file, sha256(anchor_text)): re-filing a known draft overwrites the agent draft, context, and constraints in place; an entry already approved, applied, or rejected is returned untouched with its own status, and a rejected anchor stays rejected — stop proposing a turned-down passage. file provenance: send exactly one of file_content (the whole file at filing time; the server hashes it) or file_hash (its sha256 hex). constraints: {max_len?, placeholders?: string[], tone?, notes?} — a save breaking max_len or dropping a placeholder is refused later, so declare what the copy must keep. images: up to 8 per entry, each a data:image/ data url or an http(s) url of at most 5 MiB, rendered on the dashboard. The dashboard shows entries in the order the agent sends them, so file the most important entries first.",
+        "File the text you want changed as draft entries for a human to author, approve or reject on the dashboard. One entry is one edit: a multi-line block is ONE entry, not one entry per line. Re-filing a known anchor is safe: a draft updates in place; an approved, applied or rejected entry comes back untouched. The dashboard groups entries by project and batch, newest batches first.",
       inputSchema: z.object({
-        project: z.string().min(1),
-        entries: z.array(FileEntryArgs).min(1),
-        filed_by: z.string().min(1).optional(),
+        project: z.string().min(1).describe("The project slug: 1-63 chars of lowercase letters, digits, and inner hyphens. An unknown slug auto-creates the project on first file."),
+        entries: z.array(FileEntryArgs).min(1).describe("The entries to file. One edit per entry."),
+        filed_by: z.string().min(1).optional().describe("A free-form label for the filing agent, shown on the dashboard."),
       }),
       outputSchema: FiledOutput,
     },

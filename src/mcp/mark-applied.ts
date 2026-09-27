@@ -12,10 +12,10 @@ const SHA256_HEX = /^[0-9a-f]{64}$/;
  * says nothing about what the anchor matched instead.
  */
 const MarkAppliedArgs = z.object({
-  id: z.string().min(1),
-  result: z.enum(["applied", "anchor_stale"]),
-  applied_hash: z.string().regex(SHA256_HEX).optional(),
-  found_text: z.string().min(1).optional(),
+  id: z.string().min(1).describe("The entry id to report on."),
+  result: z.enum(["applied", "anchor_stale"]).describe('`"applied"`: the approved text is in place; the entry moves to applied. `"anchor_stale"`: the anchor no longer matches the file; the entry returns to approved for re-anchoring on the dashboard.'),
+  applied_hash: z.string().regex(SHA256_HEX).optional().describe("The sha256 of the text you applied, as 64 lowercase hex chars; the server does not read repos and records it unverified."),
+  found_text: z.string().min(1).optional().describe("What the anchor matched instead, shown on the dashboard for re-anchoring."),
 });
 
 /** The loop-close answer: the id and the resulting status, nothing more. */
@@ -42,7 +42,7 @@ export function registerMarkAppliedTool(server: McpServer, store: Store): void {
     {
       title: "Report an applied entry or a stale anchor",
       description:
-        "Report the outcome of applying one entry's approved text, closing the loop: result \"applied\" moves an approved entry to applied and stamps applied_at; result \"anchor_stale\" returns the entry to approved and records found_text (optional — what the anchor matched instead; an empty string is refused, so send the matched text or omit the field) in stale_note for re-anchoring on the dashboard. applied_hash (optional) stores the sha256 hex of the text you applied — 64 lowercase hex characters, refused at the boundary when malformed — and is only ever accepted with result \"applied\". Returns {id, status} with the resulting status. Refused, naming the entry, its status, and the fix: an unknown id; an entry in draft (inert until a human approves or rejects it — an agent can never move a draft); an entry in rejected (terminal); an applied entry reported applied again; applied_hash sent with anchor_stale. approved + anchor_stale stays approved; applied + anchor_stale returns to approved; those and approved + applied are the whole agent-side surface.",
+        "Report the outcome of applying one approved entry's text, closing the loop. Call it after applying the approved text in place, or when the anchor no longer matches the file.",
       inputSchema: MarkAppliedArgs,
       outputSchema: MarkAppliedOutput,
     },
