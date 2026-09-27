@@ -191,6 +191,42 @@ describe("the returned rows", () => {
     expect(fetched.entries[0]?.text).toBe("Signed copy");
   });
 
+  test("caller-supplied scalars are capped: file and title name their remainder after the cut", async () => {
+    await fileEntries({
+      project: "capped",
+      entries: [entry({ file: `src/${"x".repeat(300)}.ts`, title: "T".repeat(250) })],
+    });
+    const out = (await listEntries({ project: "capped" })).body.result?.structuredContent as ListResult;
+    const row = out.entries[0]!;
+
+    // A 307-char file and a 250-char title: the wire row carries the first 200 chars plus a
+    // marker naming the remainder.
+    expect(row.file).toBe(`src/${"x".repeat(196)}…+107 chars`);
+    expect(row.title).toBe(`${"T".repeat(200)}…+50 chars`);
+    // The cap is a wire-side projection, never a write: the store keeps the full values.
+    const stored = rows(first.store, "capped")[0]!;
+    expect(stored.file).toBe(`src/${"x".repeat(300)}.ts`);
+    expect(stored.title).toBe("T".repeat(250));
+  });
+
+  test("the cap boundary is exact and code-point safe", async () => {
+    await fileEntries({
+      project: "bounds",
+      entries: [
+        entry({ file: "a".repeat(200), title: "exact" }),
+        entry({ file: `${"a".repeat(200)}b`, title: "over" }),
+        // A surrogate pair straddling the 200/201 boundary: the cut must not split it mid-glyph.
+        entry({ file: `${"a".repeat(199)}🔍🔍tail`, title: "straddle" }),
+      ],
+    });
+    const out = (await listEntries({ project: "bounds" })).body.result?.structuredContent as ListResult;
+    const byTitle = new Map(out.entries.map((r) => [r.title as string, r]));
+
+    expect(byTitle.get("exact")!.file).toBe("a".repeat(200));
+    expect(byTitle.get("over")!.file).toBe(`${"a".repeat(200)}…+1 chars`);
+    expect(byTitle.get("straddle")!.file).toBe(`${"a".repeat(199)}🔍…+5 chars`);
+  });
+
   test("human_notes is dashboard-only: stored notes never reach either wire channel", async () => {
     const filed = (await fileEntries({
       project: "private",

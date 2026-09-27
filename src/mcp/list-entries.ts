@@ -20,6 +20,21 @@ const ListEntriesArgs = z.object({
 });
 
 /**
+ * Caller-supplied scalars are capped wire-side: a listed page's worst row is bounded even when a
+ * caller filed a huge path or title. The store keeps the full value — the marker names what the
+ * wire row dropped, and fetch_approved still returns the exact untruncated apply-back fields.
+ */
+const LEAN_CAP_CHARS = 200;
+
+function ellipsize(value: string): string {
+  // Code points, never UTF-16 units: an astral glyph straddling the boundary must not split.
+  const glyphs = [...value];
+  return glyphs.length <= LEAN_CAP_CHARS
+    ? value
+    : `${glyphs.slice(0, LEAN_CAP_CHARS).join("")}…+${glyphs.length - LEAN_CAP_CHARS} chars`;
+}
+
+/**
  * The one mapping from stored rows to the wire's lean index row: every kept field spelled out, so
  * a new store column reaches the wire only when someone adds it here deliberately — the default
  * for a new column is OFF the wire (`human_notes` must never reach it; anchors, drafts, texts,
@@ -30,8 +45,8 @@ function toWireEntry(row: EntryRow, slugByProjectId: ReadonlyMap<string, string>
   return {
     id: row.id,
     project: slugByProjectId.get(row.project_id) ?? row.project_id,
-    file: row.file,
-    title: row.title,
+    file: ellipsize(row.file),
+    title: row.title === null ? null : ellipsize(row.title),
     status: row.status,
     updated_at: row.updated_at,
   };
@@ -73,7 +88,7 @@ export function registerListEntriesTool(server: McpServer, store: Store): void {
     {
       title: "List entries for review",
       description:
-        "List entries in the review queue, ordered by ascending entry id (ulid, i.e. filing order) — the same order a cursor walk covers. Every filter is optional and they combine with AND: project (a slug with no project is refused: read tools never create one), status (draft, approved, applied, rejected), ids (exact entry ids), q (case-insensitive substring, ASCII-only case fold: a row matches when any of file, anchor_text, agent_draft, human_text contains it), limit (default 50, max 200 — a higher value is refused), cursor (keyset pagination: pass the previous page's next_cursor to continue from after the last entry returned). next_cursor is present only when the page returned exactly limit rows, meaning more may exist; absent means the walk is exhausted — stop paging then, never craft a cursor of your own. Each row is a lean index entry — id, project (the slug), file, title, status, updated_at — and nothing else: no anchors, drafts, human text, context, constraints, hashes, or images ride a list page. An approved entry's apply-back fields — the anchor and its hashes, the human-signed text, and the constraints — come back through fetch_approved with its ids; rejected and applied entries expose no agent-readable text anywhere (the dashboard owns authoring). The human's own notes (human_notes) are dashboard-only and never appear in a listed entry.",
+        "List entries in the review queue, ordered by ascending entry id (ulid, i.e. filing order) — the same order a cursor walk covers. Every filter is optional and they combine with AND: project (a slug with no project is refused: read tools never create one), status (draft, approved, applied, rejected), ids (exact entry ids), q (case-insensitive substring, ASCII-only case fold: a row matches when any of file, anchor_text, agent_draft, human_text contains it), limit (default 50, max 200 — a higher value is refused), cursor (keyset pagination: pass the previous page's next_cursor to continue from after the last entry returned). next_cursor is present only when the page returned exactly limit rows, meaning more may exist; absent means the walk is exhausted — stop paging then, never craft a cursor of your own. Each row is a lean index entry — id, project (the slug), file, title, status, updated_at — and nothing else: no anchors, drafts, human text, context, constraints, hashes, or images ride a list page. Caller-supplied file and title are capped at 200 chars wire-side; a truncated value ends with '…+N chars' naming its remainder, and the store keeps the full value. An approved entry's apply-back fields — the anchor and its hashes, the human-signed text, and the constraints — come back through fetch_approved with its ids; rejected and applied entries expose no agent-readable text anywhere (the dashboard owns authoring). The human's own notes (human_notes) are dashboard-only and never appear in a listed entry.",
       inputSchema: ListEntriesArgs,
       outputSchema: ListEntriesOutput,
     },
