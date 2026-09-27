@@ -42,7 +42,7 @@ export const ApprovedEntry = z.object({
 
 const FetchApprovedOutput = z.object({
   entries: z.array(ApprovedEntry),
-  style_guide: z.string(),
+  style_guide: z.string().optional(),
   next_since: z.string().optional(),
 });
 
@@ -100,7 +100,7 @@ export function registerFetchApprovedTool(server: McpServer, store: Store): void
     {
       title: "Fetch approved entries to apply",
       description:
-        "Fetch the approved entries of a project, ready to apply: the human-signed prose (text), the anchor to locate and replace it by, and the constraints the replacement must keep. Only approved entries are ever returned — a draft, applied, or rejected entry never appears, and an id naming one simply contributes nothing. Entries come back ordered by ascending entry id, at most 50 per call (fixed server-side page); when exactly 50 come back, next_since holds the last entry's id, and the walk continues by passing that id back as since (rows with id > since) — when next_since is absent the walk is exhausted, stop fetching. ids (exact entry ids) combines with since by AND. The project slug is required and must already exist: an unknown slug is refused (read tools never create one). Each entry carries id, repo, file, anchor_text, anchor_before, anchor_after, anchor_hash, file_hash, text (the approved prose; null only on an approved row nobody ever wrote into), and constraints — parsed into {max_len?, placeholders?, tone?, notes?} so the apply-back can check the text against them, an unparseable stored value rendering as {}. style_guide is the same merged text the reviewzy://projects/{slug}/style-guide resource serves, embedded so bulk rewrites share one voice.",
+        "Fetch the approved entries of a project, ready to apply: the human-signed prose (text), the anchor to locate and replace it by, and the constraints the replacement must keep. Only approved entries are ever returned — a draft, applied, or rejected entry never appears, and an id naming one simply contributes nothing. Entries come back ordered by ascending entry id, at most 50 per call (fixed server-side page); when exactly 50 come back, next_since holds the last entry's id, and the walk continues by passing that id back as since (rows with id > since) — when next_since is absent the walk is exhausted, stop fetching. ids (exact entry ids) combines with since by AND. The project slug is required and must already exist: an unknown slug is refused (read tools never create one). Each entry carries id, repo, file, anchor_text, anchor_before, anchor_after, anchor_hash, file_hash, text (the approved prose; null only on an approved row nobody ever wrote into), and constraints — parsed into {max_len?, placeholders?, tone?, notes?} so the apply-back can check the text against them, an unparseable stored value rendering as {}. style_guide is the same merged text the reviewzy://projects/{slug}/style-guide resource serves, embedded on a walk's first page (a call carrying neither ids nor since) so bulk rewrites pay it once per walk; continuation pages and ids-only fetches omit it.",
       inputSchema: FetchApprovedArgs,
       outputSchema: FetchApprovedOutput,
     },
@@ -118,7 +118,12 @@ export function registerFetchApprovedTool(server: McpServer, store: Store): void
 
       const output = {
         entries: approvedRowsToWire(rows),
-        style_guide: mergedStyleGuide(store, args.project),
+        // The guide rides a walk's first page only — a call carrying neither ids nor since.
+        // Continuation pages and targeted id fetches omit it: the same text is the style-guide
+        // resource, so a bulk rewrite pays it once per walk.
+        ...(args.ids === undefined && args.since === undefined
+          ? { style_guide: mergedStyleGuide(store, args.project) }
+          : {}),
         // An exhausted walk carries no `next_since` key at all: absent is the signal to stop, so an
         // empty page must never smuggle one in.
         ...(nextSince === null ? {} : { next_since: nextSince }),

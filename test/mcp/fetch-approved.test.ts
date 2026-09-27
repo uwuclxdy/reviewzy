@@ -36,7 +36,7 @@ type WireEntry = {
   text: string | null;
   constraints: Record<string, unknown>;
 };
-type FetchResult = { entries: WireEntry[]; style_guide: string; next_since?: string };
+type FetchResult = { entries: WireEntry[]; style_guide?: string; next_since?: string };
 type FiledResult = { results: { id: string }[] };
 
 type WireResult = {
@@ -351,6 +351,10 @@ describe("pagination", () => {
     expect(pages.map((p) => p.entries.length)).toEqual([50, 1]);
     expect(pages[0]?.next_since).toBe(pages[0]?.entries.at(-1)?.id);
     expect("next_since" in pages[1]!).toBe(false);
+    // The guide rides a walk's first page only: continuation pages omit the key — the same text
+    // is the style-guide resource, so a bulk rewrite pays it once per walk, not per page.
+    expect("style_guide" in pages[0]!).toBe(true);
+    expect("style_guide" in pages[1]!).toBe(false);
 
     const walked: string[] = [];
     let previous: string | undefined;
@@ -384,6 +388,21 @@ describe("pagination", () => {
       ?.structuredContent as FetchResult;
     expect(before.entries).toEqual([]);
     expect("next_since" in before).toBe(false);
+  });
+
+  test("an ids-only fetch returns no style guide; the bare project fetch does", async () => {
+    const filed = (await fileEntries({
+      project: "ids-only",
+      entries: [entry({ anchor_text: "Ids only anchor" })],
+    })).body.result?.structuredContent as FiledResult;
+    approve(first.store, filed.results.map((r) => r.id), "signed off");
+
+    const targeted = (await fetchApproved({ project: "ids-only", ids: filed.results.map((r) => r.id) })).body.result
+      ?.structuredContent as FetchResult;
+    expect("style_guide" in targeted).toBe(false);
+
+    const bare = (await fetchApproved({ project: "ids-only" })).body.result?.structuredContent as FetchResult;
+    expect("style_guide" in bare).toBe(true);
   });
 
   test("a project with no approved entries returns an empty entries list, no next_since, and the guide", async () => {
