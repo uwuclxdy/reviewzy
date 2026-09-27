@@ -34,12 +34,14 @@ const AwaitApprovedOutput = z.object({
   statuses: z.record(z.string(), z.enum(["draft", "approved", "applied", "rejected"])),
   entries: z.array(ApprovedEntry).optional(),
   poll_again_after_ms: z.number().int().min(1).optional(),
+  missing_ids: z.array(z.string()).optional(),
 });
 
 type AwaitOutcome = {
   readonly resolved: boolean;
   readonly statuses: Record<string, EntryStatus>;
   readonly entries: z.infer<typeof ApprovedEntry>[];
+  readonly missingIds: string[];
 };
 
 /** A refusal is an ordinary thrown Error: the SDK answers it as a tool result with `isError: true`, never as a json-rpc protocol error. */
@@ -77,16 +79,16 @@ function waitForEntries(store: Store, ids: readonly string[], timeoutMs: number)
         statuses[row.id] = row.status;
         if (row.status === "approved") approved.push(row);
       }
-      // The status map's contract is one key per named id, so a row that vanished since the
-      // up-front check (the planned retention sweep moves rows to the archive) must not resolve
-      // the wait with the id silently missing: keep waiting, and the caller's next call surfaces
-      // the missing id in the up-front refusal.
+      // A row that vanished since the up-front check (the retention sweep moves rows to the
+      // archive) must not resolve the wait, and its id must not sit silently absent from the
+      // statuses map on a non-resolved reply: the gap is named in missing_ids instead.
+      const missingIds = ids.filter((id) => statuses[id] === undefined);
       const done =
         rows.length === ids.length &&
         rows.every((row) => row.status === "approved" || row.status === "rejected");
       return done
-        ? { resolved: true, statuses, entries: approvedRowsToWire(approved) }
-        : { resolved: false, statuses, entries: [] };
+        ? { resolved: true, statuses, entries: approvedRowsToWire(approved), missingIds: [] }
+        : { resolved: false, statuses, entries: [], missingIds };
     }
 
     function recheck(): void {
@@ -125,7 +127,7 @@ export function registerAwaitApprovedTool(server: McpServer, store: Store): void
     {
       title: "Wait for entries to be approved or rejected",
       description:
-        "Block until every named entry reaches approved or rejected, holding the call open — the one long-poll on this server, for a live session that filed entries and wants to sleep until the human signs off instead of polling fetch_approved. ids: the exact entry ids to wait for; duplicates are deduped silently, and the status map carries one key per id. timeout_ms: how long to block, default 60000, capped at 600000 — a larger value is clamped, never refused. Resolves when every named id is approved or rejected: resolved true, statuses one per named id, and entries the approved rows only, each in fetch_approved's row shape (id, repo, file, anchor_text, anchor_before, anchor_after, anchor_hash, file_hash, text, constraints parsed) — a rejected id appears in statuses only, never in entries. On timeout: resolved false, the current per-id statuses, and poll_again_after_ms 5000 — never an error; call again with the same ids to keep waiting. Refused, naming the id and the fix: an id that does not exist at call time (a read tool never creates one). An entry in applied does not resolve the wait: only approved or rejected does.",
+        "Block until every named entry reaches approved or rejected, holding the call open — the one long-poll on this server, for a live session that filed entries and wants to sleep until the human signs off instead of polling fetch_approved. ids: the exact entry ids to wait for; duplicates are deduped silently, and the status map carries one key per id. timeout_ms: how long to block, default 60000, capped at 600000 — a larger value is clamped, never refused. Resolves when every named id is approved or rejected: resolved true, statuses one per named id, and entries the approved rows only, each in fetch_approved's row shape (id, repo, file, anchor_text, anchor_before, anchor_after, anchor_hash, file_hash, text, constraints parsed) — a rejected id appears in statuses only, never in entries. On timeout: resolved false, the current per-id statuses, and poll_again_after_ms 5000 — never an error; call again with the same ids to keep waiting. A named id whose row no longer exists (the retention sweep archived it mid-wait) keeps the wait unresolved and is named in missing_ids on the timeout reply instead of sitting silently absent from statuses. Refused, naming the id and the fix: an id that does not exist at call time (a read tool never creates one). An entry in applied does not resolve the wait: only approved or rejected does.",
       inputSchema: AwaitApprovedArgs,
       outputSchema: AwaitApprovedOutput,
     },
@@ -146,7 +148,12 @@ export function registerAwaitApprovedTool(server: McpServer, store: Store): void
       const outcome = await waitForEntries(store, ids, timeoutMs);
       const output = outcome.resolved
         ? { resolved: true, statuses: outcome.statuses, entries: outcome.entries }
-        : { resolved: false, statuses: outcome.statuses, poll_again_after_ms: AWAIT_POLL_AGAIN_MS };
+        : {
+            resolved: false,
+            statuses: outcome.statuses,
+            poll_again_after_ms: AWAIT_POLL_AGAIN_MS,
+            missing_ids: outcome.missingIds.length > 0 ? outcome.missingIds : undefined,
+          };
       return {
         content: [{ type: "text" as const, text: JSON.stringify(output) }],
         structuredContent: output,

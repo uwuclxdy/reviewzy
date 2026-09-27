@@ -45,6 +45,7 @@ type AwaitResult = {
   statuses: Record<string, string>;
   entries?: WireEntry[];
   poll_again_after_ms?: number;
+  missing_ids?: string[];
 };
 type MarkResult = { id: string; status: string };
 type FiledResult = { results: { id: string }[] };
@@ -228,6 +229,7 @@ describe("the tool surface", () => {
       "statuses",
       "entries",
       "poll_again_after_ms",
+      "missing_ids",
     ]);
 
     const description = tool.description ?? "";
@@ -326,6 +328,8 @@ describe("the wait", () => {
     expect(result.statuses).toEqual({ [a]: "draft", [b]: "draft" });
     expect(result.poll_again_after_ms).toBe(POLL_AGAIN_MS);
     expect("entries" in result).toBe(false);
+    // A gapless wait names nothing: an always-emitted empty missing_ids would read as noise.
+    expect("missing_ids" in result).toBe(false);
     expect(first.store.waiterCount()).toBe(0);
   });
 
@@ -374,6 +378,8 @@ describe("the wait", () => {
     const result = body.result?.structuredContent as AwaitResult;
     expect(result.resolved).toBe(false);
     expect(result.statuses).toEqual({ [survivingId]: "approved" });
+    // The silent-absent shape is the defect this pins: the vanished id is named, never dropped.
+    expect(result.missing_ids).toEqual([vanishedId]);
     expect(result.poll_again_after_ms).toBe(POLL_AGAIN_MS);
     expect("entries" in result).toBe(false);
     expect(first.store.waiterCount()).toBe(0);
@@ -535,6 +541,7 @@ describe("the drain path", () => {
       expect(result.resolved).toBe(false);
       expect(result.statuses).toEqual({ [id]: "draft" });
       expect(result.poll_again_after_ms).toBe(POLL_AGAIN_MS);
+      expect("missing_ids" in result).toBe(false);
       // The drain cut the wait short: a timeout would have taken the full 3000ms.
       expect(Date.now() - startedAt).toBeLessThan(2000);
       expect(drainApp.store.waiterCount()).toBe(0);
