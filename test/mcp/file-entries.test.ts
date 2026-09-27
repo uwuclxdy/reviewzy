@@ -239,20 +239,19 @@ describe("a first file", () => {
     }
   });
 
-  test("ignores keys the schema does not know: a smuggled status and human_text still file as draft", async () => {
+  test("refuses smuggled keys the schema does not know: a status and human_text never file", async () => {
     const { body } = await fileEntries({
       project: "smuggle",
       entries: [entry({ status: "approved", human_text: "pre-written" })],
     });
 
-    // The status machine is server-enforced: the result echoes the real status, draft.
-    expect(body.result?.isError).toBeUndefined();
-    const out = body.result?.structuredContent as Result;
-    expect(out.results[0]?.status).toBe("draft");
-    const row = rows(first.store, "smuggle")[0]!;
-    expect(row.status).toBe("draft");
-    expect(row.human_text).toBeNull();
-    expect(row.agent_draft).toBe("Continue");
+    // The status machine is server-enforced: a smuggled status is refused by name, never stripped.
+    expect(body.result?.isError).toBe(true);
+    const text = body.result?.content?.[0]?.text ?? "";
+    expect(text).toContain('"status"');
+    expect(text).toContain('"human_text"');
+    expect(text).toContain("entries[0]");
+    expect(rows(first.store, "smuggle")).toHaveLength(0);
   });
 
   test("a first file without context, constraints, or draft stores the empty defaults", async () => {
@@ -531,6 +530,18 @@ describe("the json boundary", () => {
     });
     expect(body.result?.isError).toBe(true);
     expect(body.result?.content?.[0]?.text).toContain("maxLen");
+    expect(rows(first.store, "boundary")).toHaveLength(0);
+  });
+
+  test("an unrecognized top-level entry key is refused naming the key and the entry", async () => {
+    const { body } = await fileEntries({
+      project: "boundary",
+      entries: [entry({ anchorText: "Click here to continue" })],
+    });
+    expect(body.result?.isError).toBe(true);
+    const text = body.result?.content?.[0]?.text ?? "";
+    expect(text).toContain("anchorText");
+    expect(text).toContain("entries[0]");
     expect(rows(first.store, "boundary")).toHaveLength(0);
   });
 

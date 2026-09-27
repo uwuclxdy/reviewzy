@@ -34,12 +34,14 @@ const ConstraintsJson = z.strictObject({
 });
 
 /**
- * Held loose on purpose. The SDK's own schema check would refuse a malformed constraints with an
- * isError tool result naming the tool and the field path ("entries.0.constraints"). The handler's
- * refusal adds what that cannot: the entry (file and anchor) and the fix. So `context` and
- * `constraints` stay untyped here and are validated below.
+ * The wire schema is loose on purpose: a plain z.object lets the sdk strip an unrecognized
+ * top-level key before the handler sees it, so a misspelled anchor_text would file an entry with
+ * no anchor and a misspelled agent_draft one with no draft. The handler re-parses each entry
+ * against StrictEntryArgs and refuses the key by name, with the entry and the fix. `context` and
+ * `constraints` stay untyped for the same reason: the sdk's refusal can name only the tool and the
+ * field path ("entries.0.constraints"), never the entry (file and anchor) and the fix.
  */
-const FileEntryArgs = z.object({
+const EntryShape = {
   repo: z.string().min(1),
   file: z.string().min(1),
   title: z.string().min(1).optional(),
@@ -52,7 +54,11 @@ const FileEntryArgs = z.object({
   context: z.unknown().optional(),
   constraints: z.unknown().optional(),
   images: z.unknown().optional(),
-});
+};
+const FileEntryArgs = z.looseObject(EntryShape);
+
+/** Strict twin of the wire shape: the handler re-parses against it to refuse an unrecognized top-level key by name. */
+const StrictEntryArgs = z.strictObject(EntryShape);
 
 const FiledOutput = z.object({
   batch_id: z.string(),
@@ -104,6 +110,17 @@ function refuseConstraints(index: number, file: string, anchorText: string, issu
   return refuse(where, problem, fix);
 }
 
+/** Turns zod's unrecognized_keys issues into the named-key refusal: the key, the entry, the fix. */
+function refuseEntryKeys(index: number, file: string, anchorText: string, issues: readonly z.ZodIssue[]): never {
+  const where = entryName(index, file, anchorText);
+  const keys = issues.flatMap((issue) => (issue.code === "unrecognized_keys" ? issue.keys : []));
+  return refuse(
+    where,
+    `unrecognized key(s) ${keys.map((k) => JSON.stringify(k).slice(0, 60)).join(", ")}`,
+    "entries take only repo, file, title, anchor_text, anchor_before, anchor_after, agent_draft, file_content, file_hash, context, constraints, and images; drop the extra key or spell it snake_case",
+  );
+}
+
 /**
  * One entry from wire shape to store shape: json validated at this boundary, `anchor_hash` always
  * computed here, and file provenance taken from exactly one of `file_content` (the server hashes
@@ -112,6 +129,12 @@ function refuseConstraints(index: number, file: string, anchorText: string, issu
  */
 function validateEntry(index: number, raw: z.output<typeof FileEntryArgs>): NewEntry {
   const where = entryName(index, raw.file, raw.anchor_text);
+
+  // Unknown keys first: a wire-shape mistake outranks every field-level check below.
+  const strict = StrictEntryArgs.safeParse(raw);
+  if (!strict.success) {
+    refuseEntryKeys(index, raw.file, raw.anchor_text, strict.error.issues);
+  }
 
   const context = ContextJson.safeParse(raw.context ?? {});
   if (!context.success) {
@@ -229,7 +252,7 @@ export function registerFileEntriesTool(server: McpServer, baseUrl: string, stor
     {
       title: "File entries for review",
       description:
-        "File draft entries for a human to author or approve. One entry is one edit: anchor_text is the whole passage being replaced and agent_draft the proposed replacement; either may be a single line or span many lines, and a multi-line block is ONE entry, never one entry per line. Each entry names repo (git remote url preferred), file path, an optional title (a human-readable label the dashboard shows in place of the file path), anchor_text, and anchor_before/anchor_after context lines. Identity is (project, repo, file, sha256(anchor_text)): re-filing a known draft overwrites the agent draft, context, and constraints in place; an entry already approved, applied, or rejected is returned untouched with its own status, and a rejected anchor stays rejected — stop proposing a turned-down passage. file provenance: send exactly one of file_content (the whole file at filing time; the server hashes it) or file_hash (its sha256 hex). constraints: {max_len?, placeholders?: string[], tone?, notes?} — a save breaking max_len or dropping a placeholder is refused later, so declare what the copy must keep. images: up to 8 per entry, each a data:image/ data url or an http(s) url of at most 5 MiB, rendered on the dashboard. Keys the schema does not list are ignored. The dashboard shows entries in the order the agent sends them, so file the most important entries first.",
+        "File draft entries for a human to author or approve. One entry is one edit: anchor_text is the whole passage being replaced and agent_draft the proposed replacement; either may be a single line or span many lines, and a multi-line block is ONE entry, never one entry per line. Each entry names repo (git remote url preferred), file path, an optional title (a human-readable label the dashboard shows in place of the file path), anchor_text, and anchor_before/anchor_after context lines. Identity is (project, repo, file, sha256(anchor_text)): re-filing a known draft overwrites the agent draft, context, and constraints in place; an entry already approved, applied, or rejected is returned untouched with its own status, and a rejected anchor stays rejected — stop proposing a turned-down passage. file provenance: send exactly one of file_content (the whole file at filing time; the server hashes it) or file_hash (its sha256 hex). constraints: {max_len?, placeholders?: string[], tone?, notes?} — a save breaking max_len or dropping a placeholder is refused later, so declare what the copy must keep. images: up to 8 per entry, each a data:image/ data url or an http(s) url of at most 5 MiB, rendered on the dashboard. The dashboard shows entries in the order the agent sends them, so file the most important entries first.",
       inputSchema: z.object({
         project: z.string().min(1),
         entries: z.array(FileEntryArgs).min(1),
