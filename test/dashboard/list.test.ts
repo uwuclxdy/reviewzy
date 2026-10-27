@@ -158,12 +158,12 @@ function shortUlid(id: string): string {
   return `${id.slice(0, 6)}…${id.slice(-6)}`;
 }
 
-/** The `.batch-header` region for a batch, from its header div to the table that follows. */
+/** The batch's disclosure summary region, from its details open tag to the table that follows. */
 function batchHeader(html: string, batchId: string): string {
   const idMark = html.indexOf(`aria-label="Select all drafts in batch ${shortUlid(batchId)}"`);
   expect(idMark, `batch ${batchId} header rendered`).toBeGreaterThan(-1);
-  const start = html.lastIndexOf('<div class="batch-header">', idMark);
-  const end = html.indexOf('<div class="table-wrap"', idMark);
+  const start = html.lastIndexOf('<details class="disclosure batch-disclosure"', idMark);
+  const end = html.indexOf('<div class="table-wrap"', start);
   return html.slice(start, end);
 }
 
@@ -195,7 +195,7 @@ describe("dashboard entry list", () => {
 
     // Page header: the title plus the total count in the metadata row, no eyebrow or lede.
     expect(html).toContain("<h1 class=\"page-title\">Entries</h1>");
-    expect(html).toContain('<span class="page-meta-item">6 entries</span>');
+    expect(html).toContain('<span class="page-meta-item num">6 entries</span>');
     expect(html).not.toContain("Review queue");
     expect(html).not.toContain("Agent drafts waiting for your approval.");
 
@@ -208,21 +208,31 @@ describe("dashboard entry list", () => {
     expect(html).toContain('name="q"');
     expect(html).toContain('name="status"');
     expect(html).toContain('name="project"');
-    // The Apply button survives only inside <noscript> as the no-JS submit path: the selects and
-    // search auto-submit on change/input via dashboard.js, and without JS the button submits natively.
-    expect(html).toContain("<noscript>");
+    // The two dropdowns are the system .select (a native select never renders with JS on): the
+    // trigger plus listbox, and a disabled hidden input carrying the name — dashboard.js enables
+    // it, and a no-JS submit reads the noscript native selects instead of a stale hidden value.
+    expect(html).toContain('class="filter-bar"');
+    expect(html).toContain('class="input select-trigger"');
+    expect(html).toContain('class="select-menu"');
+    expect(html).toContain('name="status" value="" data-filter-field="status" disabled=""');
+    expect(html).toContain('name="project" value="" data-filter-field="project" disabled=""');
+    expect(html).toContain('name="q"');
+    // The no-JS submit path keeps native selects carrying the same names as the hidden inputs.
+    expect(html).toContain('<noscript>');
+    expect(html).toContain('<select class="input" id="status-native" name="status">');
+    expect(html).toContain('<select class="input" id="project-native" name="project">');
     expect(html).toContain('class="btn btn-primary" type="submit">Apply filters</button>');
+    // The filter form carries no visible field labels; the bar's own affordances name it.
+    expect(html).toContain('<label class="sr-only" for="q">Search</label>');
 
     // The loading indicator, scoped to the list region.
     expect(html).toContain('<div id="entries-loading" class="htmx-indicator" role="status">');
     expect(html).toContain("Loading entries");
 
-    // The error box template the page ships for htmx:responseError, with a retry control.
-    expect(html).toContain('<template id="error-box">');
-    expect(html).toContain("The list could not be loaded");
-    expect(html).toContain("The filter request failed. Try it again.");
-    expect(html).toContain("data-retry");
-    expect(html).toContain('role="alert"');
+    // An htmx failure surfaces as a transient toast; the stack it lands in ships on the page and
+    // the cloned error box is gone.
+    expect(html).toContain('<div class="toast-stack" id="toast-stack"></div>');
+    expect(html).not.toContain("error-box");
 
     // Vendored htmx loads before first-party JS.
     const htmxIdx = html.indexOf("/static/htmx.min.js");
@@ -312,21 +322,22 @@ describe("dashboard entry list", () => {
     expect(mark(batchA.batchId)).toBeLessThan(mark(batchCId));
     expect(mark(batchB.batchId)).toBeLessThan(mark(batchD.batchId));
 
-    // A row carries the select checkbox, the title, the file path, and the action slots.
+    // A row carries the select-all in its checkbox column, whose header keeps its accessible name;
+    // the title, the file path, and the action slots follow.
     expect(html).toContain('<span class="sr-only">Select</span>');
+    expect(html).toContain('<input type="checkbox" data-select-all="true" aria-label="Select all drafts in batch');
     expect(html).toContain(">Title</th>");
     expect(html).toContain(">Status</th>");
     expect(html).toContain(">File</th>");
     expect(html).toContain(">Actions</th>");
-    expect(html).toContain('class="tag tag-warning">Draft</span>');
-    expect(html).toContain('class="tag tag-success">Approved</span>');
-    expect(html).toContain('class="tag tag-info">Applied</span>');
-    expect(html).toContain('class="tag tag-danger">Rejected</span>');
-    // The title leads (the anchor text when no title was filed); the file path is a separate column,
-    // and the cell title carries the full path and anchor.
-    expect(html).toContain('<span class="entry-title">Run bun install</span>');
-    expect(html).toContain('title="docs/setup.md — Run bun install"');
-    expect(html).toContain('<td class="cell-file" title="docs/setup.md">docs/setup.md</td>');
+    expect(html).toContain('<span class="tag tag-warning"><span class="tag-dot"></span>Draft</span>');
+    expect(html).toContain('<span class="tag tag-success"><span class="tag-dot"></span>Approved</span>');
+    expect(html).toContain('<span class="tag tag-info"><span class="tag-dot"></span>Applied</span>');
+    expect(html).toContain('<span class="tag tag-danger"><span class="tag-dot"></span>Rejected</span>');
+    // The title leads (the anchor text when no title was filed) and truncates with the shipped
+    // utility; the file path is a separate mono column that truncates the same way.
+    expect(html).toContain('<span class="entry-title truncate">Run bun install</span>');
+    expect(html).toContain('<td class="cell-file truncate">docs/setup.md</td>');
   });
 
   test("batch header shows the filer only when every entry agrees on one", async () => {
@@ -380,32 +391,33 @@ describe("dashboard entry list", () => {
 
     // One select-all per batch (4), and it never carries `name`, so it is not submitted as an
     // entry id — the draft checkboxes alone post as `id`.
-    expect(html.match(/type="checkbox" class="select-all"/g) ?? []).toHaveLength(4);
-    expect(html).not.toContain('name="id" class="select-all"');
+    expect(html.match(/data-select-all/g) ?? []).toHaveLength(4);
+    expect(html).not.toContain('name="id" data-select-all');
 
     // Only draft rows carry a selectable checkbox: batchA has one draft, batchB none (applied +
     // rejected), and batchC and batchD one each.
     expect(html.match(/type="checkbox" name="id"/g) ?? []).toHaveLength(3);
 
     // The no-JS approve button keeps its static label and no `disabled` attribute; the live count
-    // and the disabled state are applied by dashboard.js.
+    // and the disabled state are applied by dashboard.js, and the fill marks the screen's one
+    // main action.
     expect(html).toContain(
-      'class="btn btn-primary btn-sm" type="submit" hx-disabled-elt="this">Approve selected</button>',
+      'class="btn btn-fill btn-sm" type="submit" hx-disabled-elt="this">Approve selected</button>',
     );
   });
 
-  test("every project section and batch ships a collapse toggle, expanded and with no JS state", async () => {
+  test("every project section and batch ships a disclosure, expanded and with no JS state", async () => {
     const html = await (await env.get("/")).text();
 
-    // Two project toggles plus three batch toggles: the terminal batch is hidden by default.
-    const toggles = html.match(/data-collapse-toggle/g) ?? [];
-    expect(toggles).toHaveLength(5);
-    // The server renders everything expanded; dashboard.js owns the collapsed state.
-    expect(html.match(/aria-expanded="true"/g)?.length ?? 0).toBe(5);
+    // Two project disclosures plus three batch disclosures: the terminal batch is hidden by default.
+    expect(html.match(/data-collapse-key/g) ?? []).toHaveLength(5);
+    // The server renders everything expanded; dashboard.js owns the collapsed state off the
+    // details' native open attribute.
+    expect(html.match(/<details class="disclosure/g) ?? []).toHaveLength(5);
+    expect(html.match(/open=""/g) ?? []).toHaveLength(5);
     expect(html).not.toContain('class="table-wrap" hidden');
-    expect(html).not.toContain('class="project-batches" hidden');
-    expect(html).toContain('aria-label="Toggle alpha section"');
-    expect(html).toContain(`aria-label="Toggle batch ${shortUlid(batchA.batchId)}"`);
+    expect(html).toContain('data-collapse-key="project:alpha"');
+    expect(html).toContain(`aria-label="Select all drafts in batch ${shortUlid(batchA.batchId)}"`);
   });
 
   test("renders three icon action slots per status", async () => {
@@ -584,7 +596,7 @@ describe("dashboard entry list", () => {
       expect(html).not.toContain("Clear filters");
       // The explicit all-statuses view still shows the row.
       const all = await (await done.get("/?status=all")).text();
-      expect(all).toContain('class="entry-title">a</span>');
+      expect(all).toContain('class="entry-title truncate">a</span>');
       // A search matching only terminal rows names the hiding view and offers the way onward
       // (hono JSX escapes the href's ampersands).
       const searched = await (await done.get("/?q=a")).text();
@@ -612,14 +624,53 @@ describe("dashboard entry list", () => {
     expect(html).not.toContain('class="navbar"');
   });
 
-  test("wires the collapse toggles in dashboard.js", async () => {
-    // String-level pin only: the suite has no DOM harness, so the applying and persisting of the
-    // collapsed state is covered by the presence of its hooks, not by executing them.
+  test("a titled row keeps its anchor text reachable, and never as a title attribute", async () => {
+    const titled = serveApp();
+    try {
+      fileEntries(titled.store, "alpha", "probe-agent", [
+        draft({ file: "docs/a.md", title: "Setup wording", anchorText: "Run bun install", anchorHash: "ht", fileHash: "ft" }),
+        draft({ file: "docs/b.md", anchorText: "Plain anchor", anchorHash: "hu", fileHash: "fu" }),
+      ]);
+      const html = await (await titled.get("/?status=draft")).text();
+
+      // The titled row displays the title alone, so its anchor rides an sr-only span in the cell.
+      expect(html).toContain('<span class="entry-title truncate">Setup wording</span>');
+      expect(html).toContain('<span class="sr-only">Run bun install</span>');
+      // A row whose title IS the anchor does not repeat it.
+      expect(html).not.toContain('<span class="sr-only">Plain anchor</span>');
+      // The removed tooltip stays removed.
+      expect(html).not.toContain('title="docs/a.md — Run bun install"');
+    } finally {
+      titled.close();
+    }
+  });
+
+  test("keeps the failed-filter copy and the retry wiring in the client module", async () => {
+    // The error box is client-side copy now, and the module ships as a static file with no DOM
+    // harness, so its shipped bytes are the honest seam for the copy and the retry wiring.
     const js = await Bun.file(
       new URL("../../src/dashboard/static/dashboard.js", import.meta.url),
     ).text();
-    expect(js).toContain("data-collapse-toggle");
-    expect(js).toContain("aria-expanded");
+    expect(js).toContain("The list could not be loaded");
+    expect(js).toContain("The filter request failed. Try it again.");
+    expect(js).toContain("wireRetry");
+    expect(js).toContain('button.textContent = "Retry"');
+    // The failure announces through the shipped toast, the system's own transient surface.
+    expect(js).toContain('import { initTables, showToast } from "./ui.js";');
+    expect(js).toContain('showToast("danger"');
+    expect(js).toContain("htmx:responseError");
+    expect(js).toContain("htmx:sendError");
+  });
+
+  test("wires the collapse disclosures in dashboard.js", async () => {
+    // String-level pin only: the suite has no DOM harness, so the applying and persisting of the
+    // collapsed state is covered by the presence of its hooks, not by executing them. The
+    // details' toggle event does not bubble, so the capture flag is load-bearing.
+    const js = await Bun.file(
+      new URL("../../src/dashboard/static/dashboard.js", import.meta.url),
+    ).text();
+    expect(js).toContain("data-collapse-key");
+    expect(js).toContain('"toggle"');
     expect(js).toContain("localStorage");
     expect(js).toContain("htmx:afterSwap");
   });

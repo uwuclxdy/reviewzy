@@ -1,52 +1,70 @@
 // reviewzy dashboard behaviors. Loads as a module after htmx.min.js.
-// The navbar's ink, its dock state and the table header label boxes come from ui.js;
-// initTables is re-run after every htmx swap so a freshly rendered table head gets its boxes.
-import { initTables } from "./ui.js";
+// The navbar's ink and dock state, the selects, the tabs, the drawer, the theme toggle, the
+// toasts and the table header label boxes come from ui.js; initTables is re-run after every
+// htmx swap so a freshly rendered table head gets its boxes and its selection state machine.
+import { initTables, showToast } from "./ui.js";
 
 (() => {
   "use strict";
 
-  // --- Filter errors ---
-  // A failed filter request (HTTP error or network error) replaces the list with the error box
-  // from the page's #error-box template; the retry button re-submits the filter form.
-  const form = document.getElementById("filters");
-  const list = document.getElementById("entries-list");
-  const errorTemplate = document.getElementById("error-box");
+  // --- Error toasts ---
+  // A failed htmx round (HTTP error or network error) raises a transient toast carrying the
+  // failure and a Retry button. The toast dies on its own timer; the durable way out is the
+  // control the failed request came from, which the failure never removes: the filters form
+  // re-renders the list, and the style guide form keeps the typed values.
+  function wireRetry(toast, retry) {
+    const body = toast.querySelector(".toast-body");
+    if (!body) return;
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "btn btn-secondary btn-sm";
+    button.textContent = "Retry";
+    button.addEventListener("click", retry);
+    body.appendChild(button);
+  }
 
-  function showFilterError() {
-    if (!form || !list || !errorTemplate) return;
-    const box = errorTemplate.content.cloneNode(true);
-    const retry = box.querySelector("[data-retry]");
-    if (retry) {
-      retry.addEventListener("click", () => {
-        // htmx listens for submit directly on the form it processed, so a native requestSubmit
-        // reaches it; the reload fallback covers the case where htmx did not load.
-        if (typeof form.requestSubmit === "function") {
-          form.requestSubmit();
-        } else {
-          window.location.reload();
-        }
-      });
+  function raiseErrorToast(title, message, retry) {
+    const toast = showToast("danger", title, message);
+    if (toast) wireRetry(toast, retry);
+  }
+
+  // htmx listens for submit directly on the form it processed, so a native requestSubmit
+  // reaches it; the reload fallback covers the case where htmx did not load.
+  function submitForm(form) {
+    if (form && typeof form.requestSubmit === "function") {
+      form.requestSubmit();
+    } else {
+      window.location.reload();
     }
-    list.replaceChildren(box);
   }
 
-  if (form) {
-    form.addEventListener("htmx:responseError", showFilterError);
-    form.addEventListener("htmx:sendError", showFilterError);
+  const filtersForm = document.getElementById("filters");
+  if (filtersForm) {
+    const retryFilters = () => submitForm(document.getElementById("filters"));
+    const raiseFilterError = () => raiseErrorToast("The list could not be loaded", "The filter request failed. Try it again.", retryFilters);
+    filtersForm.addEventListener("htmx:responseError", raiseFilterError);
+    filtersForm.addEventListener("htmx:sendError", raiseFilterError);
   }
+
+  // Delegated on document: a successful swap replaces the style guide form, so listeners bound
+  // to it would die. The event target names the form the failure came from.
+  document.addEventListener("htmx:responseError", (event) => {
+    if (!(event.target instanceof Element) || event.target.id !== "style-guide-form") return;
+    raiseErrorToast("The guide could not be saved", "The save request failed. Try it again.", () => submitForm(document.getElementById("style-guide-form")));
+  });
+  document.addEventListener("htmx:sendError", (event) => {
+    if (!(event.target instanceof Element) || event.target.id !== "style-guide-form") return;
+    raiseErrorToast("The guide could not be saved", "The save request failed. Try it again.", () => submitForm(document.getElementById("style-guide-form")));
+  });
 
   // --- Filter auto-submit ---
-  // The Apply button is gone: changing a select or typing in the search fires the filter request
-  // itself. requestSubmit() reaches htmx's submit listener on the form; the debounce collapses a
-  // burst of keystrokes into one request. Only the change and input events below trigger a submit,
-  // and both fire on user action alone, so a programmatic value reset (which sets .value directly
-  // and emits no event) never re-fires.
+  // Changing a select or typing in the search fires the filter request itself. requestSubmit()
+  // reaches htmx's submit listener on the form; the debounce collapses a burst of keystrokes
+  // into one request. Only the change and input events below trigger a submit, and both fire on
+  // user action alone, so a programmatic value reset (which sets .value directly and emits no
+  // event) never re-fires.
   function submitFilters() {
-    const target = document.getElementById("filters");
-    if (target && typeof target.requestSubmit === "function") {
-      target.requestSubmit();
-    }
+    submitForm(document.getElementById("filters"));
   }
 
   let searchTimer;
@@ -55,51 +73,30 @@ import { initTables } from "./ui.js";
     searchTimer = setTimeout(submitFilters, 300);
   }
 
-  if (form) {
-    const statusSelect = document.getElementById("status");
-    const projectSelect = document.getElementById("project");
+  // The hidden inputs ship disabled so a no-JS submit reads the noscript native selects instead
+  // of a stale hidden value; with the widgets live they carry the picked value.
+  for (const field of document.querySelectorAll('#filters input[data-filter-field]')) {
+    field.disabled = false;
+  }
+
+  // ui.js's select controller commits the picked option onto the root before the change event;
+  // the option's own data-value holds what the form submits.
+  for (const root of document.querySelectorAll('#filters .select[data-filter]')) {
+    root.addEventListener("change", () => {
+      const field = root.dataset.filter ?? "";
+      const picked = root.querySelector('.menu-item[aria-selected="true"]');
+      const hidden = document.querySelector(`#filters input[data-filter-field="${field}"]`);
+      if (hidden && picked) {
+        hidden.value = picked.getAttribute("data-value") ?? "";
+        submitFilters();
+      }
+    });
+  }
+
+  if (filtersForm) {
     const searchInput = document.getElementById("q");
-    statusSelect?.addEventListener("change", submitFilters);
-    projectSelect?.addEventListener("change", submitFilters);
     searchInput?.addEventListener("input", scheduleSearchSubmit);
   }
-
-  // --- Style guide save errors ---
-  // A failed save (HTTP error or network error) puts the error box from the page's
-  // #style-guide-error-box template above the form; the retry button re-submits the save form.
-  // Delegated on document: a successful swap replaces the form element, so listeners bound to it
-  // would die.
-  const styleGuideErrorTemplate = document.getElementById("style-guide-error-box");
-
-  function showStyleGuideError(event) {
-    if (!(event.target instanceof Element) || event.target.id !== "style-guide-form") return;
-    const region = document.getElementById("style-guide-region");
-    if (!region || !styleGuideErrorTemplate) return;
-    // The box goes above the form, never replacing it: the retry re-submits the very form the
-    // failed request came from, and a replacement would leave nothing to re-submit. A success or
-    // refusal swap replaces the whole region and takes the box with it; a repeated error drops
-    // the previous box first so the notices cannot stack.
-    region.querySelector("[data-style-guide-error]")?.remove();
-    const box = styleGuideErrorTemplate.content.cloneNode(true);
-    box.querySelector(".callout")?.setAttribute("data-style-guide-error", "");
-    const retry = box.querySelector("[data-retry]");
-    if (retry) {
-      retry.addEventListener("click", () => {
-        // htmx listens for submit directly on the form it processed, so a native requestSubmit
-        // reaches it; the reload fallback covers the case where htmx did not load.
-        const target = document.getElementById("style-guide-form");
-        if (target && typeof target.requestSubmit === "function") {
-          target.requestSubmit();
-        } else {
-          window.location.reload();
-        }
-      });
-    }
-    region.prepend(box);
-  }
-
-  document.addEventListener("htmx:responseError", showStyleGuideError);
-  document.addEventListener("htmx:sendError", showStyleGuideError);
 
   // --- Editor live metrics ---
   // The constraint panel lives outside the htmx swap region, so the char count and the placeholder
@@ -163,7 +160,7 @@ import { initTables } from "./ui.js";
     const target = event.target instanceof Element ? event.target : null;
     const useButton = target ? target.closest("[data-use-revision]") : null;
     if (!useButton) return;
-    const textNode = useButton.closest(".revision")?.querySelector(".revision-text");
+    const textNode = useButton.closest(".timeline-item")?.querySelector(".timeline-body");
     const textarea = document.getElementById("editor-text");
     if (!textNode || !textarea) return;
     textarea.value = textNode.textContent ?? "";
@@ -171,64 +168,27 @@ import { initTables } from "./ui.js";
     textarea.focus();
   });
 
-  // --- Batch select-all and live selection count ---
-  // The list region is swapped wholesale on every filter and action round, so no listener bound to
-  // a checkbox or the button survives a swap: change events are delegated on document, and one pass
-  // after each swap recomputes the select-all states and the approve button's count. All of it is
-  // progressive enhancement — without JS the approve button keeps its static label, stays enabled,
-  // and the native form still submits the checked rows.
-  const DRAFT_SELECTOR = 'input[type="checkbox"][name="id"]';
-  const SELECT_ALL_SELECTOR = 'input[type="checkbox"].select-all';
-
-  function selectionCount() {
-    return document.querySelectorAll(`#batch-form ${DRAFT_SELECTOR}:checked`).length;
-  }
-
+  // --- Batch selection count ---
+  // The boxes and the select-all state machine belong to ui.js's initTables (re-run after every
+  // swap); this page only renders the count onto the approve button. All of it is progressive
+  // enhancement — without JS the approve button keeps its static label, stays enabled, and the
+  // native form still submits the checked rows.
   function updateApproveButton() {
     const button = document.querySelector('#batch-form .batch-bar button[type="submit"]');
     if (!button) return;
-    const count = selectionCount();
+    const count = document.querySelectorAll('#batch-form input[type="checkbox"][name="id"]:checked').length;
     button.textContent = count === 0 ? "Approve selected" : `Approve ${count}`;
     button.disabled = count === 0;
   }
 
-  function updateSelectAll(selectAll) {
-    const batch = selectAll.closest(".batch");
-    if (!batch) return;
-    const drafts = batch.querySelectorAll(DRAFT_SELECTOR);
-    const checked = batch.querySelectorAll(`${DRAFT_SELECTOR}:checked`).length;
-    selectAll.checked = drafts.length > 0 && checked === drafts.length;
-    selectAll.indeterminate = checked > 0 && checked < drafts.length;
-  }
-
-  function refreshSelection() {
-    for (const selectAll of document.querySelectorAll(SELECT_ALL_SELECTOR)) {
-      updateSelectAll(selectAll);
-    }
-    updateApproveButton();
-  }
-
-  document.addEventListener("change", (event) => {
-    const target = event.target instanceof Element ? event.target : null;
-    if (!target) return;
-    if (target.matches(SELECT_ALL_SELECTOR)) {
-      const batch = target.closest(".batch");
-      if (batch) {
-        for (const draft of batch.querySelectorAll(DRAFT_SELECTOR)) {
-          draft.checked = target.checked;
-        }
-      }
-    }
-    refreshSelection();
-  });
-
-  document.addEventListener("htmx:afterSwap", refreshSelection);
+  document.addEventListener("table:selection", updateApproveButton);
+  document.addEventListener("htmx:afterSwap", updateApproveButton);
 
   // --- Collapsible project sections and batches ---
   // The server renders every section and batch open; JS collapses the ones this viewer collapsed
-  // before, from localStorage, and persists each toggle. Re-applied after every swap because a
-  // filter or action round replaces the whole list region. Without JS the toggles stay inert and
-  // everything stays open.
+  // before, from localStorage, and persists each toggle off the details' own toggle event (which
+  // does not bubble, hence the capture). Re-applied after every swap because a filter or action
+  // round replaces the whole list region. Without JS everything stays open.
   const COLLAPSE_STORAGE = "reviewzy.list-collapsed";
 
   function readCollapsed() {
@@ -259,27 +219,21 @@ import { initTables } from "./ui.js";
 
   function applyCollapseState() {
     const collapsed = readCollapsed();
-    for (const toggle of document.querySelectorAll("[data-collapse-toggle]")) {
-      const key = toggle.dataset.collapseKey ?? "";
-      const target = document.getElementById(toggle.dataset.collapseTarget ?? "");
-      if (!target) continue;
-      const hidden = collapsed[key] === true;
-      target.hidden = hidden;
-      toggle.setAttribute("aria-expanded", String(!hidden));
+    for (const details of document.querySelectorAll("details[data-collapse-key]")) {
+      details.open = collapsed[details.dataset.collapseKey ?? ""] !== true;
     }
   }
 
-  document.addEventListener("click", (event) => {
-    const target = event.target instanceof Element ? event.target : null;
-    const toggle = target ? target.closest("[data-collapse-toggle]") : null;
-    if (!toggle) return;
-    const el = document.getElementById(toggle.dataset.collapseTarget ?? "");
-    if (!el) return;
-    const hide = !el.hidden;
-    el.hidden = hide;
-    toggle.setAttribute("aria-expanded", String(!hide));
-    persistCollapsed(toggle.dataset.collapseKey ?? "", hide);
-  });
+  document.addEventListener(
+    "toggle",
+    (event) => {
+      if (!(event.target instanceof HTMLDetailsElement)) return;
+      const key = event.target.dataset.collapseKey;
+      if (!key) return;
+      persistCollapsed(key, !event.target.open);
+    },
+    true,
+  );
 
   applyCollapseState();
   document.addEventListener("htmx:afterSwap", applyCollapseState);

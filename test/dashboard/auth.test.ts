@@ -215,12 +215,13 @@ describe("login", () => {
     expect(res.status).toBe(200);
     const html = await res.text();
     expect(html).toContain("<!doctype html>");
-    expect(html).toContain("navbar-brand");
+    // The sign-in screen is a viewport-owning page-state: brand and form on the card, no shell.
+    expect(html).toContain("page-state-brand");
     expect(html).toContain('<form method="post" action="/login"');
     expect(html).toContain('type="password"');
     expect(html).toContain('autocomplete="current-password"');
     expect(html).toContain('name="password"');
-    expect(html).toContain("btn-primary");
+    expect(html).toContain("btn-fill");
     expect(html).toContain("Sign in");
     expect(html).not.toContain("Wrong password");
     env.close();

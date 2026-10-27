@@ -56,6 +56,21 @@ const STATUS_LABEL: Record<EntryStatus, string> = {
   rejected: "Rejected",
 };
 
+/** The timeline dot variant per revision status, matching the tag's own semantic. */
+const STATUS_DOT: Record<EntryStatus, string> = {
+  draft: "timeline-dot-warning",
+  approved: "timeline-dot-success",
+  applied: "timeline-dot-accent",
+  rejected: "timeline-dot-danger",
+};
+
+/** The status dropdown's options: the value the form submits and the label the trigger shows. */
+const STATUS_OPTIONS: readonly { value: string; label: string }[] = [
+  { value: "", label: "Active" },
+  { value: "all", label: "All statuses" },
+  ...STATUSES.map((status) => ({ value: status, label: STATUS_LABEL[status] })),
+];
+
 type ProjectBatch = { id: string; entries: EntryRow[] };
 type ProjectGroup = { slug: string; batches: ProjectBatch[] };
 
@@ -207,35 +222,103 @@ function entryTitle(entry: EntryRow): string {
   return fileBasename(entry.file);
 }
 
-/** The batch ulid shortened to head+tail, enough to name each batch's select-all checkbox distinctly for a screen reader. */
+/** Whether the displayed title is the agent-supplied one, so the anchor text it stands in for is otherwise unread in the list. */
+function hasOwnTitle(entry: EntryRow): boolean {
+  const title = entry.title?.trim();
+  return title !== undefined && title !== "";
+}
+
+/** The batch ulid shortened to head+tail; it names each batch's select-all and its summary row. */
 function shortUlid(id: string): string {
   return `${id.slice(0, 6)}…${id.slice(-6)}`;
 }
 
-/** The section the current page belongs to, marking the matching navbar link. */
+/** The section the current page belongs to, marking the matching nav link. */
 type NavSection = "entries" | "style-guide" | "none";
 
 /** The icon sprite, pasted into every full page's body as its first child, read off the vendored file so the two can never drift. */
 const ICON_SPRITE = readFileSync(new URL("./static/icons.svg", import.meta.url), "utf8");
 
+/** The theme toggle, once per shell: ui.js's initTheme wires it and owns the pressed state. */
+function ThemeToggle() {
+  return (
+    <button class="btn btn-icon" data-theme-toggle aria-pressed="false" aria-label="Switch to light theme">
+      <svg class="icon-sun" aria-hidden="true"><use href="#i-sun" /></svg>
+      <svg class="icon-moon" aria-hidden="true"><use href="#i-moon" /></svg>
+    </button>
+  );
+}
+
 function Navbar({ signedIn, active }: { signedIn: boolean; active: NavSection }) {
   return (
-    <nav class="navbar">
-      <div class="navbar-inner">
-        <div class="navbar-brand">
-          <div class="logo-name">{NAME}</div>
-        </div>
-        <div class="navbar-nav" id="navbar-nav">
-          <a class={`navbar-link${active === "entries" ? " active" : ""}`} href="/">Entries</a>
-          <a class={`navbar-link${active === "style-guide" ? " active" : ""}`} href="/style-guide">Style guide</a>
-        </div>
-        {signedIn ? (
-          <form method="post" action="/logout" class="navbar-actions">
-            <button class="btn btn-secondary btn-sm" type="submit">Sign out</button>
-          </form>
-        ) : null}
+    <>
+      {/* The mobile shell: topbar and drawer carry the nav under 768px, where the desktop
+          navbar hides (dashboard.css). ui.js's initDrawer wires the hamburger. */}
+      <div class="mobile-topbar">
+        <div class="logo-name">{NAME}</div>
+        <button
+          type="button"
+          class="hamburger"
+          id="hamburger-btn"
+          aria-label="Open navigation"
+          aria-expanded="false"
+          aria-controls="sidebar"
+        >
+          <svg aria-hidden="true"><use href="#i-menu" /></svg>
+        </button>
       </div>
-    </nav>
+      <div class="sidebar-overlay" id="sidebar-overlay"></div>
+      <nav class="sidebar" id="sidebar" aria-label="Dashboard">
+        <div class="sidebar-nav">
+          <div class="nav-group">
+            <div class="nav-group-label">Dashboard</div>
+            <a
+              class={`nav-item${active === "entries" ? " active" : ""}`}
+              href="/"
+              aria-current={active === "entries" ? "true" : undefined}
+            >
+              <svg aria-hidden="true"><use href="#i-folder" /></svg>
+              <span>Entries</span>
+            </a>
+            <a
+              class={`nav-item${active === "style-guide" ? " active" : ""}`}
+              href="/style-guide"
+              aria-current={active === "style-guide" ? "true" : undefined}
+            >
+              <svg aria-hidden="true"><use href="#i-file" /></svg>
+              <span>Style guide</span>
+            </a>
+          </div>
+        </div>
+        <div class="toolbar toolbar-center drawer-foot">
+          <ThemeToggle />
+          {signedIn ? (
+            <form method="post" action="/logout">
+              <button class="btn btn-secondary btn-sm" type="submit">Sign out</button>
+            </form>
+          ) : null}
+        </div>
+      </nav>
+      <nav class="navbar">
+        <div class="navbar-inner">
+          <div class="navbar-brand">
+            <div class="logo-name">{NAME}</div>
+          </div>
+          <div class="navbar-nav" id="navbar-nav">
+            <a class={`navbar-link${active === "entries" ? " active" : ""}`} href="/">Entries</a>
+            <a class={`navbar-link${active === "style-guide" ? " active" : ""}`} href="/style-guide">Style guide</a>
+          </div>
+          <div class="navbar-actions">
+            <ThemeToggle />
+            {signedIn ? (
+              <form method="post" action="/logout">
+                <button class="btn btn-secondary btn-sm" type="submit">Sign out</button>
+              </form>
+            ) : null}
+          </div>
+        </div>
+      </nav>
+    </>
   );
 }
 
@@ -245,14 +328,71 @@ function PageHeader({ total }: { total: number }) {
       <div class="page-header-body">
         <h1 class="page-title">Entries</h1>
         <div class="page-meta">
-          <span class="page-meta-item">{total} {total === 1 ? "entry" : "entries"}</span>
+          <span class="page-meta-item num">{total} {total === 1 ? "entry" : "entries"}</span>
         </div>
       </div>
     </header>
   );
 }
 
+/**
+ * One dropdown filter as the system `.select`: the trigger shows the current label, the menu
+ * carries one option per value, and a hidden input carries the submission. The hidden input ships
+ * disabled with its name already on it, so a no-JS submit reads the `<noscript>` native selects
+ * instead of a stale hidden value; dashboard.js enables the hidden ones once the widgets are live.
+ */
+function FilterSelect({
+  id,
+  label,
+  field,
+  current,
+  options,
+}: {
+  id: string;
+  label: string;
+  field: string;
+  current: string;
+  options: readonly { value: string; label: string }[];
+}) {
+  const currentLabel = options.find((option) => option.value === current)?.label ?? options[0]!.label;
+  return (
+    <>
+      <span class="sr-only" id={`${id}-label`}>{label}</span>
+      <div class="select" data-filter={field}>
+        <button
+          type="button"
+          class="input select-trigger"
+          role="combobox"
+          aria-expanded="false"
+          aria-haspopup="listbox"
+          aria-labelledby={`${id}-label`}
+        >
+          <span class="select-value">{currentLabel}</span>
+          <svg class="select-caret" aria-hidden="true"><use href="#i-chevron-down" /></svg>
+        </button>
+        <div class="select-menu" role="listbox" aria-labelledby={`${id}-label`}>
+          {options.map((option) => (
+            <div
+              class="menu-item"
+              role="option"
+              aria-selected={String(option.value === current)}
+              data-value={option.value}
+            >
+              {option.label}
+            </div>
+          ))}
+        </div>
+      </div>
+      <input type="hidden" name={field} value={current} data-filter-field={field} disabled />
+    </>
+  );
+}
+
 function FilterForm({ vm }: { vm: ListViewModel }) {
+  const projectOptions = [
+    { value: "", label: "All projects" },
+    ...vm.projects.map((project) => ({ value: project.slug, label: project.slug })),
+  ];
   return (
     <form
       id="filters"
@@ -262,10 +402,13 @@ function FilterForm({ vm }: { vm: ListViewModel }) {
       hx-target="#entries-list"
       hx-swap="innerHTML"
       hx-indicator="#entries-loading"
-      class="filters"
+      class="filter-bar"
     >
-      <div class="field">
-        <label class="field-label" for="q">Search</label>
+      <div class="input-wrap has-icon filter-search">
+        <div class="input-icon">
+          <svg aria-hidden="true"><use href="#i-search" /></svg>
+        </div>
+        <label class="sr-only" for="q">Search</label>
         <input
           class="input"
           id="q"
@@ -275,29 +418,23 @@ function FilterForm({ vm }: { vm: ListViewModel }) {
           value={vm.q}
         />
       </div>
-      <div class="field">
-        <label class="field-label" for="status">Status</label>
-        <select class="input" id="status" name="status">
-          <option value="" selected={vm.status === ""}>Active</option>
-          <option value="all" selected={vm.status === "all"}>All statuses</option>
-          <option value="draft" selected={vm.status === "draft"}>Draft</option>
-          <option value="approved" selected={vm.status === "approved"}>Approved</option>
-          <option value="applied" selected={vm.status === "applied"}>Applied</option>
-          <option value="rejected" selected={vm.status === "rejected"}>Rejected</option>
-        </select>
-      </div>
-      <div class="field">
-        <label class="field-label" for="project">Project</label>
-        <select class="input" id="project" name="project">
-          <option value="">All projects</option>
-          {vm.projects.map((project) => (
-            <option value={project.slug} selected={vm.project === project.slug}>
-              {project.slug}
-            </option>
+      <FilterSelect id="filter-status" label="Status" field="status" current={vm.status} options={STATUS_OPTIONS} />
+      <FilterSelect id="filter-project" label="Project" field="project" current={vm.project} options={projectOptions} />
+      {/* The no-JS submit path: native selects carrying the names the hidden inputs hold, so the
+          filters still work with scripting off. With JS on, this block is not in the DOM. */}
+      <noscript>
+        <label class="sr-only" for="status-native">Status</label>
+        <select class="input" id="status-native" name="status">
+          {STATUS_OPTIONS.map((option) => (
+            <option value={option.value} selected={option.value === vm.status}>{option.label}</option>
           ))}
         </select>
-      </div>
-      <noscript>
+        <label class="sr-only" for="project-native">Project</label>
+        <select class="input" id="project-native" name="project">
+          {projectOptions.map((option) => (
+            <option value={option.value} selected={option.value === vm.project}>{option.label}</option>
+          ))}
+        </select>
         <button class="btn btn-primary" type="submit">Apply filters</button>
       </noscript>
     </form>
@@ -387,10 +524,9 @@ function ListRegion({ vm, notice }: { vm: ListViewModel; notice: ListNotice | un
 
 function PartialHeader({ shown, total }: { shown: number; total: number }) {
   return (
-    <div class="partial-header">
-      <span class="partial-count">
-        Showing {shown} of {total} entries
-      </span>
+    <div class="toolbar partial-header">
+      <span class="pagination-count">Showing {shown} of {total} entries</span>
+      <div class="grow"></div>
       <a href="/" class="btn btn-secondary btn-sm">Clear filters</a>
     </div>
   );
@@ -398,7 +534,7 @@ function PartialHeader({ shown, total }: { shown: number; total: number }) {
 
 function EmptyAll() {
   return (
-    <div class="card empty-state">
+    <div class="empty-state">
       <svg aria-hidden="true"><use href="#i-file" /></svg>
       <div class="empty-title">No entries yet</div>
       <div>Agents file text through the reviewzy mcp endpoint. Filed entries appear here.</div>
@@ -414,7 +550,7 @@ function EmptyAll() {
  */
 function EmptyMatch({ revealAllHref }: { revealAllHref: string | undefined }) {
   return (
-    <div class="card empty-state">
+    <div class="empty-state">
       <svg aria-hidden="true"><use href="#i-search" /></svg>
       <div class="empty-title">No entries match</div>
       <div>Try different search terms, or clear the filters.</div>
@@ -432,7 +568,7 @@ function EmptyMatch({ revealAllHref }: { revealAllHref: string | undefined }) {
 /** The default Active view over a store whose entries are all applied or rejected: nothing to do, no filters to clear. */
 function EmptyActive() {
   return (
-    <div class="card empty-state">
+    <div class="empty-state">
       <svg aria-hidden="true"><use href="#i-success" /></svg>
       <div class="empty-title">Nothing to review</div>
       <div>Every filed entry is applied or rejected. New drafts appear here as agents file them.</div>
@@ -461,10 +597,11 @@ function BatchForm({ vm }: { vm: ListViewModel }) {
       <input type="hidden" name="q" value={vm.q} />
       <input type="hidden" name="status" value={vm.status} />
       <input type="hidden" name="project" value={vm.project} />
-      <div class="batch-bar">
-        <button class="btn btn-primary btn-sm" type="submit" hx-disabled-elt="this">
+      <div class="toolbar batch-bar">
+        <button class="btn btn-fill btn-sm" type="submit" hx-disabled-elt="this">
           Approve selected
         </button>
+        <div class="grow"></div>
       </div>
       {vm.groups.map((group) => (
         <ProjectGroupView key={group.slug} group={group} />
@@ -477,104 +614,92 @@ function ProjectGroupView({ group }: { group: ProjectGroup }) {
   const count = group.batches.reduce((n, batch) => n + batch.entries.length, 0);
   return (
     <section class="project-group">
-      <header class="project-header">
-        <h2 class="project-name">{group.slug}</h2>
-        <span class="tag tag-data">
-          {count} {count === 1 ? "entry" : "entries"}
-        </span>
-        {/* Every section and batch ships open; dashboard.js collapses the ones this viewer
-            collapsed before (localStorage) and keeps the buttons inert without JS. */}
-        <button
-          type="button"
-          class="btn btn-icon collapse-toggle"
-          aria-expanded="true"
-          aria-controls={`project-batches-${group.slug}`}
-          aria-label={`Toggle ${group.slug} section`}
-          data-collapse-toggle
-          data-collapse-target={`project-batches-${group.slug}`}
-          data-collapse-key={`project:${group.slug}`}
-        >
-          <svg aria-hidden="true"><use href="#i-chevron-down" /></svg>
-        </button>
-      </header>
-      <div id={`project-batches-${group.slug}`}>
-        {group.batches.map((batch) => (
-          <BatchView key={batch.id} batch={batch} />
-        ))}
-      </div>
+      {/* Every section and batch ships open; dashboard.js collapses the ones this viewer
+          collapsed before (localStorage) and re-applies the choice after every swap. Without
+          JS the native details stays open. */}
+      <details class="disclosure project-disclosure" data-collapse-key={`project:${group.slug}`} open>
+        <summary>
+          <svg aria-hidden="true"><use href="#i-chevron-right" /></svg>
+          <h2 class="project-name">{group.slug}</h2>
+          <span class="tag tag-data num">
+            {count} {count === 1 ? "entry" : "entries"}
+          </span>
+        </summary>
+        <div class="disclosure-body">
+          {group.batches.map((batch) => (
+            <BatchView key={batch.id} batch={batch} />
+          ))}
+        </div>
+      </details>
     </section>
   );
 }
 
 function BatchView({ batch }: { batch: ProjectBatch }) {
-  // A batch names its filer in the header only when every entry agrees on one non-null
-  // value; a disagreement leaves the header filer-less and each row names its own inline.
+  // A batch names its filer in the summary only when every entry agrees on one non-null
+  // value; a disagreement leaves the summary filer-less and each row names its own inline.
   const filedBy = batch.entries.map((entry) => entry.filed_by);
   const allAgree = filedBy.every((filer) => filer === filedBy[0]);
   const singleFiler = allAgree && filedBy[0] !== null ? filedBy[0] : null;
   const mixedFilers = !allAgree && filedBy.some((filer) => filer !== null);
   return (
     <div class="batch">
-      <div class="batch-header">
-        {/* Select-all toggles only this batch's draft rows. No `name`, so it never submits as
-            an entry id; dashboard.js derives checked/indeterminate from the draft checkboxes. */}
-        <label class="checkbox-label">
-          <input type="checkbox" class="select-all" aria-label={`Select all drafts in batch ${shortUlid(batch.id)}`} />
-        </label>
-        {singleFiler !== null ? <span class="batch-meta">{singleFiler}</span> : null}
-        <button
-          type="button"
-          class="btn btn-icon collapse-toggle"
-          aria-expanded="true"
-          aria-controls={`batch-table-${batch.id}`}
-          aria-label={`Toggle batch ${shortUlid(batch.id)}`}
-          data-collapse-toggle
-          data-collapse-target={`batch-table-${batch.id}`}
-          data-collapse-key={`batch:${batch.id}`}
-        >
-          <svg aria-hidden="true"><use href="#i-chevron-down" /></svg>
-        </button>
-      </div>
-      <div class="table-wrap" id={`batch-table-${batch.id}`}>
-        <table>
-          <colgroup>
-            <col class="col-select" />
-            <col />
-            <col class="col-status" />
-            <col class="col-file" />
-            <col class="col-actions" />
-          </colgroup>
-          <thead>
-            <tr>
-              {/* The column header stays in the accessibility tree via the sr-only span; the
-                  checkbox column itself is too narrow for a visible label. */}
-              <th class="cell-select" scope="col"><span class="sr-only">Select</span></th>
-              <th scope="col">Title</th>
-              <th scope="col">Status</th>
-              <th scope="col">File</th>
-              <th scope="col">Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {batch.entries.map((entry) => (
-              <EntryRowView key={entry.id} entry={entry} filerInline={mixedFilers} />
-            ))}
-          </tbody>
-        </table>
-      </div>
+      <details class="disclosure batch-disclosure" data-collapse-key={`batch:${batch.id}`} open>
+        {/* The ulid chip names the summary for assistive tech; the filer rides beside it. */}
+        <summary>
+          <svg aria-hidden="true"><use href="#i-chevron-right" /></svg>
+          <span class="tag tag-data">{shortUlid(batch.id)}</span>
+          {singleFiler !== null ? <span>{singleFiler}</span> : null}
+        </summary>
+        <div class="disclosure-body">
+          <div class="table-wrap">
+            <table>
+              <colgroup>
+                <col class="col-select" />
+                <col />
+                <col class="col-status" />
+                <col class="col-file" />
+                <col class="col-actions" />
+              </colgroup>
+              <thead>
+                <tr>
+                  {/* The select-all lives in the checkbox column: ui.js's initTables owns the
+                      checked and indeterminate state machine for the wrap. No `name`, so it never
+                      submits as an entry id; only the draft checkboxes post as `id`. */}
+                  <th class="cell-select" scope="col">
+                    <span class="sr-only">Select</span>
+                    <label class="checkbox-label">
+                      <input type="checkbox" data-select-all aria-label={`Select all drafts in batch ${shortUlid(batch.id)}`} />
+                    </label>
+                  </th>
+                  <th scope="col">Title</th>
+                  <th scope="col">Status</th>
+                  <th scope="col">File</th>
+                  <th scope="col">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {batch.entries.map((entry) => (
+                  <EntryRowView key={entry.id} entry={entry} filerInline={mixedFilers} />
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </details>
     </div>
   );
 }
 
 /**
- * One row. The checkbox names the entry for the batch form; it exists only on drafts, because an
- * approve on any other status always refuses and a checkbox that can only refuse is noise (races
- * are still reported per entry). The status chip sits beside the title; the three icon action slots
- * always render, inapplicable ones disabled, so a double-click's second click lands on the disabled
- * slot rather than a shifted action. Approve and reject target the list region and include the
- * batch form's hidden filters, so an action round re-renders the region under the same filter; the
- * editor link is always present. When the batch holds mixed filers, the row also names its own
- * filer beside the title.
+ * One row. The checkbox names the entry for the batch form (and `data-name` hands it to the
+ * selection controller); it exists only on drafts, because an approve on any other status always
+ * refuses and a checkbox that can only refuse is noise (races are still reported per entry). The
+ * status chip sits in its own column; the three icon action slots always render, inapplicable ones
+ * disabled, so a double-click's second click lands on the disabled slot rather than a shifted
+ * action. Approve and reject target the list region and include the batch form's hidden filters,
+ * so an action round re-renders the region under the same filter; the editor link is always
+ * present. When the batch holds mixed filers, the row also names its own filer beside the title.
  */
 function EntryRowView({ entry, filerInline }: { entry: EntryRow; filerInline: boolean }) {
   const title = entryTitle(entry);
@@ -585,20 +710,26 @@ function EntryRowView({ entry, filerInline }: { entry: EntryRow; filerInline: bo
       <td class="cell-select">
         {approve ? (
           <label class="checkbox-label">
-            <input type="checkbox" name="id" value={entry.id} aria-label={`Select ${entry.file}`} />
+            <input type="checkbox" name="id" value={entry.id} data-name={entry.id} aria-label={`Select ${entry.file}`} />
           </label>
         ) : null}
       </td>
-      <td title={`${entry.file} — ${entry.anchor_text}`}>
+      <td>
         <div class="entry-head">
-          <span class="entry-title">{title}</span>
+          <span class="entry-title truncate">{title}</span>
           {filerInline && entry.filed_by !== null ? <span class="entry-filer"> · {entry.filed_by}</span> : null}
         </div>
+        {/* A titled entry displays the title in place of the anchor text, so the anchor the entry
+            changes would otherwise reach no one but the editor. */}
+        {hasOwnTitle(entry) ? <span class="sr-only">{entry.anchor_text}</span> : null}
       </td>
       <td>
-        <span class={`tag ${STATUS_TAG[entry.status]}`}>{STATUS_LABEL[entry.status]}</span>
+        <span class={`tag ${STATUS_TAG[entry.status]}`}>
+          <span class="tag-dot"></span>
+          {STATUS_LABEL[entry.status]}
+        </span>
       </td>
-      <td class="cell-file" title={entry.file}>{entry.file}</td>
+      <td class="cell-file truncate">{entry.file}</td>
       <td class="cell-actions">
         {approve ? (
           <button
@@ -649,26 +780,6 @@ function EntryRowView({ entry, filerInline }: { entry: EntryRow; filerInline: bo
   );
 }
 
-/** The error box htmx failures clone into the list region; the retry button re-submits the form. */
-function ErrorBoxTemplate() {
-  return (
-    <template id="error-box">
-      <div class="callout callout-danger" role="alert">
-        <div class="callout-icon">
-          <svg aria-hidden="true"><use href="#i-error" /></svg>
-        </div>
-        <div class="callout-content">
-          <div class="callout-title">The list could not be loaded</div>
-          <div class="callout-body">The filter request failed. Try it again.</div>
-          <div class="callout-actions">
-            <button class="btn btn-secondary btn-sm" type="button" data-retry>Retry</button>
-          </div>
-        </div>
-      </div>
-    </template>
-  );
-}
-
 /** The saved theme, restored before the stylesheet, or a light-theme visitor sees a dark flash. */
 const THEME_RESTORE = raw(
   'const saved = localStorage.getItem("cloudy-theme"); if (saved) document.documentElement.dataset.theme = saved;',
@@ -709,7 +820,7 @@ function PageModules() {
   );
 }
 
-/** The full page for a plain navigation; the mount wraps it in the doctype. `signedIn` is whether the navbar offers sign-out. */
+/** The full page for a plain navigation; the mount wraps it in the doctype. `signedIn` is whether the nav offers sign-out. */
 export function dashboardPage(
   store: Store,
   params: ListParams,
@@ -722,23 +833,21 @@ export function dashboardPage(
       <PageHead title={`Entries · ${NAME}`} />
       <body>
         <IconSprite />
-        <div class="app-shell">
-          <Navbar signedIn={signedIn} active="entries" />
-          <main class="main">
-            <PageHeader total={vm.total} />
-            <FilterForm vm={vm} />
-            <div id="entries">
-              <div id="entries-loading" class="htmx-indicator" role="status">
-                <span class="spinner" aria-hidden="true"></span>
-                Loading entries
-              </div>
-              <div id="entries-list">
-                <ListRegion vm={vm} notice={notice} />
-              </div>
+        <Navbar signedIn={signedIn} active="entries" />
+        <main class="page">
+          <PageHeader total={vm.total} />
+          <FilterForm vm={vm} />
+          <div id="entries">
+            <div id="entries-loading" class="htmx-indicator" role="status">
+              <span class="spinner" aria-hidden="true"></span>
+              Loading entries
             </div>
-            <ErrorBoxTemplate />
-          </main>
-        </div>
+            <div id="entries-list">
+              <ListRegion vm={vm} notice={notice} />
+            </div>
+          </div>
+        </main>
+        <div class="toast-stack" id="toast-stack"></div>
         <PageModules />
       </body>
     </html>
@@ -746,10 +855,10 @@ export function dashboardPage(
 }
 
 /**
- * The login page: the navbar shell, the page-header triplet, and one centered card holding the
- * password field. `error` is the single failure message, shown as an alert callout; the field
- * itself is always cleared, and `next` rides along as a hidden input so a successful retry still
- * lands where the visitor was going.
+ * The login screen: a viewport-owning page-state with the sign-in card and no shell — the way out
+ * is signing in. `error` is the single failure message, shown as an alert callout inside the
+ * card's flow; the field itself is always cleared, and `next` rides along as a hidden input so a
+ * successful retry still lands where the visitor was going.
  */
 export function loginPage(next: string | undefined, error: string | undefined = undefined): JSX.Element {
   return (
@@ -757,20 +866,21 @@ export function loginPage(next: string | undefined, error: string | undefined = 
       <PageHead title={`Sign in · ${NAME}`} />
       <body>
         <IconSprite />
-        <div class="app-shell">
-          <Navbar signedIn={false} active="none" />
-          <main class="main login-main">
-            <header class="page-header">
-              <div class="page-header-body">
-                <div class="label page-eyebrow">Dashboard</div>
-                <h1 class="page-title">Sign in</h1>
-                <p class="page-lede">The dashboard is password protected. Enter the password to continue.</p>
-              </div>
-            </header>
-            {error !== undefined ? <DangerCallout title={error} /> : null}
-            <form method="post" action="/login" class="card login-card">
+        <main class="page-state">
+          <div class="page-state-card">
+            <div class="page-state-brand">
+              <div class="logo-name">{NAME}</div>
+            </div>
+            <form method="post" action="/login" class="card">
               {next !== undefined ? <input type="hidden" name="next" value={next} /> : null}
-              <div class="card-content">
+              <div class="card-header">
+                <div>
+                  <div class="card-title">Sign in</div>
+                  <div class="card-subtitle">The dashboard is password protected. Enter the password to continue.</div>
+                </div>
+              </div>
+              <div class="card-content login-content">
+                {error !== undefined ? <DangerCallout title={error} /> : null}
                 <div class="field">
                   <label class="field-label" for="password">Password</label>
                   <input
@@ -782,19 +892,19 @@ export function loginPage(next: string | undefined, error: string | undefined = 
                   />
                 </div>
                 <div class="login-actions">
-                  <button class="btn btn-primary" type="submit">Sign in</button>
+                  <button class="btn btn-fill" type="submit">Sign in</button>
                 </div>
               </div>
             </form>
-          </main>
-        </div>
+          </div>
+        </main>
         <PageModules />
       </body>
     </html>
   );
 }
 
-/** The list region only, for htmx requests; the loading strip and the error template stay in the page. */
+/** The list region only, for htmx requests; the loading strip and the toast stack stay in the page. */
 export function entriesFragment(store: Store, params: ListParams, notice: ListNotice | undefined = undefined): JSX.Element {
   return <ListRegion vm={loadList(store, params)} notice={notice} />;
 }
@@ -935,6 +1045,7 @@ function EditorRegion({ vm, state }: { vm: EditorViewModel; state: EditorState |
         <div class="card-header">
           <div class="card-title editor-title">{entryTitle(vm.entry)}</div>
           <span class={`tag ${STATUS_TAG[vm.entry.status]}`}>
+            <span class="tag-dot"></span>
             {STATUS_LABEL[vm.entry.status]}
           </span>
         </div>
@@ -943,7 +1054,7 @@ function EditorRegion({ vm, state }: { vm: EditorViewModel; state: EditorState |
             {text}
           </textarea>
           <div class="editor-actions">
-            <button class="btn btn-primary" type="submit">Save text</button>
+            <button class="btn btn-fill" type="submit">Save text</button>
             {approve ? (
               <button
                 type="button"
@@ -989,6 +1100,7 @@ function EditorRegion({ vm, state }: { vm: EditorViewModel; state: EditorState |
   );
 }
 
+/** The audit log of saved revisions: the shipped timeline, one dot per entry. */
 function RevisionHistory({ revisions }: { revisions: readonly RevisionRow[] }) {
   return (
     <div class="card">
@@ -997,31 +1109,36 @@ function RevisionHistory({ revisions }: { revisions: readonly RevisionRow[] }) {
       </div>
       <div class="card-content">
         {revisions.length === 0 ? (
-          <p class="history-empty">No saved revisions yet</p>
+          <div class="empty-state">
+            <div class="empty-title">No saved revisions yet</div>
+          </div>
         ) : (
-          <ul class="revision-list">
+          <ol class="timeline">
             {revisions.map((revision) => (
-              <li class="revision" key={revision.id}>
-                <div class="revision-head">
-                  <span class={`tag tag-data ${STATUS_TAG[revision.status]}`}>{STATUS_LABEL[revision.status]}</span>
-                  <time class="revision-time" datetime={new Date(revision.created_at).toISOString()}>
-                    {new Date(revision.created_at).toLocaleString()}
-                  </time>
-                  <button class="btn btn-secondary btn-sm" type="button" data-use-revision>
-                    Use
-                  </button>
+              <li class="timeline-item" key={revision.id}>
+                <span class={`timeline-dot ${STATUS_DOT[revision.status]}`} aria-hidden="true"></span>
+                <div>
+                  <div class="timeline-head">
+                    <span class={`tag tag-data ${STATUS_TAG[revision.status]}`}>{STATUS_LABEL[revision.status]}</span>
+                    <time class="timeline-time" datetime={new Date(revision.created_at).toISOString()}>
+                      {new Date(revision.created_at).toLocaleString()}
+                    </time>
+                    <button class="btn btn-secondary btn-sm" type="button" data-use-revision>
+                      Use
+                    </button>
+                  </div>
+                  <div class="timeline-body clamp-2">{revision.human_text}</div>
                 </div>
-                <div class="revision-text">{revision.human_text}</div>
               </li>
             ))}
-          </ul>
+          </ol>
         )}
       </div>
     </div>
   );
 }
 
-/** The constraint panel: what the entry's save enforces (length, placeholders), plus the display-only tone. The notes moved to their own card, so the enforced fields stay the card's lead. */
+/** The constraint panel as the system's key-value readout: live count and placeholder checklist stay wired. */
 function ConstraintsCard({ constraints, text }: { constraints: Constraints; text: string }) {
   const maxLen = constraints.maxLen;
   const placeholders = constraints.placeholders;
@@ -1034,40 +1151,44 @@ function ConstraintsCard({ constraints, text }: { constraints: Constraints; text
         <div class="card-title">Constraints</div>
       </div>
       <div class="card-content">
-        {maxLen !== undefined ? (
-          <div class="constraint-row">
-            <div class="constraint-label">Length</div>
-            <div class="constraint-value">
-              <span id="char-count" class="num char-count" data-max-len={maxLen}>
-                {text.length} / {maxLen}
-              </span>
-            </div>
-          </div>
-        ) : null}
-        {placeholders.length > 0 ? (
-          <div class="constraint-row">
-            <div class="constraint-label">Placeholders</div>
-            <ul class="placeholder-list">
-              {placeholders.map((placeholder) => {
-                const present = text.includes(placeholder);
-                return (
-                  <li class="placeholder-item" data-placeholder={placeholder} key={placeholder}>
-                    <span class={`placeholder-state${present ? " is-present" : ""}`}>
-                      {present ? "Present" : "Missing"}
-                    </span>
-                    <span class="placeholder-token">{"{" + placeholder + "}"}</span>
-                  </li>
-                );
-              })}
-            </ul>
-          </div>
-        ) : null}
-        {tone !== undefined ? (
-          <div class="constraint-row">
-            <div class="constraint-label">Tone</div>
-            <div class="constraint-value">{tone}</div>
-          </div>
-        ) : null}
+        <table class="info-table">
+          {maxLen !== undefined ? (
+            <tr key="max-len">
+              <td>Length</td>
+              <td>
+                <span id="char-count" class="num char-count" data-max-len={maxLen}>
+                  {text.length} / {maxLen}
+                </span>
+              </td>
+            </tr>
+          ) : null}
+          {placeholders.length > 0 ? (
+            <tr key="placeholders">
+              <td>Placeholders</td>
+              <td>
+                <ul class="placeholder-list">
+                  {placeholders.map((placeholder) => {
+                    const present = text.includes(placeholder);
+                    return (
+                      <li class="placeholder-item" data-placeholder={placeholder} key={placeholder}>
+                        <span class={`placeholder-state${present ? " is-present" : ""}`}>
+                          {present ? "Present" : "Missing"}
+                        </span>
+                        <span class="tag tag-data">{"{" + placeholder + "}"}</span>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </td>
+            </tr>
+          ) : null}
+          {tone !== undefined ? (
+            <tr key="tone">
+              <td>Tone</td>
+              <td>{tone}</td>
+            </tr>
+          ) : null}
+        </table>
       </div>
     </div>
   );
@@ -1087,10 +1208,12 @@ function NotesCard({ vm }: { vm: EditorViewModel }) {
         <div class="card-title">Notes</div>
       </div>
       <div class="card-content">
-        <div class="constraint-row">
-          <div class="constraint-label">Agent's notes</div>
-          <div class="constraint-value">{vm.constraints.notes ?? "None."}</div>
-        </div>
+        <table class="info-table">
+          <tr>
+            <td>Agent's notes</td>
+            <td>{vm.constraints.notes ?? "None."}</td>
+          </tr>
+        </table>
         <form
           id="notes-form"
           method="post"
@@ -1128,10 +1251,10 @@ function isRenderableImage(item: string): boolean {
 
 /**
  * The images attached to an entry, one card in the rail: each valid item as a real `img` (sized by
- * css), an invalid one as a "not shown" note, a remove form per image, and the one-file upload
- * form. A card of its own, not a strip in the context card: upload and remove need a stable home,
- * and the context card stays lean for what the human authors against. Both forms target the whole
- * editor view like the save form, so a change re-renders the card in place.
+ * css), an invalid one as a "not shown" note, a remove form per image, and the one-file upload as
+ * the system dropzone. A card of its own, not a strip in the context card: upload and remove need a
+ * stable home, and the context card stays lean for what the human authors against. Both forms
+ * target the whole editor view like the save form, so a change re-renders the card in place.
  */
 function ImagesCard({ entry }: { entry: EntryRow }) {
   const images = parseEntryImages(entry.images);
@@ -1141,46 +1264,63 @@ function ImagesCard({ entry }: { entry: EntryRow }) {
         <div class="card-title">Images</div>
       </div>
       <div class="card-content">
-        {images.length === 0 ? (
-          <p class="field-hint">No images yet.</p>
-        ) : (
-          <ul class="image-list">
-            {images.map((item, index) =>
-              isRenderableImage(item) ? (
-                <li key={index}>
-                  <img class="entry-image" src={item} alt={`Image ${index + 1}`} loading="lazy" />
-                  <form
-                    class="image-remove"
-                    method="post"
-                    action={`/entries/${entry.id}/images/${index}/remove`}
-                    hx-post={`/entries/${entry.id}/images/${index}/remove`}
-                    hx-target="#editor-view"
-                    hx-swap="outerHTML"
-                  >
-                    <button class="btn btn-secondary btn-sm" type="submit">Remove</button>
-                  </form>
-                </li>
-              ) : (
-                <li key={index}>
-                  <p class="image-skip">Image {index + 1} not shown: unsupported source.</p>
-                </li>
-              ),
-            )}
-          </ul>
-        )}
-        <form
-          class="image-upload"
-          method="post"
-          action={`/entries/${entry.id}/images`}
-          enctype="multipart/form-data"
-          hx-post={`/entries/${entry.id}/images`}
-          hx-encoding="multipart/form-data"
-          hx-target="#editor-view"
-          hx-swap="outerHTML"
-        >
-          <input class="input" type="file" name="file" accept="image/*" aria-label="Image file" />
-          <button class="btn btn-secondary btn-sm" type="submit" hx-disabled-elt="this">Add image</button>
-        </form>
+        <div class="dropzone">
+          {/* The native input is the picker and its accessible name; the zone is its paint.
+              It is associated to the submit form by id rather than nested in it, so the zone
+              keeps the direct-child shape the dropzone's own state rules select on. */}
+          <label class="dropzone-target">
+            <svg class="icon" aria-hidden="true"><use href="#i-upload" /></svg>
+            <span class="dropzone-lede">Image file</span>
+            <input
+              class="dropzone-input"
+              type="file"
+              name="file"
+              accept="image/*"
+              aria-label="Image file"
+              form="image-upload"
+            />
+          </label>
+          {images.length === 0 ? (
+            <p class="field-hint">No images yet.</p>
+          ) : (
+            <ul class="dropzone-list image-list">
+              {images.map((item, index) =>
+                isRenderableImage(item) ? (
+                  <li key={index}>
+                    <img class="entry-image" src={item} alt={`Image ${index + 1}`} loading="lazy" />
+                    <form
+                      class="image-remove"
+                      method="post"
+                      action={`/entries/${entry.id}/images/${index}/remove`}
+                      hx-post={`/entries/${entry.id}/images/${index}/remove`}
+                      hx-target="#editor-view"
+                      hx-swap="outerHTML"
+                    >
+                      <button class="btn btn-secondary btn-sm" type="submit">Remove</button>
+                    </form>
+                  </li>
+                ) : (
+                  <li key={index}>
+                    <p class="image-skip">Image {index + 1} not shown: unsupported source.</p>
+                  </li>
+                ),
+              )}
+            </ul>
+          )}
+          <form
+            id="image-upload"
+            class="image-upload"
+            method="post"
+            action={`/entries/${entry.id}/images`}
+            enctype="multipart/form-data"
+            hx-post={`/entries/${entry.id}/images`}
+            hx-encoding="multipart/form-data"
+            hx-target="#editor-view"
+            hx-swap="outerHTML"
+          >
+            <button class="btn btn-secondary btn-sm" type="submit" hx-disabled-elt="this">Add image</button>
+          </form>
+        </div>
       </div>
     </div>
   );
@@ -1188,17 +1328,19 @@ function ImagesCard({ entry }: { entry: EntryRow }) {
 
 /**
  * The repo row's value: a recognized remote renders as its brand icon beside the bare owner/repo
- * path, both linking out to the host; an unrecognized one renders as the raw string as filed.
+ * path, both linking out to the host; an unrecognized one renders as the raw string as filed. The
+ * visible path is the short form, so the full remote rides along for assistive tech.
  */
 function RepoValue({ repo }: { repo: string }) {
   const link = parseRepoLink(repo);
   if (link === null) return <>{repo}</>;
   return (
-    <a class="repo-link" href={link.href} target="_blank" rel="noopener noreferrer" title={repo}>
+    <a class="repo-link" href={link.href} target="_blank" rel="noopener noreferrer">
       <svg class="repo-icon" viewBox="0 0 24 24" aria-hidden="true">
         <path d={REPO_ICON[link.provider]} />
       </svg>
       <span>{link.path}</span>
+      <span class="sr-only">{repo}</span>
     </a>
   );
 }
@@ -1236,26 +1378,31 @@ function ContextCard({ entry }: { entry: EntryRow }) {
             <td>{entry.file}</td>
           </tr>
         </table>
-        <details class="context-secondary">
-          <summary>More</summary>
-          <table class="info-table">
-            <tr>
-              <td>File hash</td>
-              <td>{entry.file_hash}</td>
-            </tr>
-            {entry.filed_by !== null ? (
+        <details class="disclosure context-secondary">
+          <summary>
+            <svg aria-hidden="true"><use href="#i-chevron-right" /></svg>
+            <span>More</span>
+          </summary>
+          <div class="disclosure-body">
+            <table class="info-table">
               <tr>
-                <td>Filed by</td>
-                <td>{entry.filed_by}</td>
+                <td>File hash</td>
+                <td>{entry.file_hash}</td>
               </tr>
-            ) : null}
-            {entry.stale_note !== null ? (
-              <tr>
-                <td>Stale note</td>
-                <td>{entry.stale_note}</td>
-              </tr>
-            ) : null}
-          </table>
+              {entry.filed_by !== null ? (
+                <tr>
+                  <td>Filed by</td>
+                  <td>{entry.filed_by}</td>
+                </tr>
+              ) : null}
+              {entry.stale_note !== null ? (
+                <tr>
+                  <td>Stale note</td>
+                  <td>{entry.stale_note}</td>
+                </tr>
+              ) : null}
+            </table>
+          </div>
         </details>
       </div>
     </div>
@@ -1264,7 +1411,7 @@ function ContextCard({ entry }: { entry: EntryRow }) {
 
 /**
  * The before-and-after of the entry's text, above the editor: what the anchored region reads now
- * (the anchor visually distinct) and what the entry's text will replace it with. Both sides
+ * (the anchor marked as the annotation) and what the entry's text will replace it with. Both sides
  * escape through JSX; the text is the stored bytes, shown as-is. The word-level marks come from
  * the server-side walk: words only the anchor has render red in the before card, words only the proposal
  * has render green in the after card, everything shared stays plain, so an identical pair renders
@@ -1284,7 +1431,7 @@ function DiffView({ entry }: { entry: EntryRow }) {
         </div>
         <pre class="diff-code">
           <span class="diff-line">{entry.anchor_before}</span>
-          <span class="diff-line diff-anchor">
+          <span class="diff-line diff-anchor annot-mark">
             {diff.before.map((token, index) =>
               token.kind === "removed" ? (
                 <span class="diff-remove" key={index}>{token.text}</span>
@@ -1370,30 +1517,29 @@ function EditorNavButton({ side, targetId }: { side: "prev" | "next"; targetId: 
   );
 }
 
-/** The full editor page; the mount wraps it in the doctype. `signedIn` is whether the navbar offers sign-out. */
+/** The full editor page; the mount wraps it in the doctype. `signedIn` is whether the nav offers sign-out. */
 export function editorPage(vm: EditorViewModel, state: EditorState | undefined = undefined, signedIn = false): JSX.Element {
   return (
     <html lang="en" data-theme="dark">
       <PageHead title={`Edit entry · ${NAME}`} />
       <body>
         <IconSprite />
-        <div class="app-shell">
-          <Navbar signedIn={signedIn} active="entries" />
-          <main class="main">
-            <header class="page-header">
-              <div class="page-header-body">
-                <div class="label page-eyebrow">Entry review</div>
-                <h1 class="page-title">Edit entry</h1>
-                <p class="page-lede">Saving the text approves the entry and releases it to agents.</p>
-              </div>
-            </header>
-            <EditorView vm={vm} state={state} />
-            <EditorNav prevId={vm.prevId} nextId={vm.nextId} />
-            {/* The one live region: announcements on constraint-state flips only, so a screen reader
-                is not flooded with a per-keystroke value. Lives outside the swap region. */}
-            <span id="editor-live" class="sr-only" aria-live="polite"></span>
-          </main>
-        </div>
+        <Navbar signedIn={signedIn} active="entries" />
+        <main class="page">
+          <header class="page-header">
+            <div class="page-header-body">
+              <div class="label">Entry review</div>
+              <h1 class="page-title">Edit entry</h1>
+              <p class="section-lede">Saving the text approves the entry and releases it to agents.</p>
+            </div>
+          </header>
+          <EditorView vm={vm} state={state} />
+          <EditorNav prevId={vm.prevId} nextId={vm.nextId} />
+          {/* The one live region: announcements on constraint-state flips only, so a screen reader
+              is not flooded with a per-keystroke value. Lives outside the swap region. */}
+          <span id="editor-live" class="sr-only" aria-live="polite"></span>
+        </main>
+        <div class="toast-stack" id="toast-stack"></div>
         <PageModules />
       </body>
     </html>
@@ -1410,26 +1556,24 @@ export function editorViewFragment(vm: EditorViewModel, state: EditorState | und
   return <EditorView vm={vm} state={state} />;
 }
 
-/** The 404 page for an unknown entry id, with the way onward the page-not-found pattern demands. `signedIn` is whether the navbar offers sign-out. */
-export function notFoundPage(signedIn = false): JSX.Element {
+/** The viewport-owning error page for an unknown entry id or route, with the way onward the page-not-found pattern demands. */
+export function notFoundPage(_signedIn = false): JSX.Element {
   return (
     <html lang="en" data-theme="dark">
       <PageHead title={`Entry not found · ${NAME}`} />
       <body>
         <IconSprite />
-        <div class="app-shell">
-          <Navbar signedIn={signedIn} active="entries" />
-          <main class="main">
-            <header class="page-header">
-              <div class="page-header-body">
-                <div class="label page-eyebrow">Entry review</div>
-                <h1 class="page-title">Entry not found</h1>
-                <p class="page-lede">This entry doesn't exist. Return to the list to find it.</p>
+        <main class="page-state">
+          <div class="page-state-gap">
+            <div class="page-state-body">
+              <p class="page-state-title">Entry not found</p>
+              <p class="page-state-text">This entry doesn't exist. Return to the list to find it.</p>
+              <div class="page-state-actions">
+                <a href="/" class="btn btn-fill">Back to entries</a>
               </div>
-            </header>
-            <a href="/" class="btn btn-secondary">Back to entries</a>
-          </main>
-        </div>
+            </div>
+          </div>
+        </main>
         <PageModules />
       </body>
     </html>
@@ -1527,31 +1671,29 @@ function InfoCallout({ title, body }: { title: string; body?: string }) {
   );
 }
 
-/** The project selector: the global section plus every known project, as links, with the current one marked. A link list is the whole mechanism; the section never auto-creates a project. */
+/** The project selector: the global section plus every known project, as underline tabs with the current one marked. A link list is the whole mechanism; the section never auto-creates a project. ui.js builds the sliding ink. */
 function StyleGuideProjects({ vm }: { vm: StyleGuideViewModel }) {
   const activeSlug = vm.unknown ? null : vm.projectSlug;
   return (
-    <nav class="style-guide-projects" aria-label="Style guide sections">
-      <ProjectSectionLink href="/style-guide" label="Global" active={activeSlug === null} />
-      {vm.projects.map((project) => (
-        <ProjectSectionLink
-          key={project.slug}
-          href={`/style-guide?project=${project.slug}`}
-          label={project.slug}
-          active={activeSlug === project.slug}
-        />
-      ))}
+    <nav class="tabs-wrap style-guide-projects" aria-label="Style guide sections">
+      <div class="tabs">
+        <ProjectSectionLink href="/style-guide" label="Global" active={activeSlug === null} />
+        {vm.projects.map((project) => (
+          <ProjectSectionLink
+            key={project.slug}
+            href={`/style-guide?project=${project.slug}`}
+            label={project.slug}
+            active={activeSlug === project.slug}
+          />
+        ))}
+      </div>
     </nav>
   );
 }
 
 function ProjectSectionLink({ href, label, active }: { href: string; label: string; active: boolean }) {
   return (
-    <a
-      class={`btn btn-sm ${active ? "btn-primary" : "btn-secondary"}`}
-      href={href}
-      aria-current={active ? "page" : undefined}
-    >
+    <a class={`tab${active ? " active" : ""}`} href={href} aria-current={active ? "page" : undefined}>
       {label}
     </a>
   );
@@ -1611,7 +1753,7 @@ function StyleGuideRegion({ vm, state }: { vm: StyleGuideViewModel; state: Style
         <div class="card-header">
           <div class="card-title">{vm.projectSlug === null ? "Global guide" : `${vm.projectSlug} guide`}</div>
         </div>
-        <div class="card-content">
+        <div class="card-content form-grid">
           <div class="field">
             <label class="field-label" for="style-guide-markdown">Markdown</label>
             <textarea class="input" id="style-guide-markdown" name="markdown" rows={10} aria-label="Guide markdown">
@@ -1636,7 +1778,7 @@ function StyleGuideRegion({ vm, state }: { vm: StyleGuideViewModel; state: Style
             ) : null}
           </div>
           <div class="editor-actions">
-            <button class="btn btn-primary" type="submit" hx-disabled-elt="this">Save guide</button>
+            <button class="btn btn-fill" type="submit" hx-disabled-elt="this">Save guide</button>
             <span id="style-guide-loading" class="htmx-indicator" role="status">
               <span class="spinner" aria-hidden="true"></span>
               Saving guide
@@ -1648,27 +1790,7 @@ function StyleGuideRegion({ vm, state }: { vm: StyleGuideViewModel; state: Style
   );
 }
 
-/** The error box htmx failures clone into the style guide region; the retry button re-submits the save form. */
-function StyleGuideErrorBoxTemplate() {
-  return (
-    <template id="style-guide-error-box">
-      <div class="callout callout-danger" role="alert">
-        <div class="callout-icon">
-          <svg aria-hidden="true"><use href="#i-error" /></svg>
-        </div>
-        <div class="callout-content">
-          <div class="callout-title">The guide could not be saved</div>
-          <div class="callout-body">The save request failed. Try it again.</div>
-          <div class="callout-actions">
-            <button class="btn btn-secondary btn-sm" type="button" data-retry>Retry</button>
-          </div>
-        </div>
-      </div>
-    </template>
-  );
-}
-
-/** The full style guide page; the mount wraps it in the doctype. `signedIn` is whether the navbar offers sign-out. */
+/** The full style guide page; the mount wraps it in the doctype. `signedIn` is whether the nav offers sign-out. */
 export function styleGuidePage(
   vm: StyleGuideViewModel,
   state: StyleGuideEditorState | undefined = undefined,
@@ -1679,28 +1801,26 @@ export function styleGuidePage(
       <PageHead title={`Style guide · ${NAME}`} />
       <body>
         <IconSprite />
-        <div class="app-shell">
-          <Navbar signedIn={signedIn} active="style-guide" />
-          <main class="main">
-            <header class="page-header">
-              <div class="page-header-body">
-                <div class="label page-eyebrow">Voice</div>
-                <h1 class="page-title">Style guide</h1>
-                <p class="page-lede">The voice agents read before drafting, starting with the global guide and adding each project's own rules below.</p>
-              </div>
-            </header>
-            <StyleGuideProjects vm={vm} />
-            <StyleGuideRegion vm={vm} state={state} />
-            <StyleGuideErrorBoxTemplate />
-          </main>
-        </div>
+        <Navbar signedIn={signedIn} active="style-guide" />
+        <main class="page">
+          <header class="page-header">
+            <div class="page-header-body">
+              <div class="label">Voice</div>
+              <h1 class="page-title">Style guide</h1>
+              <p class="section-lede">The voice agents read before drafting, starting with the global guide and adding each project's own rules below.</p>
+            </div>
+          </header>
+          <StyleGuideProjects vm={vm} />
+          <StyleGuideRegion vm={vm} state={state} />
+        </main>
+        <div class="toast-stack" id="toast-stack"></div>
         <PageModules />
       </body>
     </html>
   );
 }
 
-/** The style guide region only, for htmx responses; the selector, the page shell, and the error template stay put. */
+/** The style guide region only, for htmx responses; the selector, the page shell, and the toast stack stay put. */
 export function styleGuideRegionFragment(vm: StyleGuideViewModel, state: StyleGuideEditorState | undefined = undefined): JSX.Element {
   return <StyleGuideRegion vm={vm} state={state} />;
 }

@@ -160,8 +160,13 @@ describe("editor page", () => {
 
     expect(html).toContain('class="repo-link" href="https://github.com/uwuclxdy/clauth"');
     expect(html).toContain('target="_blank" rel="noopener noreferrer"');
-    expect(html).toContain('title="https://github.com/uwuclxdy/clauth.git"');
     expect(html).toContain('class="repo-icon"');
+    // The visible path is the short form; the full clone URL stays reachable to assistive tech
+    // on an sr-only span, never a title attribute.
+    expect(html).toContain(
+      '<span>uwuclxdy/clauth</span><span class="sr-only">https://github.com/uwuclxdy/clauth.git</span></a>',
+    );
+    expect(html).not.toContain('title="https://github.com/uwuclxdy/clauth.git"');
     // The github octocat glyph leads the icon's path data.
     expect(html).toContain("M12 .297");
     expect(html).toContain(">uwuclxdy/clauth</span>");
@@ -311,17 +316,34 @@ describe("entry images", () => {
     expect(html).toContain('src="https://example.com/shot.png" alt="Image 3"');
     expect(html).toContain("Image 2 not shown: unsupported source.");
     expect(html).not.toContain("javascript:alert(1)");
-    // The upload form rides below the list, wired for both htmx and a plain navigation.
+    // The arrived images ride the shipped dropzone list, and the upload form below them is wired
+    // for both htmx and a plain navigation.
+    expect(html).toContain('<ul class="dropzone-list image-list">');
     expect(html).toContain(`hx-post="/entries/${id}/images"`);
     expect(html).toContain('enctype="multipart/form-data"');
     env.close();
   });
 
-  test("shows the empty state and the upload form when the entry has no images", async () => {
+  test("shows the empty state and the dropzone upload control when the entry has no images", async () => {
     const { env, id } = envWithDraft();
     const html = await (await env.get(`/entries/${id}`)).text();
     expect(html).toContain("No images yet.");
     expect(html).toContain(`action="/entries/${id}/images"`);
+    // The upload is the shipped dropzone: the native input is the picker and carries the field
+    // name, associated to the submit form by id so the zone stays the dropzone's direct child.
+    expect(html).toContain('<div class="dropzone">');
+    expect(html).toContain('<label class="dropzone-target">');
+    expect(html).toContain('<span class="dropzone-lede">Image file</span>');
+    expect(html).toContain(
+      'class="dropzone-input" type="file" name="file" accept="image/*" aria-label="Image file" form="image-upload"',
+    );
+    expect(html).toContain('<form id="image-upload" class="image-upload" method="post"');
+    expect(html).toContain('enctype="multipart/form-data"');
+    expect(html).toContain(
+      'class="btn btn-secondary btn-sm" type="submit" hx-disabled-elt="this">Add image</button>',
+    );
+    // The native file field the dropzone replaced is gone.
+    expect(html).not.toContain('class="input" type="file"');
     env.close();
   });
 
@@ -598,7 +620,7 @@ describe("saving from the editor", () => {
     expect(html).toContain("Revision history");
     expect(html).toContain(text);
     // The history row records the status the entry held at the save: a draft that approves records "Draft".
-    expectOrder(html, ["revision-head", "Draft", "revision-time", "Use"]);
+    expectOrder(html, ["timeline-head", "Draft", "timeline-time", "Use"]);
     expect(html).toContain('data-use-revision');
 
     const row = env.store.db.query("SELECT status, human_text FROM entries WHERE id = ?").get(id) as {
@@ -619,7 +641,7 @@ describe("saving from the editor", () => {
     expect(html).toContain("Approved");
     expect(revisionCount(env.store, id)).toBe(2);
     // Newest first, judged inside the history list only (the form's own tag also reads Approved).
-    const history = html.slice(html.indexOf("revision-list"));
+    const history = html.slice(html.indexOf('class="timeline"'));
     expectOrder(history, ["Approved", "Run the command to build.", "Draft", "Run the command to install."]);
     env.close();
   });

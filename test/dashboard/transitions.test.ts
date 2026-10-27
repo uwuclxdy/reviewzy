@@ -183,7 +183,7 @@ describe("list transitions", () => {
     expect(html).toContain('>Approve selected</button>');
     // Every repeat-activation guard rides the exact button it disables: the batch submit and both
     // row actions (a page-level presence check would let one button lose its guard silently).
-    expect(html).toContain('<button class="btn btn-primary btn-sm" type="submit" hx-disabled-elt="this">');
+    expect(html).toContain('<button class="btn btn-fill btn-sm" type="submit" hx-disabled-elt="this">');
     expect(html).toContain(
       `<button type="button" class="btn btn-icon" style="color: var(--success)" aria-label="Approve file-0.md" hx-post="/entries/${ids[0]!}/approve" hx-target="#entries-list" hx-swap="innerHTML" hx-indicator="#entries-loading" hx-disabled-elt="this">`,
     );

@@ -118,7 +118,7 @@ describe("style guide page", () => {
     expect(res.status).toBe(200);
     const html = await res.text();
     expectOrder(html, [
-      'class="btn btn-sm btn-secondary" href="/style-guide">Global</a>',
+      'class="tab" href="/style-guide">Global</a>',
       'href="/style-guide?project=alpha">alpha</a>',
       'href="/style-guide?project=beta" aria-current="page">beta</a>',
     ]);
@@ -331,20 +331,23 @@ describe("navbar", () => {
 });
 
 describe("save error wiring", () => {
-  test("the page carries the error template and dashboard.js wires it to the save form", async () => {
+  test("the page carries the toast stack and dashboard.js raises a failed save as a retryable toast", async () => {
     const env = openEnv();
     const html = await (await env.get("/style-guide")).text();
-    expect(html).toContain('id="style-guide-error-box"');
+    expect(html).toContain('id="toast-stack"');
+    // The cloned error box is gone; the transient toast carries the failure and its Retry button.
+    expect(html).not.toContain("style-guide-error-box");
+    // The failure copy and the retry wiring live client-side now, and the module ships as a static
+    // file with no DOM harness, so its shipped bytes are the honest seam for both.
     const js = await Bun.file(new URL("../../src/dashboard/static/dashboard.js", import.meta.url)).text();
-    expect(js).toContain("style-guide-error-box");
-    expect(js).toContain("style-guide-region");
+    expect(js).toContain("The guide could not be saved");
+    expect(js).toContain("The save request failed. Try it again.");
+    expect(js).toContain("wireRetry");
+    expect(js).toContain('showToast("danger"');
+    expect(js).toContain("showToast");
     expect(js).toContain("style-guide-form");
     expect(js).toContain("htmx:responseError");
     expect(js).toContain("htmx:sendError");
-    // The error box prepends above the form (a revert to replaceChildren would destroy the form
-    // the retry must re-submit) and a repeated error drops the previous box first.
-    expect(js).toContain("region.prepend(box)");
-    expect(js).toContain("data-style-guide-error");
     env.close();
   });
 });
