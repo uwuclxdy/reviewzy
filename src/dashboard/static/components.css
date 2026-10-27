@@ -7,7 +7,8 @@
    One height ladder shared with inputs so horizontal toolbars stay aligned
    regardless of label length, icon presence, or element type. The primary
    is outlined: accent never fills area, so coverage stays under 10 percent
-   by construction. Press is translateY(1px), no scale, no ripple. */
+   by construction. Press is the jelly squish, a scale settled by a spring,
+   no ripple. */
 .btn {
   display: inline-flex;
   align-items: center;
@@ -25,13 +26,12 @@
     background var(--dur-tint) var(--ease),
     border-color var(--dur-tint) var(--ease),
     color var(--dur-tint) var(--ease),
-    transform var(--dur-tint) var(--ease);
+    transform var(--press-dur) var(--press-spring);
   white-space: nowrap;
   text-decoration: none;
   user-select: none;
 }
 input.btn { line-height: 34px; }   /* native inputs need explicit line-height */
-.btn:active { transform: translateY(1px); }
 .btn svg { width: 14px; height: 14px; flex-shrink: 0; }
 
 .btn-sm {
@@ -68,12 +68,14 @@ input.btn-lg { line-height: 42px; }
    the floor in all three states (rest 6.0, hover 5.0, active 4.6). */
 [data-theme="light"] .btn-primary { color: color-mix(in srgb, var(--accent) 50%, var(--text) 50%); }
 .btn-primary:hover {
-  background: color-mix(in srgb, var(--accent) 24%, transparent);
-  border-color: color-mix(in srgb, var(--accent) 60%, transparent);
+  background: color-mix(in srgb, var(--accent) 24%, var(--tint-ground));
+  border-color: color-mix(in srgb, var(--accent) 60%, var(--tint-ground));
 }
+/* the press tint holds the dark label at 4.60:1 on surface-1 and 5.21 on --bg
+   (8-bit painted); 32 percent dropped it to 4.15 on the card, and 28 to 4.48 */
 .btn-primary:active {
-  background: color-mix(in srgb, var(--accent) 32%, transparent);
-  border-color: color-mix(in srgb, var(--accent) 60%, transparent);
+  background: color-mix(in srgb, var(--accent) 27%, var(--tint-ground));
+  border-color: color-mix(in srgb, var(--accent) 60%, var(--tint-ground));
 }
 
 /* Filled: the ONE main action on a screen, and never a second one. Outlined
@@ -84,11 +86,12 @@ input.btn-lg { line-height: 42px; }
    and --accent-press, which is what those two tokens are for. */
 .btn-fill {
   background: var(--accent);
+  --tint-ground: transparent;
   color: var(--on-accent);
   border-color: var(--accent);
 }
-.btn-fill:hover  { background: var(--accent-hover); border-color: var(--accent-hover); }
-.btn-fill:active { background: var(--accent-press); border-color: var(--accent-press); }
+.btn-fill:hover  { background: var(--accent-hover); --tint-ground: transparent; border-color: var(--accent-hover); }
+.btn-fill:active { background: var(--accent-press); --tint-ground: transparent; border-color: var(--accent-press); }
 /* An accent fill swallows an accent focus ring, so the ring's own page keyline
    is what separates the two. tokens.css ships it on :focus-visible. */
 
@@ -97,20 +100,24 @@ input.btn-lg { line-height: 42px; }
   color: var(--text-2);
   border-color: var(--surface-3);
 }
-.btn-secondary:hover { background: var(--surface-2); color: var(--text); border-color: var(--surface-3); }
-.btn-secondary:active { background: var(--surface-3); }
+.btn-secondary:hover { background: var(--surface-2); --tint-ground: transparent; color: var(--text); border-color: var(--surface-3); }
+.btn-secondary:active { background: var(--surface-3); --tint-ground: transparent; }
 
 .btn-danger {
   background: transparent;
   color: var(--danger);
-  border-color: color-mix(in srgb, var(--danger) 40%, transparent);
+  border-color: color-mix(in srgb, var(--danger) 40%, var(--tint-ground));
 }
+/* label and tint are one hue, so a deeper tint pulls the label down with it:
+   the hover and press label steps to --danger-text, measured in tokens.css */
 .btn-danger:hover {
-  background: color-mix(in srgb, var(--danger) 16%, transparent);
-  border-color: color-mix(in srgb, var(--danger) 60%, transparent);
+  background: color-mix(in srgb, var(--danger) 16%, var(--tint-ground));
+  color: var(--danger-text);
+  border-color: color-mix(in srgb, var(--danger) 60%, var(--tint-ground));
 }
 .btn-danger:active {
-  background: color-mix(in srgb, var(--danger) 24%, transparent);
+  background: color-mix(in srgb, var(--danger) 24%, var(--tint-ground));
+  color: var(--danger-text);
 }
 
 .btn-icon {
@@ -121,7 +128,7 @@ input.btn-lg { line-height: 42px; }
   color: var(--text-3);
   border-color: var(--line);
 }
-.btn-icon:hover { border-color: var(--surface-3); color: var(--text); background: var(--surface-2); }
+.btn-icon:hover { border-color: var(--surface-3); color: var(--text); background: var(--surface-2); --tint-ground: transparent; }
 .btn-icon svg { width: 15px; height: 15px; }
 
 /* ---- Disabled ----
@@ -132,7 +139,7 @@ input.btn-lg { line-height: 42px; }
    `.btn:disabled` already outranks. What no placement here can beat is a state
    costume at (0,3,0), which is why the `!important` block near the end of the
    file exists.
-   It replaces `opacity: 0.45`, her call 2026-09-02. An alpha dims the label with
+   It replaces `opacity: 0.45`. An alpha dims the label with
    the box, and a label dimmed that far stops clearing any floor; a colour dims
    only what should read as off. --text-disabled measures 4.50:1 on --bg and 3.89
    on --surface-1, both over the 3:1 floor for a control that cannot act.
@@ -153,12 +160,16 @@ input.btn-lg { line-height: 42px; }
    block, the primary keeps a fill under a visible edge (--surface-3 on
    --surface-2, 1.23:1 dark and 1.10 light, the same register the enabled edges
    sit in), the two outlined ones keep an edge and no fill. */
-.btn-fill:disabled { background: var(--surface-2); border-color: var(--surface-2); }
-.btn-primary:disabled { background: var(--surface-2); border-color: var(--surface-3); }
+.btn-fill:disabled { background: var(--surface-2); --tint-ground: transparent; border-color: var(--surface-2); }
+.btn-primary:disabled { background: var(--surface-2); --tint-ground: transparent; border-color: var(--surface-3); }
 .btn-secondary:disabled, .btn-danger:disabled { border-color: var(--line); }
 
 /* Loading spinner */
 @keyframes spin { to { transform: rotate(360deg); } }
+/* the ring's loading breath: head anchored at 50, so the offset tracks L - 50 */
+@keyframes ring-tail-breathe { to { stroke-dasharray: 46 100; stroke-dashoffset: -4; } }
+/* its reduced-motion replacement, on the shape of the route bar's own hold */
+@keyframes ring-hold { 50% { opacity: var(--ring-hold-dim); } }
 .btn-loading { position: relative; color: transparent !important; }
 .btn-loading::after {
   content: '';
@@ -170,11 +181,20 @@ input.btn-lg { line-height: 42px; }
   animation: spin 0.6s linear infinite;
   color: var(--accent-text);
 }
+/* a filled button's ground is --accent, where that --accent-text ring is
+   invisible (1.22:1 dark rest, 1.00:1 hovered): the fill's spinner takes the
+   fill's own on-colour, 8.22:1 dark / 4.60:1 light */
+.btn-fill.btn-loading::after { color: var(--on-accent); }
+@media (prefers-reduced-motion: reduce) {
+  /* the busy cue replaces the motion rather than dying with it: the ring
+     rests, so the button still reads as busy without a spin */
+  .btn-loading::after { animation: none; }
+}
 
 /* ---- Page skeleton ----
    Built independently by every dashboard project on the system: one
-   centered column, section headers as a triplet, toolbars that compose.
-   Retune a build with --page-w, not per-page overrides. */
+   page column, section headers as a triplet, toolbars that compose.
+   Under a navbar, retune a build with --page-w, not per-page overrides. */
 .page {
   max-width: var(--page-w);
   /* auto inline margins cancel a grid or flex item's stretch, so the column
@@ -185,22 +205,30 @@ input.btn-lg { line-height: 42px; }
   padding-inline: var(--space-8);
 }
 @media (max-width: 768px) { .page { padding-inline: var(--space-4); } }
+/* Beside a sidebar alone a cap here centres nothing; --page-w is past the
+   reading-column bound shells.md names. Measured 230px of dead page each side
+   on the dashboard example at 1912. A bleed banner's column follows the page's. */
+.sidebar ~ .page,
+.sidebar ~ * .page,
+.sidebar ~ * .banner-inner { max-width: none; }
 
 /* Eyebrow is .label; the triplet continues with title and lede.
-   The title is --t-7, one step above the document h2, because a section
+   The title is --t-8, two steps above the document h2, because a section
    heading and a paragraph heading are not the same object: h2 stays 26px for
-   prose. The lede is --t-4, so it stops sitting at body size and the page
+   prose. It steps to --t-7 under 768px as the page title steps to --t-8, so
+   the two stay one step apart at every width. The lede is --t-4, so it stops sitting at body size and the page
    stops reading at one volume. The eyebrow is --text-4 (5.47:1 dark, 4.94:1
    light on --bg): accent on every eyebrow down a page turns the signature
    into wallpaper, which is the failure v1 shipped. */
 .section-head { margin-bottom: var(--space-5); }
 .section-head > .label { color: var(--text-4); }
 .section-title {
-  font: 600 var(--t-7)/1.1 var(--font-sans);
-  letter-spacing: -0.025em;
+  font: 600 var(--t-8)/1.05 var(--font-sans);
+  letter-spacing: -0.035em;
   color: var(--text);
   margin-top: var(--space-2);
 }
+@media (max-width: 768px) { .section-title { font-size: var(--t-7); } }
 .section-lede {
   font-size: var(--t-4);
   color: var(--text-3);
@@ -222,8 +250,16 @@ input.btn-lg { line-height: 42px; }
 .toolbar-center { align-items: center; }
 
 /* ---- Tabs (underline) ---- */
-.tabs-wrap { border-bottom: 1px solid var(--line-soft); position: relative; }
-.tabs { display: flex; gap: 0; }
+/* The hairline and the positioning context are the ROW's, not a wrapper's:
+   the ink is absolutely placed against the row's own bottom edge, so it lands
+   on the hairline it belongs to wherever the row sits. `.tabs-wrap` keeps no
+   rule of its own and survives as initTabs' query hook. */
+.tabs {
+  display: flex;
+  gap: 0;
+  position: relative;
+  border-bottom: 1px solid var(--line-soft);
+}
 .tab {
   position: relative;
   padding: 9px 14px;
@@ -260,6 +296,7 @@ input.btn-lg { line-height: 42px; }
   transform: scaleX(0);
   transform-origin: left center;
   background: var(--accent);
+  --tint-ground: transparent;
   border-radius: var(--r-pill);
   pointer-events: none;
   opacity: 0;
@@ -280,8 +317,10 @@ input.btn-lg { line-height: 42px; }
   padding: 2px 5px;
   border-radius: var(--r-pill);
   background: var(--surface-2);
+  --tint-ground: transparent;
   color: var(--text-3);
 }
+/* light takes the shared remix: --accent-text alone reads 4.35:1 over --bg */
 .tab.active .tab-badge,
 .navbar-link.active .navbar-badge { background: var(--accent-quiet); color: var(--accent-text); }
 
@@ -296,6 +335,7 @@ input.btn-lg { line-height: 42px; }
    so no-JS keeps a visible selection. */
 .tabs-boxed-wrap {
   background: var(--well);
+  --tint-ground: transparent;
   border-radius: var(--r-2);
   padding: 3px;
   display: inline-flex;
@@ -312,10 +352,10 @@ input.btn-lg { line-height: 42px; }
   /* concentric with the track: track radius minus its 3px padding */
   border-radius: calc(var(--r-2) - 3px);
   cursor: pointer;
-  transition: background var(--dur-tint) var(--ease), color var(--dur-tint) var(--ease);
+  transition: background var(--dur-tint) var(--ease), color var(--dur-tint) var(--ease), transform var(--press-dur) var(--press-spring);
   user-select: none;
 }
-.tab-box:hover { background: var(--surface-2); color: var(--text-2); }
+.tab-box:hover { background: var(--surface-2); --tint-ground: transparent; color: var(--text-2); }
 .tab-box.active { color: var(--text); }
 /* The segment and the pill that slides over it are ONE selection surface, so one
    rule paints it. Without ink the segment carries it; with ink the pill does and
@@ -323,6 +363,7 @@ input.btn-lg { line-height: 42px; }
 .tab-box.active,
 .tabs-boxed-ink {
   background: var(--surface-1);
+  --tint-ground: transparent;
   box-shadow: var(--lit-1), 0 1px 3px oklch(0.14 0.02 280 / 0.45);
 }
 [data-theme="light"] .tab-box.active,
@@ -344,6 +385,30 @@ input.btn-lg { line-height: 42px; }
 /* composited like .tab-ink: translate3d, never a layer dropped at landing */
 /* once the ink exists, the segment stops painting its own selection */
 .tabs-boxed-wrap.has-ink .tab-box.active { background: transparent; box-shadow: none; }
+
+/* ---- Press ----
+   The jelly squish (2026-10-07 combo): hover grows, press flattens wider and
+   shorter, and --press-spring settles the wobble over --press-dur. Only the
+   transform moves on the spring: .btn keeps its background, border-color and
+   color on --dur-tint, .tab-box its background and color, and neither
+   transitions box-shadow. The hover grow is fine-pointer only; the press squash
+   still fires on a tap. None of it under reduced motion, where the fades stay.
+   The non-uniform press scale momentarily distorts a control's corner radius,
+   which is the point of a squish; references/motion.md sanctions it. */
+@media (hover: hover) and (prefers-reduced-motion: no-preference) {
+  .btn:not(:disabled):hover,
+  .tab-box:not(:disabled):hover {
+    transform: scale(1.03);
+  }
+}
+/* after the hover grow: both rank (0,3,0), so source order hands a held
+   press the squash */
+@media (prefers-reduced-motion: no-preference) {
+  .btn:not(:disabled):active,
+  .tab-box:not(:disabled):active {
+    transform: scale(1.05, 0.90);
+  }
+}
 
 /* ---- Inputs ----
    Inputs sit below the page plane: --well, not raised. Most systems raise
@@ -374,19 +439,31 @@ input.btn-lg { line-height: 42px; }
   grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
   column-gap: var(--space-5);
   row-gap: var(--space-4);
+  /* A grid stretches its items, and a stretched label paints its one line at
+     the TOP of a 36px control's row: measured 11px above the control's centre,
+     against 0.2px for the same label inside a .field, which centres its own
+     subgrid. The bare pair is the shape the fieldset and half the sheet use. */
+  align-items: center;
 }
 .form-grid .field {
   display: grid;
+  /* the span is restated here rather than taken from the child rule below:
+     subgrid needs it, and the scope is descendant so a field a wrapper div
+     sits between still levels with the grid's own columns */
   grid-column: 1 / -1;
   grid-template-columns: subgrid;
   align-items: center;
 }
 .form-grid .field-label { grid-column: 1; }
 .form-grid .field > :not(.field-label) { grid-column: 2; }
-/* The summary collects a submit's failures ABOVE the fields, so it takes the
-   whole grid the way a .field does. Left to `auto` it is placed in the label
-   column and measured 180px wide at a 1440 viewport. */
-.form-grid .form-summary { grid-column: 1 / -1; }
+/* Everything that is not one of the bare label/control pairs spans both
+   columns: a .field, a summary, a fieldset, a paragraph, a callout. Left to
+   `auto` the fieldset was placed in the 180px label column and its nested
+   grid crushed with it, the value clipping at "oncall@acm". The pair is
+   restated structurally one line down, so a child joins by being a label's
+   sibling rather than by being named. */
+.form-grid > * { grid-column: 1 / -1; }
+.form-grid > .field-label + * { grid-column: 2; }
 
 /* ---- Fieldset ----
    A grouped border, not a second card: line-soft, no shadow, the legend
@@ -434,9 +511,12 @@ input.btn-lg { line-height: 42px; }
 }
 .form-summary-links a { font-size: var(--t-2); color: var(--accent-text); }   /* 7.25:1 dark, 5.17:1 light on the tint */
 
-/* Stacked under 768px: labels above fields, the .field's own shape */
+/* Stacked under 768px: labels above fields, the .field's own shape. The pair
+   rule above names column 2, which a one-column grid does not have, so the
+   control returns to flow or it lands in an implicit second column. */
 @media (max-width: 768px) {
   .form-grid { grid-template-columns: minmax(0, 1fr); }
+  .form-grid > .field-label + * { grid-column: auto; }
 }
 
 /* ---- Setting rows ----
@@ -458,13 +538,22 @@ input.btn-lg { line-height: 42px; }
   border-radius: 0;
   transition: background var(--dur-tint) var(--ease);
 }
-/* the stack is flush with its card (the card carries no vertical padding),
-   so the edge rows take the card's own radius and the hover fill hugs the
-   card edge exactly */
-.setting-row:first-child { border-radius: var(--r-2) var(--r-2) 0 0; }
-.setting-row:last-child { border-radius: 0 0 var(--r-2) var(--r-2); }
+/* the stack is flush on both axes, because a card holding nothing but these
+   rows drops its own padding where `.card` is defined, so the edge rows take
+   the card's radius and the hover fill reaches its edge. Longhands, not the
+   shorthand: the two rules tie at (0,2,0) and a card with ONE row matches both,
+   so a shorthand pair hands it the later rule's square top corners, which used
+   to sit 20px inside the card and now sit on it. */
+.setting-row:first-child {
+  border-start-start-radius: var(--r-2);
+  border-start-end-radius: var(--r-2);
+}
+.setting-row:last-child {
+  border-end-start-radius: var(--r-2);
+  border-end-end-radius: var(--r-2);
+}
 .setting-row + .setting-row { border-top: 1px solid var(--line-soft); }
-.setting-row:hover { background: var(--surface-2); }
+.setting-row:hover { background: var(--surface-2); --tint-ground: transparent; }
 
 .setting-label {
   grid-area: label;
@@ -519,12 +608,13 @@ input.btn-lg { line-height: 42px; }
     row-gap: var(--space-3);
   }
   .setting-control { justify-content: flex-start; }
-  .setting-control .input,
+  .setting-control .input:not(.select-trigger),
   .setting-control .select { width: 100%; min-width: 0; }
 }
 
 .input {
   background: var(--well);
+  --tint-ground: transparent;
   border: 1px solid var(--line);
   border-radius: var(--r-1);
   height: var(--ctl);
@@ -552,7 +642,7 @@ input.btn-lg { line-height: 42px; }
    from what assistive tech reads. */
 .input-invalid, .input[aria-invalid="true"] {
   border-color: var(--danger);
-  --ring-color: color-mix(in srgb, var(--danger) 30%, transparent);
+  --ring-color: color-mix(in srgb, var(--danger) 30%, var(--glass-ground));
 }
 .input-invalid:focus, .input[aria-invalid="true"]:focus { border-color: var(--danger); }
 /* every input-family control shares the disabled costume; before this the
@@ -588,6 +678,25 @@ select.input {
 }
 [data-theme="light"] select.input {
   background-image: url("data:image/svg+xml,%3Csvg width='10' height='6' viewBox='0 0 10 6' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1L5 5L9 1' stroke='%23676A74' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+}
+
+/* Every number field is a numeric readout, so the mono face and tabular
+   figures are the type's own costume, not the stepper's: a bare
+   `.input[type=number]` in a form reads the same rule. The spinners go for
+   the reason `.select` exists: they are UA chrome, they ignore the theme, and
+   they put a second pair of arrows over the ring cursor. Alignment stays with
+   the field: the stepper centres its value because the controls flank it, and
+   a form field keeps the start edge. `inputmode=numeric` is markup, not CSS. */
+.input[type="number"] {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+  appearance: textfield;
+}
+.input[type="number"]::-webkit-outer-spin-button,
+.input[type="number"]::-webkit-inner-spin-button {
+  appearance: none;
+  margin: 0;
 }
 
 /* ---- Select (custom dropdown) ----
@@ -647,7 +756,7 @@ select.input {
   transition: --fold var(--dur-out-near) cubic-bezier(0.55, 0, 1, 0.45);
 }
 /* --dur-near, not --dur-far: the ladder puts 122px of travel at 260ms, and at
-   260ms this panel reads slow. Her call, 2026-08-29. */
+   260ms this panel reads slow. */
 .select.open { --fold: 0; transition: --fold var(--dur-near) var(--ease-out); }
 /* an invalid field stays marked while it is open to be corrected, body and
    panel both. As a token swap it cannot be outranked by the open outline,
@@ -672,7 +781,7 @@ select.input {
 .select-trigger:focus { --edge: var(--accent); }
 .select-trigger:is(.input-invalid, [aria-invalid="true"]) { --edge: var(--danger); }
 /* `.select-value` truncates on `tokens.css`'s `.truncate` rule, which names it. */
-/* Square, so the sprite's 16-viewBox symbol drops in: her call 2026-09-02, over
+/* Square, so the sprite's 16-viewBox symbol drops in, over
    keeping a hand-drawn 10 x 6 chevron nothing could check. 14px is the ladder's
    `.icon-sm` step, the one that sits beside 14px text. The glyph inside the box
    is 8.75 x 4.4 against the old 8 x 4, so the caret reads the same size and the
@@ -699,6 +808,7 @@ select.input {
    panel still on screen. Both were shipped, and both read as two objects. */
 .select:is(.open, .closing) > .select-trigger {
   background: color-mix(in oklab, var(--well), var(--surface-1) calc(var(--lift) * 100%));
+  --tint-ground: transparent;
   border-color: color-mix(in oklab, var(--open-edge), var(--edge) calc(var(--seal) * 100%));
   border-bottom-color: color-mix(in oklab, var(--line), var(--edge) calc(var(--seal) * 100%));
   box-shadow: 0 0 0 calc(var(--seal) * var(--ring)) var(--ring-color);
@@ -732,11 +842,12 @@ select.input {
   right: 0;
   z-index: 60;
   background: var(--surface-1);
+  --tint-ground: transparent;
   border: 1px solid var(--line);
   border-top: none; /* the trigger's own bottom border is the seam */
   border-radius: 0 0 var(--r-1) var(--r-1);
   box-shadow: var(--elev-float);
-  padding: var(--space-1) 0;
+  padding: var(--space-1);   /* the list panel's gutter */
   max-height: 240px;
   /* both axes named: a `visible` axis beside a scrolling one computes to `auto`,
      which would hang a horizontal scrollbar off any option wider than the trigger */
@@ -776,7 +887,8 @@ select.input {
     calc(-1 * var(--menu-bleed)));
 }
 
-.select-menu .menu-item { padding-inline: 12px; } /* lines up with the trigger's text */
+/* 8 plus the panel's own 4px gutter: the text still lines up with the trigger's */
+.select-menu .menu-item { padding-inline: 8px; }
 /* The trigger keeps DOM focus while the panel is open, so the arrow-key row
    carries its own mark. It is the row's HOVER costume, not a 2px accent edge:
    `.focus` lands on the selected row at open time, so the edge stacked against
@@ -785,6 +897,7 @@ select.input {
    its one mark, so the two states never paint on one row. */
 .select-menu .menu-item.focus:not([aria-selected="true"]) {
   background: var(--surface-2);
+  --tint-ground: transparent;
   color: var(--text);
 }
 
@@ -826,6 +939,16 @@ select.input {
   user-select: none;
 }
 .checkbox-label:hover, .radio-label:hover { color: var(--text); }
+/* a disabled box takes its row with it, as `.input-group` takes its addons: the
+   label kept the pointer, its hover and its live colour, so a dead row read as
+   live. --text-disabled: 4.50:1 on --bg and 3.89 on --surface-1 dark, 3.76 and
+   4.23 light, over the 3:1 floor for a control that cannot act. */
+.checkbox-label:has(input:disabled),
+.radio-label:has(input:disabled) {
+  color: var(--text-disabled);
+  cursor: not-allowed;
+  pointer-events: none;
+}
 
 .checkbox-label input[type="checkbox"],
 .radio-label input[type="radio"] {
@@ -833,6 +956,7 @@ select.input {
   height: 16px;
   appearance: none;
   background: var(--well);
+  --tint-ground: transparent;
   border: 1px solid var(--line);
   border-radius: calc(var(--r-1) * 0.5);
   cursor: pointer;
@@ -848,6 +972,7 @@ select.input {
 .radio-label input[type="radio"]:checked,
 .checkbox-label input[type="checkbox"]:indeterminate {
   background: var(--accent);
+  --tint-ground: transparent;
   border-color: var(--accent);
 }
 /* the marks live on a pseudo that always exists: the check and the bar
@@ -860,6 +985,7 @@ select.input {
   position: absolute;
   inset: 3px;
   background: var(--on-accent);
+  --tint-ground: transparent;
   opacity: 0;
   transform: scale(0.4);
   transition: transform var(--dur-near) var(--ease-out), opacity var(--dur-near) var(--ease-out);
@@ -892,6 +1018,7 @@ select.input {
   width: 38px;
   height: 22px;
   background: var(--surface-3);
+  --tint-ground: transparent;
   border-radius: var(--r-pill);
   position: relative;
   transition: background var(--dur-tint) var(--ease);
@@ -911,10 +1038,11 @@ select.input {
   width: 16px;
   height: 16px;
   background: var(--text);
+  --tint-ground: transparent;
   border-radius: 50%;
   transition: transform var(--dur-near) var(--ease);
 }
-.toggle.on { background: var(--accent); }
+.toggle.on { background: var(--accent); --tint-ground: transparent; }
 .toggle.on::after { transform: translateX(16px); }
 /* A switch is a graphic, so the disabled costume moves its FILLS rather than a
    text colour: the off track drops --surface-3 to --surface-2 and the on track
@@ -923,9 +1051,9 @@ select.input {
    carries the state and has to clear 3:1 on both tracks: 4.00 and 3.47 dark, 4.65
    and 4.75 light. --text-disabled measures 2.86 on the dark on-track and fails.
    .on stays legible because a disabled control still reports where it stands. */
-.toggle:disabled { background: var(--surface-2); cursor: not-allowed; pointer-events: none; }
+.toggle:disabled { background: var(--surface-2); --tint-ground: transparent; cursor: not-allowed; pointer-events: none; }
 .toggle:disabled.on { background: var(--accent-quiet); }
-.toggle:disabled::after { background: var(--text-4); }
+.toggle:disabled::after { background: var(--text-4); --tint-ground: transparent; }
 .toggle-label { font-size: var(--t-3); color: var(--text-2); }
 
 /* ---- Disclosure (native details/summary) ----
@@ -975,25 +1103,33 @@ button.setting-row {
 }
 
 /* ---- Card ----
-   Rises toward the light: surface-1 over the page, a lit top edge, and a
-   hue-matched shadow. No border, no shadow at rest beyond the edge. */
+   Rises toward the light: surface-1 over the page, a crisp drawn line round
+   its box, and no shadow at rest. The line is --card-line, a 1px box-shadow
+   drawn outside the box so the content box never shrinks. */
 /* One raised surface. `.card-tight` and `.card-roomy` reach `.card` alone, so a
    stat card takes the default padding and nothing else changes. */
 .card, .stat-card {
+  position: relative;
   background: var(--surface-1);
-  border-radius: var(--r-2);
-  box-shadow: var(--elev-1);
+  --tint-ground: transparent;
+  box-shadow: 0 0 0 1px var(--card-line);
   padding: var(--space-5);
 }
+/* the KPI tile takes the fourth, squircle step; every other card keeps --r-2 */
+.card { border-radius: var(--r-2); }
+.stat-card { border-radius: var(--r-4); }
 .card-interactive {
   cursor: pointer;
+  text-decoration: none;
   transition:
     transform var(--dur-tint) var(--ease),
     box-shadow var(--dur-tint) var(--ease);
 }
+/* the lift deepens the contact shadow; while the card is raised, the line
+   gives way to it */
 .card-interactive:hover {
   transform: translateY(-2px);
-  box-shadow: var(--elev-2);
+  box-shadow: var(--contact-2);
 }
 /* A card header and a modal header are one row: a space-between line under a
    hairline. Only the padding tells them apart, so only the padding is written
@@ -1012,7 +1148,7 @@ button.setting-row {
   margin-bottom: var(--space-3);
 }
 /* A status tag anchors to the card's TOP right, never to the middle of the
-   header row. Her call 2026-09-02, and it settles `.stat-card` and the timeline
+   header row, and it settles `.stat-card` and the timeline
    entry the same way for whenever either grows one. A header pairing a tag with
    a title PLUS a subtitle centres the tag against both lines, which is what put
    it mid-card.
@@ -1048,6 +1184,7 @@ button.setting-row {
 .tag {
   display: inline-flex;
   align-items: center;
+  text-decoration: none;
   gap: 5px;
   font: 500 var(--t-1)/1 var(--font-sans);
   padding: 3px 8px;
@@ -1065,6 +1202,7 @@ button.setting-row {
 .tag-default,
 .tag-data {
   background: var(--surface-2);
+  --tint-ground: transparent;
   color: var(--text-3);
   border-color: var(--line);
 }
@@ -1073,19 +1211,19 @@ button.setting-row {
   color: var(--accent-text);
 }
 .tag-success {
-  background: color-mix(in srgb, var(--success) 14%, transparent);
+  background: color-mix(in srgb, var(--success) 14%, var(--tint-ground));
   color: color-mix(in srgb, var(--success) 80%, var(--text) 20%);
 }
 .tag-warning {
-  background: color-mix(in srgb, var(--warning) 14%, transparent);
+  background: color-mix(in srgb, var(--warning) 14%, var(--tint-ground));
   color: color-mix(in srgb, var(--warning) 80%, var(--text) 20%);
 }
 .tag-danger {
-  background: color-mix(in srgb, var(--danger) 14%, transparent);
+  background: color-mix(in srgb, var(--danger) 14%, var(--tint-ground));
   color: color-mix(in srgb, var(--danger) 80%, var(--text) 20%);
 }
 .tag-info {
-  background: color-mix(in srgb, var(--info) 14%, transparent);
+  background: color-mix(in srgb, var(--info) 14%, var(--tint-ground));
   color: color-mix(in srgb, var(--info) 80%, var(--text) 20%);
 }
 [data-theme="light"] .tag-success { color: color-mix(in srgb, var(--success) 70%, var(--text) 30%); }
@@ -1096,12 +1234,21 @@ button.setting-row {
 /* ---- Table ---- */
 .table-wrap {
   background: var(--surface-1);
+  --tint-ground: transparent;
   border-radius: var(--r-2);
   box-shadow: var(--elev-1);
   /* A too-wide table scrolls in its own box; clipping it amputates columns
      silently. Seven projects fixed this same defect independently. */
   overflow-x: auto;
   overflow-y: hidden;
+  /* The global focus ring floats 3px outside the cell box, so a landing that
+     stops a cell flush with the scroller edge amputates the first column's
+     arc into the clip. scroll-padding gives scrollIntoView landings room to
+     stop short of the edge (measured: 0px without, 8px with, chrome 152).
+     Tab focus does not use it: chrome leaves a partially visible cell
+     unscrolled, so a control flush with a clipped edge wants an inset ring
+     instead. */
+  scroll-padding-inline: 8px;
 }
 .table-wrap table {
   width: 100%;
@@ -1111,8 +1258,9 @@ button.setting-row {
 .table-wrap thead tr {
   border-bottom: 1px solid var(--line-soft);
   background: var(--well);
+  --tint-ground: transparent;
 }
-[data-theme="light"] .table-wrap thead tr { background: var(--surface-2); }
+[data-theme="light"] .table-wrap thead tr { background: var(--surface-2); --tint-ground: transparent; }
 /* THE tracked-caps eyebrow, and the three places it is sanctioned: a table
    header, a navigation-list group label, a weekday name. Not a merge into
    `tokens.css`'s `.label`, which declares 11px/1.4 where all three declare /1 and
@@ -1146,19 +1294,21 @@ button.setting-row {
    the 3px it had grown. What holds the sortable and plain labels together is
    `vertical-align` on the button, one screen down. A DESCENDANT selector, so the
    half pixel reaches the label in both places: moving only the plain one would
-   split the row again. Measured across the sheet's three tables, -0.88 / -0.62 /
-   -0.25 before and +0.12 / -0.12 / +0.25 after, with all five labels in the
-   sortable row on one range top and one ink top. What is left is DEVICE-PIXEL
-   PHASE and no stylesheet reaches it: two tables with the same content box read
-   0.74px apart purely because they land on different fractional page positions. */
-.table-wrap thead th .th-label { position: relative; top: 0.5px; }
+   split the row again. With all five labels in the sortable row on one range top
+   and one ink top, what is left is DEVICE-PIXEL PHASE and no stylesheet reaches
+   it: a table's reading swings about a pixel with its fractional page position,
+   measured -0.12 and +0.62 on one dashboard table 13.4px apart. So the nudge
+   CENTRES that swing rather than fitting one table: at 0.5px the nine tables on
+   disk read -0.25 to +0.62, at 0.25px -0.50 to +0.12, at the 0.5px budget's
+   edge and never past it. */
+.table-wrap thead th .th-label { position: relative; top: 0.25px; }
 .table-wrap tbody tr {
   border-bottom: 1px solid var(--line-soft);
   /* the transition lives with the selection rules in the table-patterns
      block, which restate this selector at equal specificity later */
 }
 .table-wrap tbody tr:last-child { border-bottom: none; }
-.table-wrap tbody tr:hover { background: var(--surface-2); }
+.table-wrap tbody tr:hover { background: var(--surface-2); --tint-ground: transparent; }
 .table-wrap tbody td {
   padding: 10px var(--space-4);
   color: var(--text-2);
@@ -1190,6 +1340,7 @@ button.setting-row {
 code {
   font: 400 var(--t-2)/1 var(--font-mono);
   background: var(--well);
+  --tint-ground: transparent;
   border: 1px solid var(--line-soft);
   padding: 2px 6px;
   border-radius: var(--r-1);
@@ -1201,6 +1352,7 @@ code {
 kbd {
   font: 500 var(--t-1)/1 var(--font-mono);
   background: var(--surface-1);
+  --tint-ground: transparent;
   border: 1px solid var(--line);
   border-bottom-width: 2px;
   border-radius: var(--r-1);
@@ -1212,6 +1364,7 @@ kbd {
 pre {
   font: 400 var(--t-2)/1.5 var(--font-mono);
   background: var(--well);
+  --tint-ground: transparent;
   border: 1px solid var(--line-soft);
   border-radius: var(--r-1);
   padding: var(--space-3) var(--space-4);
@@ -1235,6 +1388,7 @@ pre code {
   gap: var(--space-3);
   padding: var(--space-2) var(--space-4);
   background: var(--well);
+  --tint-ground: transparent;
   border: 1px solid var(--line-soft);
   border-bottom: none;
   border-radius: var(--r-1) var(--r-1) 0 0;
@@ -1271,7 +1425,7 @@ pre code {
 :hover > .code-copy, .code-copy:focus-visible { opacity: 1; }
 .code-copy:hover, .code-copy:focus-visible {
   color: var(--text);
-  background: color-mix(in srgb, var(--surface-2) 80%, transparent);
+  background: color-mix(in srgb, var(--surface-2) 80%, var(--tint-ground));
 }
 .code-copy svg { width: 14px; height: 14px; }
 .code-copy .icon-check { animation: check-pop var(--dur-near) var(--ease-out); }
@@ -1297,8 +1451,8 @@ pre code {
 /* ---- Diff marks ----
    The tint carries the semantics; the text keeps its own reading contrast. */
 .diff-add, .diff-remove { border-radius: 2px; padding: 0 1px; }
-.diff-add { background: color-mix(in srgb, var(--success) 22%, transparent); }
-.diff-remove { background: color-mix(in srgb, var(--danger) 22%, transparent); }
+.diff-add { background: color-mix(in srgb, var(--success) 22%, var(--tint-ground)); }
+.diff-remove { background: color-mix(in srgb, var(--danger) 22%, var(--tint-ground)); }
 
 /* ---- Stat / KPI ---- */
 .stat-label {
@@ -1326,8 +1480,9 @@ pre code {
 .stat-value,
 .ring-value,
 .claim-value { overflow-wrap: anywhere; }
-.stat-value,
+.stat-value  { font-size: var(--t-7); letter-spacing: -0.03em; }
 .ring-value  { font-size: var(--t-6); }
+@media (max-width: 768px) { .stat-value { font-size: var(--t-6); } }
 .stat-delta {
   font: 400 var(--t-2)/1 var(--font-sans);
   margin-top: var(--space-2);
@@ -1355,22 +1510,28 @@ pre code {
   height: 2px;
   border-radius: var(--r-pill);
   background: var(--accent-2);
+  --tint-ground: transparent;
 }
-/* Vertical form: marks a row in a list or a band in a chart. */
+/* Vertical form: marks a row in a list or a band in a chart. The bar and its
+   gap live in the container's own gutter, pulled back by exactly their width,
+   so the marked line's first glyph lands where every plain line's does: with
+   the padding alone the two measured 14px apart. */
 .annot-mark {
   border-inline-start: 2px solid var(--accent-2);
   padding-inline-start: var(--space-3);
+  margin-inline-start: calc(-2px - var(--space-3));
 }
 
 /* ---- Sparkline ----
    preserveAspectRatio="none" stretches the viewBox to the card's width,
    which would thin and fatten a declared stroke with the card (the
-   scaled-stroke trap). non-scaling-stroke pins the drawn
+   scaled-stroke trap, cursor.md). non-scaling-stroke pins the drawn
    width at 1.5 css px whatever the stretch. Line contrast on the card,
-   WCAG 1.4.11's 3:1 graphics floor: series-1 5.21:1 dark, 5.69:1 light
+   WCAG 1.4.11's 3:1 graphics floor: series-1 5.21:1 dark, 5.81:1 light
    on --surface-1, measured. */
 .stat-spark {
   --spark: var(--chart-series-1);
+  --series: var(--spark);   /* the area and end point ui.js builds read --series */
   height: 28px;
   margin-top: var(--space-3);
 }
@@ -1431,11 +1592,12 @@ pre code {
 }
 .toast {
   background: var(--surface-1);
+  --tint-ground: transparent;
   border-radius: var(--r-2);
   box-shadow: var(--elev-float);
   padding: var(--space-4);
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: var(--space-3);
   pointer-events: all;
   animation: toast-in var(--dur-near) var(--ease-out) both;
@@ -1453,16 +1615,15 @@ pre code {
 .callout-icon,
 .form-summary-icon,
 .banner-icon { flex-shrink: 0; }
-/* the three that sit beside a first line take a 1px optical nudge; the banner's
-   icon centres on the BODY instead, her call 2026-09-02, so it does not */
-.toast-icon,
-.callout-icon,
-.form-summary-icon { margin-top: 1px; }
-/* an icon dropped in without its own width lays out at 0; the slot states it */
-.toast-icon svg,
+/* An icon dropped in without its own width lays out at 0, so the slot states
+   it. `display: block` is what centres it: an inline svg sits on the text
+   baseline, so the slot's line box runs 22.69px around a 16px glyph and the
+   descender space rides the glyph 3.34px above the slot's own centre. Measured
+   on every panel but the banner, which carried this one declaration alone. */
+.toast-icon > svg,
 .callout-icon > svg,
 .form-summary-icon > svg,
-.banner-icon svg { width: 16px; height: 16px; }
+.banner-icon > svg { display: block; width: 16px; height: 16px; }
 .toast-body { flex: 1; min-width: 0; }
 .toast-msg   { font-size: var(--t-2); color: var(--text-3); margin-top: 3px; }
 
@@ -1477,6 +1638,9 @@ pre code {
 .callout,
 .banner {
   display: flex;
+  /* the icon centres on the BODY: a 1px nudge onto the
+     first line put a two-line body's icon high by half the second line */
+  align-items: center;
   gap: var(--space-3);
   border-radius: var(--r-2);
   box-shadow: var(--lit-1);
@@ -1484,7 +1648,7 @@ pre code {
 .form-summary,
 .callout { padding: 12px var(--space-4); }
 .callout,
-.banner { background: var(--surface-1); }
+.banner { background: var(--surface-1); --tint-ground: transparent; }
 /* The icon carries the semantic, so the variant colours it. Leaving that to an
    inline style is how a callout ships with a --text icon and reads as neutral. */
 .callout-info    > .callout-icon { color: var(--info); }
@@ -1510,6 +1674,7 @@ pre code {
    script sets transform-origin per side, never the centre. */
 .popover {
   background: var(--surface-1);
+  --tint-ground: transparent;
   border-radius: var(--r-2);
   box-shadow: var(--elev-float);
   overflow: hidden;
@@ -1544,7 +1709,14 @@ pre code {
   display: flex;
   align-items: center;
   gap: var(--space-3);
-  padding: 8px 14px;
+  /* 10 and not 14: the panel's own 4px gutter supplies the rest, so the text
+     column sits where it always did, 14px in from the panel edge. */
+  padding: 8px 10px;
+  /* THE row radius, in every state. A radius that arrives with a state is a
+     corner that animates, and it left a hovered row's square band meeting a
+     selected row's rounded one; a state rule declaring one is that defect
+     restated. */
+  border-radius: var(--r-1);
   font-size: var(--t-3);
   color: var(--text-2);
   cursor: pointer;
@@ -1556,24 +1728,84 @@ pre code {
 /* THE neutral hover, and every borderless control and list row in the system
    takes it from here. --text on --surface-2 measures 8.56:1 dark, 11.28:1 light.
    It has to sit at or before this point, not with the icon buttons further down:
-   `.menu-item.active`, `.menu-item.danger` and `.input-step:disabled` each tie it
-   at (0,2,0) and have to win by coming after. `.disclosure[open] > summary` ties
-   it too, at (0,2,1), inertly, since both spell --text. */
-.close:hover,
+   `.menu-item.active` and `.input-step:disabled` each tie it at (0,2,0) and have
+   to win by coming after. `.menu-item.danger` ties it too, inertly: its own
+   `:hover` at (0,3,0) sets the hovered label. `.disclosure[open] > summary` ties
+   it too, at (0,2,1), inertly, since both spell --text. The remove control is
+   not a member: removing is destructive, and its hover is its own, declared
+   with `.close` in the one-remove-control section. */
 .copy-chip-btn:hover,
 .select-clear:hover,
 .row-toggle:hover,
 .disclosure summary:hover,
 .input-step:hover,
-.menu-item:hover { background: var(--surface-2); color: var(--text); }
+.menu-item:hover { background: var(--surface-2); --tint-ground: transparent; color: var(--text); }
 /* The chosen row, whether a menu marks it with `.active` or a select marks it
-   with aria. It has to sit AFTER `:hover`: the two tie at (0,2,0) and a hovered
-   chosen row must keep its accent rather than repaint grey. */
+   with aria. It has to sit AFTER `:hover`, and the ORDER IS ONLY LOAD-BEARING
+   FOR THE FIRST SELECTOR: `.menu-item.active` ties the hover at (0,2,0) and
+   would repaint grey under the pointer from any earlier position, while the
+   select's own selector measures (0,3,0) and wins from anywhere. */
 .menu-item.active,
 .select-menu .menu-item[aria-selected="true"] { color: var(--accent-text); background: var(--accent-quiet); }
 .menu-item.danger { color: var(--danger); }
-.menu-item.danger:hover { background: color-mix(in srgb, var(--danger) 10%, transparent); }
-.menu-divider { height: 1px; background: var(--line-soft); margin: 3px 0; }
+.menu-item.danger:hover { background: color-mix(in srgb, var(--danger) 10%, var(--tint-ground)); color: var(--danger-text); }
+/* The arrow-key row carries the hover costume, the same mark the select's
+   listbox takes for its focused option. It has to sit after `.active`: a
+   focused active row keeps its accent fill as its one mark. The danger row
+   keeps its danger hover, never the neutral band. */
+.popover-menu .menu-item.focus:not(.active) {
+  background: var(--surface-2);
+  --tint-ground: transparent;
+  color: var(--text);
+}
+.popover-menu .menu-item.danger.focus:not(.active) {
+  background: color-mix(in srgb, var(--danger) 10%, var(--tint-ground));
+  color: var(--danger-text);
+}
+/* 1px and not 3: the lane below contributes the other 2 on each side, so the
+   painted gap around a divider stays the 3px it measured before the lane.
+   `flex-shrink: 0` because the lane makes its panel a flex column and the
+   select's is height-bounded: a row is floored by its own min-content, an empty
+   1px rule is floored by nothing, and it measured 0px tall with no hairline. */
+.menu-divider { height: 1px; flex-shrink: 0; background: var(--line-soft); --tint-ground: transparent; margin: 1px 0; }
+
+/* ---- The list panel's one gutter ----
+   A row in a list panel sits in a 4px inset with --r-1 corners in every state
+   and a 2px lane to the next row, so no two bands touch and no band reaches the
+   panel's own corner.
+
+   4px is not a taste: on the --r-2 popover a row's corner is concentric with
+   the panel's, since --r-2 - --space-1 is exactly --r-1. A clipped rounded
+   panel bites r - sqrt(r^2 - (r - gap)^2) out of anything reaching its corner:
+   the whole 14 at no gap, still 4.20 at 4px if the row's own corner were
+   square. It is the CONCENTRICITY that takes the bite to nothing, not the
+   inset alone. Both panels clip at their PADDING box, one glass border inside
+   the radius they declare, so the identity lands a pixel off rather than dead
+   on: 13 against the row's 10 at a 4px inset here, 9 against 10 in the select,
+   whose panel rounds at --r-1. Either way the row's own corner leaves the clip
+   nothing to take.
+
+   THE GUTTER IS KEYED ON WHAT THE PANEL HOLDS, not on `.popover-menu`: one page
+   writes a bare `.popover` around its rows, and a contract a consumer can miss
+   by one class is the contract that ships the defect back. `.select-menu` is
+   not a `.popover`, and the palette's rows sit a level down, so those two state
+   their own; the lane is shared, because the lane is one number.
+
+   The lane is a gap and not a margin because `.daterange-presets` turns into a
+   wrapping row under 560px, where a block margin staggers the line instead of
+   separating it. */
+.popover:has(> .menu-item) { padding: var(--space-1); }
+.popover:has(> .menu-item),
+.select-menu,
+.palette-group,
+.nav-group,
+.tree,
+.tree-group,
+.tree li {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
 
 /* ---- Tooltip ----
    The popover shell with a placement costume: surface-1 plus the float
@@ -1607,21 +1839,22 @@ pre code {
 .popover.tooltip       { animation: tooltip-in-top var(--dur-near) var(--ease-out) both; }
 .popover.tooltip.below { animation-name: tooltip-in-below; }
 .popover.tooltip.closing       { animation: tooltip-out-top var(--dur-out-near) var(--ease) both; }
-.popover.tooltip.below.closing { animation-name: tooltip-out-below; }
+/* the below variant lifts as it leaves, the same move the palette exits on, so
+   it takes that keyframe rather than a fourth copy of it */
+.popover.tooltip.below.closing { animation-name: lift-out; }
 @keyframes tooltip-in-top    { from { opacity: 0; transform: translateY(4px)  scale(0.98); } }
 @keyframes tooltip-in-below  { from { opacity: 0; transform: translateY(-4px) scale(0.98); } }
 @keyframes tooltip-out-top   { to   { opacity: 0; transform: translateY(4px)  scale(0.99); } }
-@keyframes tooltip-out-below { to   { opacity: 0; transform: translateY(-4px) scale(0.99); } }
 
 /* Reduced motion: fades stay, transforms go. Restated at each rule's own
    specificity; a shorter selector here is outranked and the transform
    comes back. */
 @media (prefers-reduced-motion: reduce) {
-  .popover.tooltip, .popover.tooltip.below { animation: tooltip-in-fade var(--dur-near) var(--ease) both; }
-  .popover.tooltip.closing, .popover.tooltip.below.closing { animation: tooltip-out-fade var(--dur-out-near) var(--ease) both; }
+  .popover.tooltip, .popover.tooltip.below { animation: fade-in var(--dur-near) var(--ease) both; }
+  .popover.tooltip.closing, .popover.tooltip.below.closing { animation: fade-out var(--dur-out-near) var(--ease) both; }
 }
-@keyframes tooltip-in-fade  { from { opacity: 0; } to { opacity: 1; } }
-@keyframes tooltip-out-fade { to   { opacity: 0; } }
+@keyframes fade-in  { from { opacity: 0; } to { opacity: 1; } }
+@keyframes fade-out { to   { opacity: 0; } }
 
 /* ---- Command palette ----
    The popover shell dropped over the page from the top centre: a search head,
@@ -1667,12 +1900,13 @@ pre code {
 }
 /* its own exit, outranking the shell's at (0,3,0): the panel is centred, so it
    leaves the way it arrived rather than toward a trigger's edge */
-.popover.palette.closing { animation: palette-out var(--dur-out-near) var(--ease) both; }
-@keyframes palette-out { to { opacity: 0; transform: translateY(-4px) scale(0.99); } }
+.popover.palette.closing { animation: lift-out var(--dur-out-near) var(--ease) both; }
+@keyframes lift-out { to { opacity: 0; transform: translateY(-4px) scale(0.99); } }
 
 /* ---- Search head ----
-   14px inline padding here, on the group labels and on `.menu-item` itself, so
-   the icon column and every text column share one gutter down the panel. */
+   Every column down the panel starts 14px in: the head states that gutter
+   itself, and the group labels and the rows reach it as their own 10px inside
+   the list panel's 4px. */
 .palette-search {
   display: flex;
   align-items: center;
@@ -1691,8 +1925,12 @@ pre code {
   font: 400 var(--t-4)/1.4 var(--font-sans);
   color: var(--text);   /* on the glass panel: 6.48:1 dark, 10.76:1 light */
 }
-/* --text-placeholder resolves to --glass-dim inside the panel: 4.67:1 dark, 4.72 light */
-.palette-input::placeholder { color: var(--text-placeholder); }
+/* the one placeholder painted straight on a panel rather than a --well, so it
+   reads --text-4, the panel's dim text: on the glass panel --text-4 re-floors to
+   --glass-dim (4.67:1 dark, 4.72:1 light), and on the opaque --surface-1 it holds
+   4.73:1 dark / 5.55:1 light, where the --well-tuned --text-placeholder falls to
+   3.89:1 dark. */
+.palette-input::placeholder { color: var(--text-4); }
 /* The dialog holds focus here for its whole life and nothing else inside it
    takes focus, so a ring around the only focusable element names nothing: the
    caret marks the field, the accent edge marks the keyboard's row. The base
@@ -1711,10 +1949,10 @@ pre code {
 }
 /* each group carries its own breathing room, so a group the query filtered out
    contributes none and the list needs no adjacency rule to stay even */
-.palette-group { padding: var(--space-2) 0; }
+.palette-group { padding: var(--space-2) var(--space-1); }   /* block rhythm, then the list panel's gutter */
 /* the sidebar group label's treatment: `.label` carries the caps, the tracking
    and --text-3, which is --glass-dim inside this panel: 4.67:1 dark, 4.72 light */
-.palette-group-label { padding: var(--space-1) 14px; }
+.palette-group-label { padding: var(--space-1) 10px; }
 
 /* the sidebar's icon treatment: dimmed at rest, full on the active row.
    --icon-dim is 0.7 on an opaque surface and 0.90 on glass, which this panel
@@ -1724,8 +1962,8 @@ pre code {
 .palette-row.active > svg { opacity: 1; }
 .palette-name { flex: 1 1 auto; min-width: 0; }   /* a flex child needs this before .truncate can bite */
 /* The active row is marked by the shared active-row band and nothing else, and
-   `.menu-item.active` supplies --accent-text. On glass that fill is --glass-quiet,
-   laid down opaque so it cannot composite twice: --accent-text measures 5.95:1
+   `.menu-item.active` supplies --accent-text. On glass that fill is the panel's opaque
+   quiet mix, laid down so it cannot composite twice: --accent-text measures 5.95:1
    dark and 4.89 light on it.
    The palette marks its arrow-key row `.active`, so it has one row state and no
    `.focus`: `initSelect` is the only controller that writes that class, over
@@ -1738,7 +1976,7 @@ pre code {
    --glass-dim 6.17:1 and 4.96:1 on the shortcut sheet's glass. */
 .palette-hint kbd,
 .palette-search kbd,
-.shortcut-keys kbd { background: var(--surface-2); }
+.shortcut-keys kbd { background: var(--surface-2); --tint-ground: transparent; }
 
 /* No match: a row that names the fix, built from what was typed. */
 .palette-empty {
@@ -1750,9 +1988,8 @@ pre code {
 @media (prefers-reduced-motion: reduce) {
   /* restated at the exit rule's own (0,3,0). A bare `.popover` here is
      outranked and the panel keeps its move. */
-  .popover.palette.closing { animation: palette-out-fade var(--dur-out-near) var(--ease) both; }
+  .popover.palette.closing { animation: fade-out var(--dur-out-near) var(--ease) both; }
 }
-@keyframes palette-out-fade { to { opacity: 0; } }
 
 /* ---- Avatar ---- */
 .avatar {
@@ -1778,12 +2015,14 @@ pre code {
 .progress {
   height: 3px;
   background: var(--surface-2);
+  --tint-ground: transparent;
   border-radius: var(--r-pill);
   overflow: hidden;
 }
 .progress-bar {
   height: 100%;
   background: var(--accent);
+  --tint-ground: transparent;
   border-radius: var(--r-pill);
   transition: width var(--dur-far) var(--ease);
 }
@@ -1791,6 +2030,7 @@ pre code {
 /* ---- Skeleton (no shimmer, by spec) ---- */
 .skeleton {
   background: var(--surface-2);
+  --tint-ground: transparent;
   border-radius: var(--r-1);
 }
 
@@ -1814,15 +2054,23 @@ pre code {
 .empty-title { font: 500 var(--t-4)/1.3 var(--font-sans); color: var(--text); }
 .empty-state .btn { margin-top: var(--space-3); }
 
-/* ---- Spinner (loading outside buttons) ---- */
+/* ---- Spinner (loading outside buttons) ----
+   The ring is a graphic, so it holds the 3:1 floor: --accent is 7.49:1 on
+   --bg and 6.48 on --surface-1 dark, 4.09 / 4.60 light. --accent-line was
+   2.25 / 1.56 on --bg. */
 .spinner {
   display: inline-block;
   width: 14px;
   height: 14px;
-  border: 2px solid var(--accent-line);
+  border: 2px solid var(--accent);
   border-top-color: transparent;
   border-radius: 50%;
   animation: spin 0.6s linear infinite;
+}
+/* rests under reduce like the button's ring; the consumers keep their own
+   done-state cues beside it (a check glyph, a chevron, a dirty hairline) */
+@media (prefers-reduced-motion: reduce) {
+  .spinner { animation: none; }
 }
 
 /* ---- Modal ----
@@ -1841,6 +2089,7 @@ pre code {
 }
 .modal {
   background: var(--surface-1);
+  --tint-ground: transparent;
   border-radius: var(--r-3);
   box-shadow: var(--elev-float);
   width: min(560px, 100%);
@@ -1908,30 +2157,47 @@ pre code {
   white-space: nowrap;
 }
 
-/* ---- Range slider ---- */
+/* ---- Range slider ----
+   Real elements, no native range: a UA shadow thumb paints the platform pointer over
+   the ring whatever cursor the page declares (her tools-page followup: the thumb
+   pseudo computed `none` and the pointer still painted), the same family the native
+   select and the file input retired for. The thumb rides the fill's right edge, so one
+   width drives both. */
 .slider {
-  -webkit-appearance: none;
-  appearance: none;
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 100%;
+  height: 14px;
+  cursor: pointer;
+  touch-action: none;
+}
+.slider-track {
+  position: relative;
   width: 100%;
   height: 4px;
   background: var(--surface-2);
+  --tint-ground: transparent;
   border-radius: var(--r-pill);
-  cursor: pointer;
 }
-.slider::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  width: 14px; height: 14px;
+.slider-fill {
+  position: relative;  /* the thumb's containing block: without it the thumb anchors to the track and ignores the fill width */
+  height: 100%;
+  width: 0;
   background: var(--accent);
-  border: none;
-  border-radius: 50%;
-  cursor: pointer;
+  --tint-ground: transparent;
+  border-radius: var(--r-pill);
 }
-.slider::-moz-range-thumb {
-  width: 14px; height: 14px;
-  background: var(--accent);
-  border: none;
+.slider-thumb {
+  position: absolute;
+  right: -7px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 14px;
+  height: 14px;
   border-radius: 50%;
-  cursor: pointer;
+  background: var(--accent);
+  --tint-ground: transparent;
 }
 .slider:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
 
@@ -1958,13 +2224,19 @@ pre code {
    see "Reveal JS" in the skill. */
 .section-sticky {
   position: sticky;
-  /* the navbar's own height, or the header pins 8px inside a bar that outranks
-     it on z-index and loses its top edge behind it */
-  top: var(--navbar-h);
+  /* --pin-top, never a bar's own height: it is the height of whatever bar this
+     page actually holds, derived at the root beside the navbar and the topbar,
+     and a sidebar shell holds none, so the header pins to the viewport top.
+     It has to be the bar that is really there, or the header pins inside one
+     that outranks it on z-index and loses its top edge behind it - or, on a
+     page with no bar at all, hangs a bar's height below nothing. */
+  top: var(--pin-top);
   z-index: 5;
   width: 100%;
   padding: var(--space-2) 0;
-  background: var(--bg);
+  /* no tone at rest: a header in flow paints over whatever the page shows
+     there (the sky, a band), and the bar's tone exists only while stuck */
+  background: transparent;
   /* the hairline exists in both states so the stuck swap moves a colour,
      never adds a border pixel */
   border-bottom: 1px solid transparent;
@@ -1987,6 +2259,7 @@ pre code {
      hairline is what says it is there. An engine with no backdrop-filter and
      a viewer with reduced transparency then see one surface, not two. */
   background: var(--bg);
+  --tint-ground: transparent;
   /* full-bleed: the bar spans the viewport while its toolbar stays on the
      page column, via the matching inline padding. --vp-w is the
      scrollbar-excluded viewport width the sticky controller writes;
@@ -2009,9 +2282,13 @@ pre code {
   .section-sticky, .section-sticky.is-stuck { transition: none; }
 }
 /* A flush card header takes the card's top radius, the same way the setting
-   row's edge rows do. The stuck state spans the viewport, so it drops the
-   radius with the rest of the full-bleed swap. */
-.card > .section-sticky:first-child { border-radius: var(--r-2) var(--r-2) 0 0; }
+   row's edge rows do, and paints the card tone while it rides inside the
+   card; the stuck state spans the viewport as a page bar and keeps --bg. */
+.card > .section-sticky:first-child {
+  background: var(--surface-1);
+  --tint-ground: transparent;
+  border-radius: var(--r-2) var(--r-2) 0 0;
+}
 .card > .section-sticky.is-stuck { border-radius: 0; }
 /* the header's toolbar is single-line chrome, not the labeled-field row
    .toolbar defaults to (flex-end aligns a stack of labelled fields at the
@@ -2038,6 +2315,7 @@ pre code {
   z-index: 1100;
   padding: var(--space-2) var(--space-4);
   background: var(--surface-1);
+  --tint-ground: transparent;
   color: var(--text);
   border-radius: var(--r-pill);
   text-decoration: none;
@@ -2080,7 +2358,7 @@ html:has(.reveal-hover:focus-visible) :focus-within > .reveal-hover { opacity: 1
 /* ---- Scrollbar ----
    THE NATIVE ONE IS GONE, and the reason is the cursor. A scrollbar is a UA
    shadow tree, so `cursor: none` does not reach it and the platform pointer
-   paints over the ring for as long as you drag one: her call 2026-09-02, the
+   paints over the ring for as long as you drag one, the
    same family as the stretched file input and the native `<select>` popup,
    both already retired for it. `initScrollbars` draws a real element instead,
    which the ring paints over like any other surface.
@@ -2107,22 +2385,23 @@ html.has-drawn-scrollbars *::-webkit-scrollbar { width: 0; height: 0; }
   position: fixed;
   z-index: 999;   /* over the modal, under the toast stack that can cover it */
   background: var(--scrollbar-thumb);
+  --tint-ground: transparent;
   border-radius: var(--r-pill);
   opacity: 0;
   pointer-events: none;
   touch-action: none;
   /* THE RING READS ITS HOVER STATE OFF THIS DECLARATION. `cursor-rules.js`
-     collects every selector declaring `cursor: pointer` and the ring tightens
-     over that list, so the drawn thumb is a target like any other control and
+     collects every selector declaring `cursor: pointer` and the ring takes its
+     hover state over that list, so the drawn thumb is a target like any other control and
      the press state follows it through a drag. The value itself never paints
-     while the ring is armed: `custom-cursor` forces `cursor: none` on
-     everything, and the bar exists only on a page whose module ran. */
+     while the ring is armed: `custom-cursor` (on v3, beside `cursor-v3` or `#cursor-paint`)
+     forces `cursor: none` on everything, and the bar exists only on a page whose module ran. */
   cursor: pointer;
   transition: opacity var(--dur-tint) var(--ease), background var(--dur-tint) var(--ease);
 }
 .ui-scrollbar.is-on { opacity: 1; pointer-events: auto; }
 .ui-scrollbar:hover,
-.ui-scrollbar.is-drag { background: var(--text-4); }
+.ui-scrollbar.is-drag { background: var(--text-4); --tint-ground: transparent; }
 .ui-scrollbar-y { width: 6px; }
 .ui-scrollbar-x { height: 6px; }
 
@@ -2130,6 +2409,7 @@ html.has-drawn-scrollbars *::-webkit-scrollbar { width: 0; height: 0; }
 hr, .divider {
   height: 1px;
   background: var(--line);
+  --tint-ground: transparent;
   border: none;
   margin: var(--space-6) 0;
 }
@@ -2182,6 +2462,7 @@ hr, .divider {
   --cbtn-slot: 0px;
   --cbtn-rise: 0px;
   background: var(--surface-1);
+  --tint-ground: transparent;
   border-right: 1px solid var(--line-soft);
   width: 252px;
   display: flex;
@@ -2211,17 +2492,49 @@ hr, .divider {
   margin-bottom: var(--space-3);
   flex-shrink: 0;   /* pinned: the nav is the only item that gives */
 }
-.logo-mark {
-  width: 28px;
-  height: 28px;
-  border-radius: var(--r-1);
-  background: var(--accent);
-  color: var(--on-accent);
+/* ---- Brand mark ----
+   The brand's image slot: a squircle at the bar's control height, a 2px ring
+   in --brand-ring (rose, the identity accent), and the striped placeholder
+   when empty. It holds an <img> that fills it; the ring radius is inherited.
+   The empty slot carries no text: the wordmark beside it keeps the accessible
+   name, so the slot is decorative (aria-hidden on an empty one, alt="" on its
+   img). The stripe reuses .img-placeholder's pattern on --well, never a new
+   literal. */
+.sona {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font: 600 13px/1 var(--font-sans);
+  width: 32px;
+  height: 32px;
+  border-radius: var(--r-1);
+  border: 2px solid var(--brand-ring);
+  background-color: var(--well);
+  --tint-ground: transparent;
+  background-image: repeating-linear-gradient(
+    -45deg,
+    color-mix(in srgb, var(--text-4) 18%, var(--tint-ground)) 0 1px,
+    transparent 1px 9px
+  );
   flex-shrink: 0;
+}
+.sona img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: inherit;
+}
+/* the sidebar logo row has room for a larger mark */
+.sidebar-logo > .sona {
+  width: 36px;
+  height: 36px;
+}
+/* under 768 the navbar hides the wordmark; the sona matches the mark size it
+   replaced so the nav link band keeps its width */
+@media (max-width: 768px) {
+  .navbar-brand > .sona {
+    width: 28px;
+    height: 28px;
+  }
 }
 .logo-name {
   font: 600 var(--t-4)/1.25 var(--font-sans);
@@ -2238,6 +2551,7 @@ hr, .divider {
   /* inline padding lives with the rail geometry: `.sidebar .sidebar-search`
      derives it from --rail and outranks anything stated here */
   background: var(--well);
+  --tint-ground: transparent;
   border-radius: var(--r-1);
   color: var(--text-3);
   font-size: var(--t-2);
@@ -2246,6 +2560,7 @@ hr, .divider {
 .sidebar-search kbd {
   font: 500 10px/1 var(--font-mono);
   background: var(--surface-1);
+  --tint-ground: transparent;
   border: none;
   padding: 3px 6px;
   border-radius: 5px;
@@ -2282,21 +2597,20 @@ hr, .divider {
   user-select: none;
   transition: color var(--dur-tint) var(--ease), background var(--dur-tint) var(--ease);
 }
-.nav-item:hover { color: var(--text-2); background: var(--surface-2); }
+.nav-item:hover { color: var(--text-2); background: var(--surface-2); --tint-ground: transparent; }
 .nav-item.active { color: var(--text); font-weight: 500; }
-/* The active row's band is one rule across the three rows that paint one: the
-   quiet accent fill spans the row and starts at the row's own indent, rounded
-   like this sidebar row. Derived from .nav-item.active, her call 2026-09-01.
-   ONE accent mark appears per row, and it is this band: her call 2026-09-02
-   retired the 2px capsule the tree and the palette added on top of it, for the
-   reason .nav-indicator went on 2026-08-29. The sidebar's dot is not a second
-   mark, since it is on every row at rest and only changes shape here. */
-.nav-item.active,
-.tree-row[aria-selected="true"],
-.palette-row.active {
-  background: var(--accent-quiet);
-  border-radius: var(--r-1);
-}
+/* The active row's band is one rule across the three rows that paint one. It
+   is declared down in the tree block, the last of the three hover rules it has
+   to outrank: `.nav-item:hover` above, `.menu-item:hover` for the palette and
+   `.tree-row:hover` below all tie it at (0,2,0), and a hovered selected row
+   keeps its accent rather than repainting grey, the treatment
+   `.menu-item.active` already had. The shape is NOT here: each row carries
+   --r-1 at rest, so the band arrives on a corner that is already rounded and
+   nothing animates. ONE accent mark appears per row, and it is this band: her
+   call 2026-09-02 retired the 2px capsule the tree and the palette added on
+   top of it, for the reason .nav-indicator went on 2026-08-29. The sidebar's
+   dot is not a second mark, since it is on every row at rest and only changes
+   shape here. */
 /* The dot IS the marker: the active row's own dot grows into a capsule, and the
    leaving row's shrinks back, on the same frame. One element changing shape,
    never two swapping. r-pill instead of 50% so the grown state stays a capsule;
@@ -2307,25 +2621,31 @@ hr, .divider {
   border-radius: var(--r-pill);
   flex-shrink: 0;
   background: var(--text-4);
+  --tint-ground: transparent;
   transition:
     height var(--dur-near) var(--ease),
     background var(--dur-tint) var(--ease),
     box-shadow var(--dur-tint) var(--ease);
 }
-.nav-item:hover .nav-dot { background: var(--text-3); }
-.nav-item.active .nav-dot { height: var(--space-4); background: var(--accent); box-shadow: var(--accent-glow); }
+.nav-item:hover .nav-dot { background: var(--text-3); --tint-ground: transparent; }
+.nav-item.active .nav-dot { height: var(--space-4); background: var(--accent); --tint-ground: transparent; box-shadow: var(--accent-glow); }
 .nav-item svg { width: 14px; height: 14px; flex-shrink: 0; opacity: var(--icon-dim); }
 .nav-item.active svg { opacity: 1; }
 .nav-badge {
   font: 500 10px/1 var(--font-mono);
   background: var(--surface-2);
+  --tint-ground: transparent;
   color: var(--text-3);
   border-radius: var(--r-pill);
   padding: 3px 7px;
   margin-left: auto;
   transition: background var(--dur-tint) var(--ease), color var(--dur-tint) var(--ease);
 }
-.nav-item.active .nav-badge { background: var(--accent-quiet); color: var(--accent-text); }
+/* on the active row the badge drops its own fill and sits on the band, her
+   pick 2026-10-09: a quiet fill on the quiet band read 4.41:1 dark on the
+   sidebar. On the band it reads 5.82:1 dark and, with the shared remix, 5.48
+   light. */
+.nav-item.active .nav-badge { background: transparent; color: var(--accent-text); }
 .sidebar-user {
   margin-top: var(--space-2);
   padding-block: var(--space-4) 0;   /* inline side is a --rail function below */
@@ -2401,14 +2721,14 @@ hr, .divider {
   padding-block: calc(var(--cbtn-rise) * var(--rail) + var(--cbtn-slot) * (1 - var(--rail))) var(--space-4);
   padding-inline: calc(var(--space-4) + 3px * (1 - var(--rail)))
                   calc(var(--space-4) + var(--cbtn-slot) * var(--rail));
-  border-bottom-color: color-mix(in srgb, var(--line-soft) calc(var(--rail) * 100%), transparent);
+  border-bottom-color: color-mix(in srgb, var(--line-soft) calc(var(--rail) * 100%), var(--tint-ground));
 }
 
 /* the brand block clips at the slot's edge. The row clips at its PADDING box,
    which is outside the slot, so a name longer than the column paints under
    the chevron; and a nowrap flex item will not shrink past its text without
    an explicit min-width. */
-.sidebar .sidebar-logo > :not(.logo-mark):not(.sidebar-collapse) {
+.sidebar .sidebar-logo > :not(.sona):not(.sidebar-collapse) {
   min-width: 0;
   overflow: hidden;
 }
@@ -2476,7 +2796,7 @@ hr, .divider {
   transition: color var(--dur-tint) var(--ease), background var(--dur-tint) var(--ease);
 }
 /* 4.73:1 dark and 5.55:1 light at rest, 6.17 and 7.00 on the hover fill */
-.sidebar-collapse:hover { color: var(--text-2); background: var(--surface-2); }
+.sidebar-collapse:hover { color: var(--text-2); background: var(--surface-2); --tint-ground: transparent; }
 .sidebar-collapse svg {
   width: 14px;
   height: 14px;
@@ -2567,11 +2887,16 @@ hr, .divider {
   padding: 0 var(--space-8);
   margin-inline: auto;
   background: var(--surface-1);
+  --tint-ground: transparent;
   border-bottom: 1px solid var(--line-soft);
   position: sticky;
   top: 0;
   z-index: 100;
 }
+/* the pin derivation: a page holding this bar starts its
+   pinned things under it, and a page holding none pins to the viewport top.
+   --navbar-h itself stays the bar's own height and nothing else. */
+html:has(.navbar) { --pin-top: var(--navbar-h); }
 /* The width change is a NAMED DEVIATION, same class as the rail collapse:
    a bar resizing its own row; nothing below it reflows. Arrival at the
    band is the entrance leg, the return to the card the 0.6x exit, each
@@ -2632,6 +2957,7 @@ hr, .divider {
     inset: 0 0 auto 0;
     height: calc(var(--space-3) + 1px);
     background: var(--bg);
+    --tint-ground: transparent;
     z-index: 99;
   }
 }
@@ -2640,8 +2966,9 @@ hr, .divider {
 }
 .navbar-brand {
   display: flex;
-  flex-direction: column;
-  justify-content: center;
+  flex-direction: row;
+  align-items: center;
+  gap: var(--space-2);
   padding-right: var(--space-5);
   margin-right: var(--space-3);
   border-right: 1px solid var(--line-soft);
@@ -2693,7 +3020,7 @@ hr, .divider {
   user-select: none;
   white-space: nowrap;
 }
-.navbar-link:hover  { color: var(--text); background: var(--surface-2); text-decoration: none; }
+.navbar-link:hover  { color: var(--text); background: var(--surface-2); --tint-ground: transparent; text-decoration: none; }
 .navbar-link.active { color: var(--accent-text); font-weight: 500; }
 .navbar-link svg    { width: 14px; height: 14px; flex-shrink: 0; opacity: var(--icon-dim); }
 .navbar-link.active svg { opacity: 1; }
@@ -2725,6 +3052,7 @@ hr, .divider {
   padding: 0 var(--space-4);
   height: var(--topbar-h);
   background: var(--surface-1);
+  --tint-ground: transparent;
   border-bottom: 1px solid var(--line-soft);
   position: sticky;
   top: 0;
@@ -2764,10 +3092,12 @@ hr, .divider {
 
 @media (max-width: 768px) {
   .mobile-topbar { display: flex; }
-  /* the bar above a stuck header down here is the topbar, not the navbar, and
-     the two are different heights: pinning at --navbar-h shows 4px of page
-     through the gap */
-  .section-sticky { top: var(--topbar-h); }
+  /* the topbar's own display condition: under it, a page holding the topbar
+     re-derives the pin at the mobile bar's height. Scoped to the bar's
+     presence and not written bare, so a narrow page holding a navbar and no
+     topbar keeps the navbar's 56; ties the navbar derivation at (0,1,1) and
+     wins by coming after it. */
+  html:has(.mobile-topbar) { --pin-top: var(--topbar-h); }
   .sidebar {
     position: fixed;
     top: 0;
@@ -2828,9 +3158,6 @@ hr, .divider {
   /* padding alone cannot promise the floor: the tab's own line-height and font
      size decide the rest, and the pair measured 40.8px */
   .tab { padding-top: 12px; padding-bottom: 12px; min-height: var(--ctl-lg); }
-  /* the palette's rows are .palette-row, not .menu-item, so the row floor above
-     never reached them: measured 21.7px */
-  .palette-row { min-height: var(--ctl-lg); }
   /* A segment carries the floor itself: a segmented control has no row to hand
      it to, and the track grows with the segment, so the ink follows off its own
      `calc(100% - 6px)` with no rule here. Measured 26.4px. */
@@ -2856,16 +3183,16 @@ hr, .divider {
    Fades stay, transforms go. Nothing waits on transitionend, so no state
    feedback is lost and no script is stranded. */
 @media (prefers-reduced-motion: reduce) {
-  .btn:active, .card-interactive:hover, .swatch:hover { transform: none; }
-  .toast { animation: toast-in-fade var(--dur-near) var(--ease) both; }
-  .toast.removing { animation: toast-out-fade var(--dur-out-near) var(--ease) both; }
-  .modal { animation: modal-in-fade var(--dur-near) var(--ease) both; }
-  .modal-backdrop.closing .modal { animation: modal-out-fade var(--dur-out-far) var(--ease) both; }
-  .popover { animation: popover-in-fade var(--dur-near) var(--ease) both; }
+  .card-interactive:hover, .swatch:hover { transform: none; }
+  .toast { animation: fade-in var(--dur-near) var(--ease) both; }
+  .toast.removing { animation: fade-out var(--dur-out-near) var(--ease) both; }
+  .modal { animation: fade-in var(--dur-near) var(--ease) both; }
+  .modal-backdrop.closing .modal { animation: fade-out var(--dur-out-far) var(--ease) both; }
+  .popover { animation: fade-in var(--dur-near) var(--ease) both; }
   /* at (0,2,0), because the base exit is too and this block adds no specificity.
      The daterange panel rides along for the same reason it rides the base. */
   .popover.closing,
-  .daterange.closing > .daterange-panel { animation-name: tooltip-out-fade; }
+  .daterange.closing > .daterange-panel { animation-name: fade-out; }
   .reveal { transform: none; }
   .zoom-img img, img.zoom-img { transform: none; }
   .tab-ink, .navbar-ink, .tabs-boxed-ink { transition: opacity var(--dur-tint) var(--ease); }
@@ -2887,22 +3214,20 @@ hr, .divider {
      base selector's own specificity so the (0,2,2) rules above cannot outrank */
   .checkbox-label input[type="checkbox"]::after,
   .radio-label input[type="radio"]::after { transition: opacity var(--dur-near) var(--ease-out); }
+  /* the knob arrives; the track's own fill still fades */
+  .toggle::after { transition: none; }
   .tab-panel.active,
   .form-summary { animation-name: panel-in-fade; }
   .code-copy .icon-check { animation: none; }
 }
-@keyframes chip-in-fade { from { opacity: 0; } }
-@keyframes chip-out-fade { to { opacity: 0; } }
+/* the reduce fallbacks are three bodies, not one per component: `panel-in-fade`
+   holds the element's own end opacity, `fade-in` forces it to 1, and
+   `fade-out` is the exit every one of them leaves on. */
 @keyframes panel-in-fade { from { opacity: 0; } }
 @media (prefers-reduced-motion: reduce) and (max-width: 768px) {
   .sidebar { transform: none; opacity: 0; transition: opacity var(--dur-out-far) var(--ease); }
   .sidebar.open { opacity: 1; }
 }
-@keyframes toast-in-fade { from { opacity: 0; } to { opacity: 1; } }
-@keyframes toast-out-fade { to { opacity: 0; } }
-@keyframes popover-in-fade { from { opacity: 0; } to { opacity: 1; } }
-@keyframes modal-in-fade { from { opacity: 0; } to { opacity: 1; } }
-@keyframes modal-out-fade { to { opacity: 0; } }
 
 /* ---- Theme switch ----
    The dataset.theme swap crossfades the whole page. document.startViewTransition
@@ -2990,15 +3315,15 @@ html[data-theme="light"] [data-theme-toggle] .icon-sun {
   /* no control-height floor on a fine pointer: a header is not a control row, and
      the 30px one made a sortable header 50.5px against a plain one's 31.5, so the
      same table header rendered two heights. It is 36.5 now. The 44px tap floor
-     lives in the coarse block and is untouched. Her call 2026-09-03. */
+     lives in the coarse block and is untouched. */
   transition: color var(--dur-tint) var(--ease);
 }
 .th-sort:hover { color: var(--text); }
 
 /* One fixed box holding two sprite glyphs in one grid cell, the construction the
    theme toggle's sun and moon already use: `#i-sort` while the column is unsorted,
-   the direction chevron once it is, turned for descending. Her call 2026-09-02
-   squared this box so a 16-viewBox symbol could drop in; the pair of hand-drawn
+   the direction chevron once it is, turned for descending. The box is squared
+   so a 16-viewBox symbol could drop in; the pair of hand-drawn
    8 x 4 chevrons it replaces was the last glyph in the system no guard could read.
    The box stays fixed at every state, so the glyph can never shift the column. */
 .th-sort-icon {
@@ -3043,30 +3368,33 @@ th.num-col .th-sort { flex-direction: row-reverse; }
 }
 .table-wrap tbody tr.row-selected {
   background: color-mix(in srgb, var(--accent) 14%, var(--well));
+  --tint-ground: transparent;
   box-shadow: inset 2px 0 0 var(--accent);
 }
 [data-theme="light"] .table-wrap tbody tr.row-selected {
   background: color-mix(in srgb, var(--accent) 12%, var(--surface-1));
+  --tint-ground: transparent;
 }
 /* selection outranks hover: the row keeps its state under the pointer */
 .table-wrap tbody tr.row-selected:hover {
   background: color-mix(in srgb, var(--accent) 14%, var(--well));
+  --tint-ground: transparent;
 }
 [data-theme="light"] .table-wrap tbody tr.row-selected:hover {
   background: color-mix(in srgb, var(--accent) 12%, var(--surface-1));
+  --tint-ground: transparent;
 }
 /* a fresh row set fades in staggered (sort and page changes); opacity only,
-   a transform on a table-row is one engine's bug. The controller re-adds
-   the class to restart it. */
+   a transform on a table-row is one engine's bug. The page's render pass
+   re-adds the class to restart it. */
 .table-wrap tbody.rows-in tr {
-  animation: row-in var(--dur-near) var(--ease-out) both;
+  animation: panel-in-fade var(--dur-near) var(--ease-out) both;
 }
 .table-wrap tbody.rows-in tr:nth-child(2) { animation-delay: calc(var(--stagger) * 1); }
 .table-wrap tbody.rows-in tr:nth-child(3) { animation-delay: calc(var(--stagger) * 2); }
 .table-wrap tbody.rows-in tr:nth-child(4) { animation-delay: calc(var(--stagger) * 3); }
 .table-wrap tbody.rows-in tr:nth-child(5) { animation-delay: calc(var(--stagger) * 4); }
 .table-wrap tbody.rows-in tr:nth-child(6) { animation-delay: calc(var(--stagger) * 5); }
-@keyframes row-in { from { opacity: 0; } }
 
 /* a secondary text cell: the preview's inline-styled region column, as a
    class. 5.47:1 on surface-1 dark, 5.89:1 light; on the selection tints
@@ -3079,8 +3407,10 @@ th.num-col .th-sort { flex-direction: row-reverse; }
 
 /* the row is the target: anywhere on a selection row toggles it, the JS
    guard skips clicks that landed on another control. Text does not select,
-   so a click cannot double as a drag. */
-.table-wrap tbody tr:has(.cell-select) { cursor: pointer; user-select: none; }
+   so a click cannot double as a drag. A row whose box is disabled is not a
+   target, and keeps no pointer. */
+.table-wrap tbody tr:has(.cell-select) { user-select: none; }
+.table-wrap tbody tr:has(.cell-select input:not(:disabled)) { cursor: pointer; }
 
 /* ---- Pagination ----
    The count line states the slice; the strip scrolls inside itself, so at
@@ -3132,20 +3462,25 @@ th.num-col .th-sort { flex-direction: row-reverse; }
 @keyframes chip-in { from { opacity: 0; transform: scale(0.85); } }
 @keyframes chip-out { to { opacity: 0; transform: scale(0.85); } }
 /* The chip's × is the one remove at chip scale: the skeleton, the glyph box and
-   the neutral hover all come from `.close`, and these three override only the
+   the remove hover all come from `.close`, and these three override only the
    parts that would break the pill. The scope is the chip, because the bare
    `.close` rules further down this file would otherwise grow the × to the 30px
    square; one (0,2,0) selector covers both shapes, since the svg form wears
    `.close` beside `.icon` and outranks the shared `.icon` box either way. The
-   pill row carries the 44px floor, so the glyph keeps its own box. */
+   pill row carries the 44px floor, so the glyph keeps its own box.
+   The hover restates the remove costume only because the chip's own ground
+   moves: the fill lifts with the select's --lift, and the well reads 1.28:1
+   dark / 1.23 light on the resting chip, 1.51 dark on the lifted one and
+   1.03 light there, one of the three light grounds no grey clears 1.2 on
+   (the record lives with the remove skeleton rules). */
 .filter-chip .close {
   width: 16px;
   height: 16px;
   border-radius: var(--r-pill);
   color: inherit;
-  transition: background var(--dur-tint) var(--ease);
+  transition: background var(--dur-tint) var(--ease), color var(--dur-tint) var(--ease);
 }
-.filter-chip .close:hover { background: color-mix(in srgb, currentColor 18%, transparent); }
+.filter-chip .close:hover { color: var(--danger); background: var(--well); --tint-ground: transparent; }
 .filter-chip .close svg { width: 8px; height: 8px; }
 
 /* The picker: a filter button plus a popover of checkbox rows anchored to
@@ -3153,21 +3488,21 @@ th.num-col .th-sort { flex-direction: row-reverse; }
    .menu-item.checkbox-label: one target, the system's own box. Closes on
    outside click and Escape; the exit is the popover's missing one. */
 .filter-menu-wrap { position: relative; }
-.filter-menu { padding: 0; }
 /* A trigger on the bar's end edge opens its menu off the end of the wrapper,
    since the panel is wider than the button it hangs from. Same edge
    `.btn-split-menu` anchors to by default. */
 .filter-menu.menu-end { left: auto; right: 0; }
-/* the 20px checkbox already pads its row visually; menu padding plus the row's
-   own 8px read as a strip of dead panel above the first box (12.9px measured) */
+/* the checkbox already pads its row visually, so the row gives 2px back: above
+   the first box the panel's gutter plus the row's own 8px measures a 15.84px
+   strip of dead panel, against 13.84 at 6 */
 .filter-menu .menu-item { padding-block: 6px; }
 /* Late reduce block: the rules below this point sit after the main one, so
    their restatements have to as well, or the later base rule wins by order. */
 @media (prefers-reduced-motion: reduce) {
   /* rows and chips appear and go instantly; the chip's removal timer still holds it */
   .table-wrap tbody.rows-in tr { animation: none; }
-  .filter-chip { animation-name: chip-in-fade; }
-  .filter-chip.closing { animation-name: chip-out-fade; }
+  .filter-chip { animation-name: panel-in-fade; }
+  .filter-chip.closing { animation-name: fade-out; }
 }
 
 /* ---- Empty result inside the table ----
@@ -3192,13 +3527,11 @@ th.num-col .th-sort { flex-direction: row-reverse; }
    Viewport-driven, so it swaps in one frame: no animation, by design.
    Under the navbar's own 768px boundary, where the search is already off
    and the links scroll, links that carry an icon fold to it and the brand
-   shows its mark. */
-.navbar .logo-mark { display: none; }
+   keeps its mark while the wordmark hides. */
 
 @media (max-width: 768px) {
   .navbar { padding-inline: var(--space-4); }
 
-  .navbar .logo-mark { display: inline-flex; }
   .navbar .logo-name { display: none; }
   .navbar-brand { padding-right: var(--space-3); margin-right: var(--space-2); }
 
@@ -3272,10 +3605,14 @@ th.num-col .th-sort { flex-direction: row-reverse; }
 
 /* The well sinks, so the tone step is its only edge: --lit-* are the raised
    edges and there is no sunken one to reach for. */
-.band-well { background: var(--well); }
+.band-well { background: var(--well); --tint-ground: transparent; }
 /* The raised band rises, so it takes the lit edge, which flips to the
    underside in Latte because that is where a light page shows a raised plane. */
-.band-raised { background: var(--surface-1); box-shadow: var(--lit-1); }
+.band-raised { background: var(--surface-1); --tint-ground: transparent; box-shadow: var(--lit-1); }
+/* The accent band is the closing ask's ground, one per page: the sapphire turned
+   up where a product page ends. It takes no edge, the tone is the step, and every
+   text level and the filled action clear their floors on it (tokens.css). */
+.band-accent { background: var(--band-accent); --tint-ground: transparent; }
 
 /* Two bands of the same tone are one band, so the seam keeps one section gap
    instead of stacking two paddings into a dead strip. Two bands of DIFFERENT
@@ -3333,19 +3670,20 @@ th.num-col .th-sort { flex-direction: row-reverse; }
    what should decide, so let it shrink. */
 .page-header > .toolbar { flex: 0 1 auto; }
 
-/* --t-8, one step above .section-title's --t-7, so a page and a section inside
-   it are never the same size. overflow-wrap because a title is content: an
-   unbroken machine string in one would otherwise widen the page. */
+/* --t-9, one step above .section-title's --t-8, so a page and a section inside
+   it are never the same size. Tracking tightens with size, since Onest's
+   default spacing opens up past 40px. overflow-wrap because a title is
+   content: an unbroken machine string in one would otherwise widen the page. */
 .page-title {
-  font: 600 var(--t-8)/1.1 var(--font-sans);
-  letter-spacing: -0.03em;
+  font: 600 var(--t-9)/1 var(--font-sans);
+  letter-spacing: -0.045em;
   color: var(--text);
   overflow-wrap: anywhere;
 }
-@media (max-width: 768px) { .page-title { font-size: var(--t-7); } }
+@media (max-width: 768px) { .page-title { font-size: var(--t-8); } }
 
 /* Metadata reads under the title, never beside it: it is the smallest type on
-   the screen and a 46px title beside 12px text has no shared baseline worth
+   the screen and a 64px title beside 12px text has no shared baseline worth
    aligning. --text-3 measures 6.35:1 dark and 5.27:1 light on --bg. The 20px
    column gap is the separator; a middot pseudo lands at a line end or a line
    start the moment the row wraps. */
@@ -3462,7 +3800,7 @@ th.num-col .th-sort { flex-direction: row-reverse; }
    card on the page, so the highlight reads as a stronger plane change than the
    one the eye already tracks. */
 .prose mark {
-  background: color-mix(in srgb, var(--accent) 22%, transparent);
+  background: color-mix(in srgb, var(--accent) 22%, var(--tint-ground));
   color: var(--text);
   border-radius: 2px;
   padding: 0 1px;
@@ -3512,9 +3850,10 @@ th.num-col .th-sort { flex-direction: row-reverse; }
   place-items: center;
   border-radius: var(--r-2);
   background-color: var(--well);
+  --tint-ground: transparent;
   background-image: repeating-linear-gradient(
     -45deg,
-    color-mix(in srgb, var(--text-4) 18%, transparent) 0 1px,
+    color-mix(in srgb, var(--text-4) 18%, var(--tint-ground)) 0 1px,
     transparent 1px 9px
   );
 }
@@ -3524,6 +3863,7 @@ th.num-col .th-sort { flex-direction: row-reverse; }
   font: 400 var(--t-1)/1 var(--font-mono);
   color: var(--text-3);
   background: var(--surface-1);
+  --tint-ground: transparent;
   padding: var(--space-2) var(--space-3);
   border-radius: var(--r-1);
 }
@@ -3540,13 +3880,42 @@ th.num-col .th-sort { flex-direction: row-reverse; }
    carries rows, chips or numbers and there are eight of them. Roomy inside a
    .band-well or on --bg where the card IS the section. Neither belongs on a
    .band-raised: the card's fill and the band's are the same colour, so only
-   --elev-1 separates them, and a raised band is for type, not for cards. A
+   the drawn line separates them, and a raised band is for type,
+   not for cards. A
    card on a well band measures 1.283:1 dark and 1.230:1 light against its
    ground, the strongest tone step the system has. */
 .card.card-tight { padding: var(--space-3); }
 .card.card-roomy { padding: var(--space-8); }
 /* At 390px a roomy card spends 64 of 358 available pixels on air. */
 @media (max-width: 768px) { .card.card-roomy { padding: var(--space-5); } }
+/* A card holding setting rows drops its INLINE padding for the rows, and every
+   other child keeps the card's 20px gutter on its own: a header's title sits
+   20px in from the card's left, a trailing save row 20px in from its right,
+   and the card's block padding still holds above a title and under a save
+   row: rows flush, the rest keeps the
+   gutter. Only an edge row sits on the card's edge, so the hover fill
+   reaches the edge the row touches and nothing else does.
+
+   A card holding NOTHING but rows is fully flush rather than inline-flush:
+   the row's own 20px IS the gutter, its fill reaches both card edges and the
+   edge rows' --r-2 corners are the card's own: the
+   whole row should light up, without leaving empty space. At (0,3,0) that
+   clause outranks `.card-tight` and `.card-roomy` on specificity rather than
+   on where it sits.
+
+   Both clauses ask what PAINTS, so a `<template>` a page clones its rows
+   from does not count as a child: it draws nothing, so nothing of it can meet
+   the card's edge, and a rule that turned on an invisible element would be a
+   defect nobody could see to diagnose. */
+.card:has(> .setting-row) { padding-inline: 0; }
+/* `.section-sticky` is excluded because it is full-bleed chrome rather than
+   a gutter child: a stuck header spans the viewport and derives its own
+   inline padding from the page column, so a 20px flat here would pull its
+   toolbar off the column the first time the card scrolled. */
+.card:has(> .setting-row) > :not(.setting-row, .section-sticky, template, script, style) {
+  padding-inline: var(--space-5);
+}
+.card:has(> .setting-row):not(:has(> :not(.setting-row, template, script, style))) { padding: 0; }
 
 /* ---- Charts ----
    Inline SVG, no library, no canvas. The shell is HTML and only the marks are
@@ -3576,9 +3945,9 @@ th.num-col .th-sort { flex-direction: row-reverse; }
    3. A rounded corner distorts with everything else, so bars are square.
 
    The four series colours are the tokens, measured on --surface-1 for WCAG
-   1.4.11's 3:1 graphics floor: 5.21 / 5.27 / 7.05 / 6.45:1 dark and
-   5.69 / 5.80 / 4.48 / 5.53:1 light; on --bg, 6.02 / 6.09 / 8.15 / 7.46 dark
-   and 5.06 / 5.16 / 3.98 / 4.92 light. Four is the ceiling: a fifth series is
+   1.4.11's 3:1 graphics floor: 5.21 / 5.27 / 6.62 / 6.45:1 dark and
+   5.81 / 5.80 / 5.12 / 5.55:1 light; on --bg, 6.02 / 6.09 / 7.65 / 7.46 dark
+   and 5.17 / 5.16 / 4.56 / 4.94 light. Four is the ceiling: a fifth series is
    a legend problem, and yellow and red stay out because they read as status.
 
    Gridlines are scaffolding, not graphical objects: the tick labels carry the
@@ -3601,9 +3970,6 @@ th.num-col .th-sort { flex-direction: row-reverse; }
   --series: var(--chart-series-1);
   --chart-grid: var(--surface-3);   /* 1.45:1 on --surface-1 dark, 1.31 light */
   --chart-axis: var(--text-4);     /* 4.73:1 dark, 5.55 light on --surface-1 */
-  /* a tint that reads as a fill without competing with its own line: 1.30:1
-     over --surface-1 dark, 1.26:1 light, and two stacked land 1.63 and 1.58 */
-  --chart-area-alpha: 0.16;
   --chart-aspect: 16 / 6;
 
   display: grid;
@@ -3616,6 +3982,11 @@ th.num-col .th-sort { flex-direction: row-reverse; }
      the same chart is wide on a dashboard and narrow in a sidebar */
   container-type: inline-size;
 }
+
+/* A tint that reads as a fill without competing with its own line: 1.30:1 over
+   --surface-1 dark, 1.26:1 light, and two stacked land 1.63 and 1.58. A
+   sparkline is the other ground an area lands on, so it carries the knob too. */
+.chart, .stat-spark { --chart-area-alpha: 0.16; }
 
 /* Each part carries its own gutter rather than the grid carrying a gap: an
    absent axis title then costs nothing, where a gap would leave its lane. */
@@ -3653,6 +4024,8 @@ th.num-col .th-sort { flex-direction: row-reverse; }
      alias, so it can be snapped */
   shape-rendering: crispEdges;
 }
+/* dashed, so the fills under the lines carry the plot and the rules recede */
+.chart-grid line { stroke-dasharray: 2 5; }
 
 /* ---- Ticks ----
    Mono and tabular: digits line up down the y column and across a plate, and a
@@ -3774,7 +4147,8 @@ th.num-col .th-sort { flex-direction: row-reverse; }
 
 /* A flat tint, never a gradient, and never on its own: the fill sits far under
    the 3:1 floor by design, and the 2px line on top is what carries the value.
-   An area without its line is the one shape this recipe does not ship. */
+   ui.js builds it under every line and every sparkline, off the line's own
+   points, so no page writes one. */
 .chart-area {
   fill: var(--series);
   fill-opacity: var(--chart-area-alpha);
@@ -3795,6 +4169,9 @@ th.num-col .th-sort { flex-direction: row-reverse; }
    point is it, and a growing dot that lags the crosshair reads as a bug */
 .chart-point.is-active,
 .chart-point line.is-active { stroke-width: 11; }
+/* ui.js marks every line's last point with `.chart-end`; a sparkline's is
+   scaled to its 1.5px line */
+.stat-spark .chart-point { stroke-width: 6; }
 
 /* Bars are fills, so they scale with the plot the way the data does and need
    no vector-effect. Square: a corner radius in a stretched viewBox turns into
@@ -3944,13 +4321,16 @@ th.num-col .th-sort { flex-direction: row-reverse; }
    .legend and .legend-item ship already; this adds the mark for a filled
    series and the interactive form. Both read --series from the same slot class
    the chart uses, so a legend cannot drift from the mark it names. */
-.legend .legend-line { background: var(--series, currentColor); }
+.legend .legend-line { background: var(--series, currentColor); --tint-ground: transparent; }
 .legend-swatch {
-  width: 10px;
-  height: 10px;
+  /* one width with the line mark, so the two sit level in a legend row; a
+     filled block needs less height than a stroke reads long */
+  width: 12px;
+  height: 8px;
   border-radius: calc(var(--r-1) * 0.3);
   flex-shrink: 0;
   background: var(--series, currentColor);
+  --tint-ground: transparent;
 }
 
 /* The toggle: a real button, because a legend item that filters the chart is a
@@ -3960,13 +4340,19 @@ th.num-col .th-sort { flex-direction: row-reverse; }
   border: none;
   background: none;
   padding: 0;
-  font: inherit;
+  /* not the `font` shorthand: it resets font-size and beats .legend-item's
+     --t-2 by source order, painting a toggle 14px beside 12px static items */
+  font-family: inherit;
+  font-weight: inherit;
+  line-height: inherit;
+  letter-spacing: inherit;
   color: var(--text-3);   /* 5.49:1 dark, 5.92 light on --surface-1 */
   cursor: pointer;
   transition: color var(--dur-tint) var(--ease);
 }
 .legend-toggle:hover { color: var(--text); }
 .legend-toggle[aria-pressed="false"] { color: var(--text-4); }   /* 4.73:1 dark, 5.55 light */
+.legend-toggle[aria-pressed="false"]:hover { color: var(--text-3); }   /* 5.49:1 dark, 5.92 light */
 /* the mark hollows instead of greying: the series keeps its identity while it
    is switched off, and an inset ring changes no box dimension */
 .legend-toggle[aria-pressed="false"] .legend-swatch,
@@ -4061,7 +4447,7 @@ th.num-col .th-sort { flex-direction: row-reverse; }
 /* ---- Icon tile ----
    The 32px soft-level square that heads a feature card. One colour drives the
    fill, the hairline and the glyph, so a variant is one line. 32 is the size
-   the router names it and the box .avatar already carries; no token holds it.
+   SKILL.md names for it and the box .avatar already carries; no token holds it.
 
    The fill and the hairline are laid down OPAQUE, mixed into --surface-1 rather
    than tinted over whatever is behind, which is what keeps the tile off the
@@ -4091,8 +4477,9 @@ th.num-col .th-sort { flex-direction: row-reverse; }
   width: 32px;
   height: 32px;
   flex-shrink: 0;
-  border-radius: var(--r-1);
+  border-radius: var(--r-2);
   background: color-mix(in srgb, var(--tile) var(--tile-fill), var(--surface-1));
+  --tint-ground: transparent;
   border: 1px solid color-mix(in srgb, var(--tile) var(--tile-line), var(--surface-1));
   color: var(--tile);
 }
@@ -4100,6 +4487,20 @@ th.num-col .th-sort { flex-direction: row-reverse; }
 /* the tile sizes its own glyph, the way every other icon holder in this file
    does, so a `<use>` that carries no class cannot lay out at 300x150 */
 .icon-tile > svg { width: 16px; height: 16px; }
+
+/* A feature grid's default mark fills deeper and edges harder: the page's
+   sapphire turned up where a product page has room for it. The semantic
+   variants keep the shipped mix, so their own hue still reads as the level.
+   Glyph on the deeper fill, read off the painted pixel as above: 4.00 dark,
+   3.47 light; the hairline 2.05 and 1.72 on it. */
+.feature > .icon-tile:not(.icon-tile-accent-2, .icon-tile-success, .icon-tile-warning, .icon-tile-danger) {
+  --tile-fill: 24%;
+  --tile-line: 60%;
+}
+[data-theme="light"] .feature > .icon-tile:not(.icon-tile-accent-2, .icon-tile-success, .icon-tile-warning, .icon-tile-danger) {
+  --tile-fill: 20%;
+  --tile-line: 55%;
+}
 
 .icon-tile-accent-2 { --tile: var(--accent-2); }
 .icon-tile-success  { --tile: var(--success); }
@@ -4164,7 +4565,7 @@ th.num-col .th-sort { flex-direction: row-reverse; }
   top: 0;
   bottom: 0;
   width: 2px;
-  background: color-mix(in srgb, var(--text-4) 28%, transparent);
+  background: color-mix(in srgb, var(--text-4) 28%, var(--tint-ground));
 }
 /* the thread begins at the first dot and ends at the last: no stub above the
    first entry, none hanging below the last */
@@ -4180,11 +4581,12 @@ th.num-col .th-sort { flex-direction: row-reverse; }
   margin-top: var(--tl-lead);
   border-radius: var(--r-pill);
   background: var(--text-4);   /* 5.47:1 dark and 4.94:1 light on --bg, 4.73 / 5.55 on --surface-1 */
+  --tint-ground: transparent;
 }
-.timeline-dot-accent  { background: var(--accent); }   /* 7.49 / 6.48 dark, 4.09 / 4.60 light */
-.timeline-dot-success { background: var(--success); }  /* 8.89 / 7.69 dark, 4.85 / 5.46 light */
-.timeline-dot-warning { background: var(--warning); }  /* 9.68 / 8.37 dark, 5.25 / 5.91 light */
-.timeline-dot-danger  { background: var(--danger); }   /* 5.98 / 5.18 dark, 5.36 / 6.02 light */
+.timeline-dot-accent  { background: var(--accent); --tint-ground: transparent; }   /* 7.49 / 6.48 dark, 4.09 / 4.60 light */
+.timeline-dot-success { background: var(--success); --tint-ground: transparent; }  /* 8.89 / 7.69 dark, 4.85 / 5.46 light */
+.timeline-dot-warning { background: var(--warning); --tint-ground: transparent; }  /* 9.68 / 8.37 dark, 5.25 / 5.91 light */
+.timeline-dot-danger  { background: var(--danger); --tint-ground: transparent; }   /* 5.98 / 5.18 dark, 5.36 / 6.02 light */
 
 .timeline-head {
   display: flex;
@@ -4220,7 +4622,7 @@ th.num-col .th-sort { flex-direction: row-reverse; }
 .timeline-more .timeline-dot {
   margin-top: 0;
   background: none;
-  border: 2px solid color-mix(in srgb, var(--text-4) 28%, transparent);
+  border: 2px solid color-mix(in srgb, var(--text-4) 28%, var(--tint-ground));
 }
 .timeline > .timeline-more:last-child::before { bottom: 50%; }
 
@@ -4245,6 +4647,7 @@ th.num-col .th-sort { flex-direction: row-reverse; }
 .accordion {
   interpolate-size: allow-keywords;
   background: var(--surface-1);
+  --tint-ground: transparent;
   border-radius: var(--r-2);
   box-shadow: var(--elev-1);
   /* the first and last summary's hover fill hugs the card's own corners */
@@ -4257,7 +4660,11 @@ th.num-col .th-sort { flex-direction: row-reverse; }
   overflow-wrap: anywhere;   /* a long token cannot push the chevron off the row */
 }
 .accordion > .disclosure > .disclosure-body {
-  padding: 0 var(--space-5) var(--space-5);
+  /* the body's ink sits centred between the label above it and the row's
+     bottom edge: the summary's 12px under the label plus this 8px puts 20.8px
+     of air above the text against the 21.6 below it, line-height slack
+     included. Flush under the summary read top-heavy. */
+  padding: var(--space-2) var(--space-5) var(--space-5);
   font-size: var(--t-2);
   color: var(--text-2);   /* 7.30:1 dark, 8.36:1 light on --surface-1 */
 }
@@ -4330,6 +4737,7 @@ th.num-col .th-sort { flex-direction: row-reverse; }
   flex-shrink: 0;
   border-radius: var(--r-pill);
   background: var(--well);
+  --tint-ground: transparent;
   border: 1px solid var(--line);
   color: var(--text-4);   /* 6.07:1 dark, 4.52:1 light on --well */
   font: 500 var(--t-2)/1 var(--font-mono);
@@ -4366,11 +4774,12 @@ th.num-col .th-sort { flex-direction: row-reverse; }
   left: calc(50% + var(--step-mark) / 2 + var(--space-2));
   right: calc(-50% + var(--step-mark) / 2 + var(--space-2));
   height: 2px;
-  background: color-mix(in srgb, var(--text-4) 28%, transparent);
+  background: color-mix(in srgb, var(--text-4) 28%, var(--tint-ground));
 }
 
 .step.done .step-index {
   background: var(--accent);
+  --tint-ground: transparent;
   border-color: var(--accent);   /* 7.49 / 6.48 dark, 4.09 / 4.60 light */
   color: var(--on-accent);       /* 8.22:1 dark, 4.60:1 light on the fill */
 }
@@ -4378,7 +4787,7 @@ th.num-col .th-sort { flex-direction: row-reverse; }
 /* the run got this far. Written with the child combinator, because the
    connector's own rule carries `:not(:last-child)` and a bare `.step.done`
    is outranked by it: measured, the done connector painted the neutral. */
-.stepper > .step.done::after { background: var(--accent); }
+.stepper > .step.done::after { background: var(--accent); --tint-ground: transparent; }
 
 .step[aria-current="step"] .step-index {
   background: var(--accent-quiet);
@@ -4389,6 +4798,7 @@ th.num-col .th-sort { flex-direction: row-reverse; }
 
 .step.error .step-index {
   background: var(--danger);
+  --tint-ground: transparent;
   border-color: var(--danger);
   color: var(--on-danger);   /* 6.58:1 dark, 6.01:1 light on the fill */
 }
@@ -4434,9 +4844,6 @@ th.num-col .th-sort { flex-direction: row-reverse; }
 
 /* ---- Meter ----
    A level against a capacity: storage used, seats taken, rate budget spent.
-   Reach for `.progress` when the number climbs to 100 and the job is then
-   done; reach for `.meter` when the number can sit anywhere and 100 is a
-   problem.
 
    The fill rides scaleX, not width, so nothing here is a layout change: the
    track clips at its own pill radius, which is why the fill needs no radius of
@@ -4476,12 +4883,14 @@ th.num-col .th-sort { flex-direction: row-reverse; }
 .meter-track {
   height: var(--space-2);
   background: var(--well);
+  --tint-ground: transparent;
   border-radius: var(--r-pill);
   overflow: hidden;
 }
 .meter-fill {
   height: 100%;
   background: var(--accent);   /* 8.31:1 dark, 3.74:1 light on the track */
+  --tint-ground: transparent;
   transform-origin: left center;
   transform: scaleX(var(--meter-v));
   transition: transform var(--dur-far) var(--ease), background var(--dur-tint) var(--ease);
@@ -4499,15 +4908,16 @@ th.num-col .th-sort { flex-direction: row-reverse; }
   height: 6px;
   border-radius: var(--r-pill);
   background: var(--text-3);
+  --tint-ground: transparent;
 }
 .meter-hint {
   font: 400 var(--t-1)/1.4 var(--font-sans);
   color: var(--text-4);   /* 5.47 / 4.73 dark, 4.94 / 5.55 light */
 }
 
-.meter.warn .meter-fill { background: var(--warning); }   /* 10.74:1 dark, 4.80:1 light on the track */
+.meter.warn .meter-fill { background: var(--warning); --tint-ground: transparent; }   /* 10.74:1 dark, 4.80:1 light on the track */
 .meter.warn .meter-value { color: var(--warning); }       /* 9.68 / 8.37 dark, 5.25 / 5.91 light */
-.meter.over .meter-fill { background: var(--danger); }    /* 6.64:1 dark, 4.89:1 light on the track */
+.meter.over .meter-fill { background: var(--danger); --tint-ground: transparent; }    /* 6.64:1 dark, 4.89:1 light on the track */
 .meter.over .meter-value { color: var(--danger); }        /* 5.98 / 5.18 dark, 5.36 / 6.02 light */
 /* no reading yet: the value says so and the empty track is the initial value */
 .meter.unknown .meter-value { color: var(--text-4); }
@@ -4528,21 +4938,27 @@ th.num-col .th-sort { flex-direction: row-reverse; }
    because the live accent itself clears the track at only 3.74:1 in Latte. */
 .meter[aria-disabled="true"] .meter-fill {
   background: color-mix(in srgb, var(--accent) 50%, var(--well));
+  --tint-ground: transparent;
 }
 .meter[aria-disabled="true"].warn .meter-fill {
   background: color-mix(in srgb, var(--warning) 44%, var(--well));
+  --tint-ground: transparent;
 }
 .meter[aria-disabled="true"].over .meter-fill {
   background: color-mix(in srgb, var(--danger) 58%, var(--well));
+  --tint-ground: transparent;
 }
 [data-theme="light"] .meter[aria-disabled="true"] .meter-fill {
   background: color-mix(in srgb, var(--accent) 83%, var(--well));
+  --tint-ground: transparent;
 }
 [data-theme="light"] .meter[aria-disabled="true"].warn .meter-fill {
   background: color-mix(in srgb, var(--warning) 74%, var(--well));
+  --tint-ground: transparent;
 }
 [data-theme="light"] .meter[aria-disabled="true"].over .meter-fill {
   background: color-mix(in srgb, var(--danger) 66%, var(--well));
+  --tint-ground: transparent;
 }
 
 /* ---- Ring progress ----
@@ -4592,14 +5008,29 @@ th.num-col .th-sort { flex-direction: row-reverse; }
      that: `r: 13.5px` measured a 33.6px ring inside its 96px box on viewBox 100 and
      a 21.33px stroke on viewBox 36, against a .ring-center measuring 46.8 x 41.2
      (62.4 diagonal). On the contract the hole measures 78.7px at --ring-size 96 and
-     52.5px at 64, so the label clears the arc at both. cursor-rules.test.js asserts
-     the markup, since the CSS can no longer see it. */
+     52.5px at 64, so the label clears the arc at both. The markup is what holds it,
+     since the CSS can no longer see it. */
 }
 .ring-track { stroke: var(--well); }
 .ring-fill {
   stroke: var(--accent);   /* 8.31:1 dark, 3.74:1 light on the track */
   stroke-linecap: butt;    /* a round cap paints a dot at zero */
+  /* the gap collapses AT full, never below it: sign(1 - v) is 1 under, 0 at 1
+     and negative over, so a complete ring paints closed and no partial ring
+     moves. A literal `v*100 100` at v = 1 draws a dash exactly as long as the
+     path, and Chrome antialiases the joint where it meets itself into a dark
+     notch at twelve o'clock (measured 2 device px at 4x); `100 0` closes it
+     and a negative gap paints the whole stroke the same way. Every RESTING
+     pixel under 100 percent is unchanged, since the gap is literally 100 there.
+     A down-sweep from a full ring is the one thing that moves: the gap
+     interpolates from a negative value and clamps at 0, so the ring reads
+     closed until the dash reaches 84 rather than 100, about 130ms of the 260ms
+     transition. Up-sweeps are identical to the old form, both crossing at 100.
+     THE FIRST DECLARATION IS THE FALLBACK, not a leftover: an engine with no
+     `sign()` drops the second line and keeps the old notch, where dropping the
+     pair would paint every determinate ring closed at every value. */
   stroke-dasharray: calc(var(--ring-v) * 100) 100;
+  stroke-dasharray: calc(var(--ring-v) * 100) calc(100 * sign(1 - var(--ring-v)));
   transition: stroke-dasharray var(--dur-far) var(--ease), stroke var(--dur-tint) var(--ease);
 }
 .ring-center {
@@ -4623,14 +5054,41 @@ th.num-col .th-sort { flex-direction: row-reverse; }
 .ring.over .ring-fill { stroke: var(--danger); }
 .ring.over .ring-value { color: var(--danger); }
 .ring.unknown .ring-value { color: var(--text-4); }
-/* indeterminate: a quarter arc on the system's one loop tempo, the tempo
-   `.spinner` and `.btn-loading` already run */
+/* indeterminate: the tail breathes. The head is pinned to
+   the rim at the turn speed and never varies; behind it the tail swings as the
+   arc opens and closes, so there is always a steady point to follow. The bound
+   that picks the numbers: dasharray L 100 with dashoffset d draws the arc at
+   [-d, -d+L], and under the spin's theta' (71.429 u/s at 1.4s) both ends stay
+   forward iff the moving end's share of |L'| stays under theta'. An ease-in-out
+   alternate breath peaks at 1.7241 * A / half-period, which at these numbers
+   leaves 51.7 percent of the rim to spare. The pattern must not WRAP either:
+   L 100 has period L+100, longer than the path, so the dash is laid once from
+   -offset and whatever falls outside [0,100] paints nothing. Anchoring the head
+   at the path's midpoint keeps every amplitude here inside the path. */
+/* the trough of the reduced-motion pulse, per theme, set where the arc lands on
+   the 3:1 graphics floor over --well: 0.50 measures 3.03:1 dark, 0.84 measures
+   3.02:1 light. Light needs the higher trough because --accent on --well starts
+   at 3.74:1 there against 8.31:1 dark, so it has 0.74 of headroom to spend. */
+.ring { --ring-hold-dim: 0.50; }
+[data-theme="light"] .ring { --ring-hold-dim: 0.84; }
 .ring.loading .ring-fill {
-  stroke-dasharray: 25 100;
+  stroke-dasharray: 16 100;
+  stroke-dashoffset: -34;
   transform-box: view-box;
   transform-origin: center;
-  animation: spin 0.6s linear infinite;
+  animation: spin 1.4s linear infinite,
+             ring-tail-breathe 1.5s ease-in-out infinite alternate;
   transition: none;
+}
+/* Restated at the loading rule's own (0,3,0) and after it: a media query adds
+   no specificity, so the shipped reduce blocks at (0,1,0) cannot reach this.
+   The arc holds the arithmetic mid of its own breath, at its own anchor,
+   pulsing to the floor rather than turning. */
+@media (prefers-reduced-motion: reduce) {
+  .ring.loading .ring-fill {
+    animation: ring-hold 1.4s ease-in-out infinite;
+    stroke-dasharray: 31 100; stroke-dashoffset: -19;
+  }
 }
 
 /* ---- Avatar, completed ----
@@ -4675,6 +5133,7 @@ th.num-col .th-sort { flex-direction: row-reverse; }
 .avatar-group > .avatar { box-shadow: 0 0 0 2px var(--dot-ring, var(--bg)); }
 .avatar-more {
   background: var(--surface-2);
+  --tint-ground: transparent;
   border-color: var(--line);
   color: var(--text-3);   /* 4.65:1 dark, 4.96:1 light on --surface-2 */
   font-family: var(--font-mono);
@@ -4693,12 +5152,13 @@ th.num-col .th-sort { flex-direction: row-reverse; }
   height: 30%;
   border-radius: var(--r-pill);
   background: var(--text-4);   /* 5.47:1 dark, 4.94:1 light against a --bg ring */
+  --tint-ground: transparent;
   box-shadow: 0 0 0 2px var(--dot-ring, var(--bg));
 }
-.avatar-presence.online  { background: var(--success); }   /* 8.89 dark, 4.85 light */
-.avatar-presence.away    { background: var(--warning); }   /* 9.68 dark, 5.25 light */
-.avatar-presence.busy    { background: var(--danger); }    /* 5.98 dark, 5.36 light */
-.avatar-presence.offline { background: var(--text-4); }
+.avatar-presence.online  { background: var(--success); --tint-ground: transparent; }   /* 8.89 dark, 4.85 light */
+.avatar-presence.away    { background: var(--warning); --tint-ground: transparent; }   /* 9.68 dark, 5.25 light */
+.avatar-presence.busy    { background: var(--danger); --tint-ground: transparent; }    /* 5.98 dark, 5.36 light */
+.avatar-presence.offline { background: var(--text-4); --tint-ground: transparent; }
 
 /* The unread mark for an icon button, which the navbar wanted and had no way
    to say. It sits outside the button's box, so it can never land on the glyph,
@@ -4715,14 +5175,12 @@ th.num-col .th-sort { flex-direction: row-reverse; }
   height: 8px;
   border-radius: var(--r-pill);
   background: var(--accent);   /* 7.49:1 dark, 4.09:1 light against a --bg ring */
+  --tint-ground: transparent;
   box-shadow: 0 0 0 2px var(--dot-ring, var(--bg));
 }
 
 /* ---- Banner ----
-   One per page, at the top: a condition the whole page is under. `.callout`
-   explains something where it stands and stays; `.toast` announces something
-   that just happened and leaves; a banner states a condition and stays until
-   it is dismissed or resolved.
+   One per page, at the top: a condition the whole page is under.
 
    The callout's material, because it is the same material: a 6 percent tint
    over surface-1 and the lit edge. What differs is the placement and the
@@ -4735,7 +5193,6 @@ th.num-col .th-sort { flex-direction: row-reverse; }
    at --text-3 4.81 / 5.38. --text-4 was the first choice and lands at 4.14 on
    the dark warning tint. */
 .banner {
-  align-items: center;   /* her call: the icon, the actions and the close centre on the body */
   flex-wrap: wrap;
   padding: var(--space-3) var(--space-4);
 }
@@ -4744,11 +5201,11 @@ th.num-col .th-sort { flex-direction: row-reverse; }
    a tint declared earlier in the file would lose to it and every banner would
    paint plain surface-1. The validation summary is the danger one, and its tint
    resolves to #37313F dark, #F9F0F4 light. */
-.callout-info,    .banner-info    { background: color-mix(in srgb, var(--info)    6%, var(--surface-1)); }
-.callout-success, .banner-success { background: color-mix(in srgb, var(--success) 6%, var(--surface-1)); }
-.callout-warning, .banner-warning { background: color-mix(in srgb, var(--warning) 6%, var(--surface-1)); }
+.callout-info,    .banner-info    { background: color-mix(in srgb, var(--info)    6%, var(--surface-1)); --tint-ground: transparent; }
+.callout-success, .banner-success { background: color-mix(in srgb, var(--success) 6%, var(--surface-1)); --tint-ground: transparent; }
+.callout-warning, .banner-warning { background: color-mix(in srgb, var(--warning) 6%, var(--surface-1)); --tint-ground: transparent; }
 .callout-danger,  .banner-danger,
-.form-summary                     { background: color-mix(in srgb, var(--danger)  6%, var(--surface-1)); }
+.form-summary                     { background: color-mix(in srgb, var(--danger)  6%, var(--surface-1)); --tint-ground: transparent; }
 
 /* Only in the bleed form. The column itself is shared with .navbar-inner. */
 .banner-inner { align-items: center; flex-wrap: wrap; }
@@ -4758,7 +5215,6 @@ th.num-col .th-sort { flex-direction: row-reverse; }
   padding-inline: var(--space-8);   /* the page column's own gutter */
 }
 
-.banner-icon svg { display: block; }
 .banner-info    .banner-icon { color: var(--info); }
 .banner-success .banner-icon { color: var(--success); }
 .banner-warning .banner-icon { color: var(--warning); }
@@ -4825,6 +5281,25 @@ th.num-col .th-sort { flex-direction: row-reverse; }
   color: var(--text-3);   /* 5.49:1 dark / 5.92:1 light on --surface-1, 7.05 / 4.82 on --well */
 }
 .close svg { width: 14px; height: 14px; display: block; }
+/* THE remove hover, one glyph and one grey well wherever the control sits.
+  --danger on the --well fill: 6.62:1 dark, 4.89:1 light. The well reads
+  1.28:1 dark and 1.23:1 light on a card, 1.39-1.46 / 1.12-1.13 on the four
+  banner tints, 1.28-1.51 on the chips. Where the ground is not a card the
+  fill is named per ground below, because no single grey reads on every
+  ground: --surface-2 measures 1.18:1 on a dark card and 1.08-1.10 on the
+  light tints, and --well itself is 1.00 on the light well row.
+
+  LIGHT HOLDS THREE GROUNDS NO GREY CLEARS 1.2 ON: the four banner tints
+  (well 1.12-1.13; the nearest fill, --surface-3, reads 1.19-1.21 and drops
+  the glyph to 4.60), the select chip lifted by an open panel (1.03; the
+  nearest, --surface-1, reads 1.19), and the glass panel's worst plate (see
+  the glass rule below). --well stays because it is the one fill that holds
+  the glyph's 4.5 floor everywhere in light, and every one of these grounds
+  already sat under an invisible well before this rule: the neutral hover's
+  --surface-2 measured 1.08-1.10 on the tints and 1.03 on the lifted chip.
+  A visible well on any of the three needs a token this ramp does not have,
+  which the system owns, not a fill to invent here. The hover itself lives down
+  in the select-chip block, placed after the one rest rule that ties it. */
 
 /* the exit is the chip's shape at the chip's speed; the page removes the node
    on animationend, and that removal is the one frame the page reflows */
@@ -4856,9 +5331,11 @@ th.num-col .th-sort { flex-direction: row-reverse; }
 @media (prefers-reduced-motion: reduce) {
   .accordion > .disclosure::details-content,
   .accordion > .disclosure[open]::details-content { transition: none; }
+  /* the chevron still turns, it just arrives there */
+  .disclosure summary svg { transition: none; }
   .meter-fill { transition: background var(--dur-tint) var(--ease); }
   .ring-fill { transition: stroke var(--dur-tint) var(--ease); }
-  .banner.closing { animation-name: chip-out-fade; }
+  .banner.closing { animation-name: fade-out; }
 }
 
 /* ---- Market surfaces ----
@@ -4927,10 +5404,11 @@ th.num-col .th-sort { flex-direction: row-reverse; }
    and not a 3.4k headline. A build that wants more raises --page-w once.
 
    The headline is `.page-title` and the sentence is `.section-lede`, the two
-   the system already ships: --t-8 falling to --t-7 under 768px, overflow-wrap
+   the system already ships: --t-9 falling to --t-8 under 768px, overflow-wrap
    on the title because a headline is content, and the measure cap on the lede.
-   A headline twice as long wraps inside the cell and moves the media down; no
-   rule here reads its length. */
+   The hero's lede alone steps up to --t-5, so the one sentence under a 64px
+   headline does not read as a caption. A headline twice as long wraps inside
+   the cell and moves the media down; no rule here reads its length. */
 .hero {
   --cell-min: 400px;
   --cell-cols: 2;
@@ -4947,13 +5425,17 @@ th.num-col .th-sort { flex-direction: row-reverse; }
 }
 .hero-stack > .hero-copy > .toolbar { justify-content: center; }
 
-/* Flow, not flex: the three gaps differ (12 under the eyebrow, 16 under the
-   headline, 24 over the actions) and one gap value for all three reads as a
-   list of four things rather than as one block with an action under it. */
+/* Flow, not flex: 16 under the eyebrow and under the headline, 24 over the
+   actions, and one gap value for all three reads as a list of four things
+   rather than as one block with an action under it. */
 .hero-copy > :first-child { margin-block-start: 0; }
 .hero-copy > .label { color: var(--text-4); }   /* 5.47:1 dark, 4.94:1 light on --bg */
-.hero-copy > .page-title { margin-block-start: var(--space-3); }
-.hero-copy > .section-lede { margin-block-start: var(--space-4); }
+.hero-copy > .page-title { margin-block-start: var(--space-4); }
+.hero-copy > .section-lede {
+  margin-block-start: var(--space-4);
+  font-size: var(--t-5);
+  line-height: 1.5;
+}
 .hero-copy > .toolbar { margin-block-start: var(--space-6); }
 
 .hero-media { min-width: 0; }
@@ -4998,10 +5480,20 @@ th.num-col .th-sort { flex-direction: row-reverse; }
 }
 /* A pull quote. Not `.prose blockquote`: that one is a rule in the margin of a
    document, this is a cell that stands alone. --text-2 measures 8.43 / 9.36 /
-   7.30 dark and 7.44 / 6.79 / 8.36 light. */
+   7.30 dark and 7.44 / 6.79 / 8.36 light on --bg / --well / --surface-1. */
 .quote {
   font-size: var(--t-3);
   color: var(--text-2);
+}
+/* The opening mark sits above the line in a 22px slot, and it is a glyph, so it
+   takes the accent's text token: 9.15 / 10.15 / 7.91 dark, 5.06 / 4.62 / 5.69
+   light on the same three grounds. */
+.quote::before {
+  content: "\201C";
+  display: block;
+  height: 22px;
+  font: 600 var(--t-8)/1 var(--font-sans);
+  color: var(--accent-text);
 }
 .quote footer {
   margin-block-start: var(--space-3);
@@ -5062,7 +5554,7 @@ th.num-col .th-sort { flex-direction: row-reverse; }
    `.stat-card` is the dashboard tile: a labelled surface with a delta and a
    sparkline, eight to a screen. This is type on a band, and there is one of it.
 
-   --t-8 in mono, tabular, stepping to --t-7 under 768px exactly as
+   --t-9 in mono, tabular, stepping to --t-8 under 768px exactly as
    `.page-title` does, so the biggest number on the page and the biggest word
    on it never disagree about how big that is.
 
@@ -5088,9 +5580,19 @@ th.num-col .th-sort { flex-direction: row-reverse; }
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
+  container-type: inline-size;
 }
-.claim-value { font-size: var(--t-8); }
-@media (max-width: 768px) { .claim-value { font-size: var(--t-7); } }
+/* the claim is the page's number, so it takes the accent's text token:
+   9.15 / 10.15 / 7.91 dark, 5.06 / 4.62 / 5.69 light on --bg / --well /
+   --surface-1 */
+.claim-value { font-size: var(--t-9); letter-spacing: -0.04em; color: var(--accent-text); }
+@media (max-width: 768px) { .claim-value { font-size: var(--t-8); } }
+/* The step down is a CELL width, not only a viewport one. A mono character at
+   --t-9 advances 0.56em after the tracking, so a five-character claim ("4.5:1")
+   is 179.2px, measured, and four cells in a tablet column run 158.25 to 179px
+   from 769 to 852px of viewport, where the claim broke after "4.5:". A sidebar
+   shell narrows the same cells at any viewport. */
+@container (width < 180px) { .claim-value { font-size: var(--t-8); } }
 .claim-label {
   font-size: var(--t-3);
   color: var(--text-3);
@@ -5105,13 +5607,12 @@ th.num-col .th-sort { flex-direction: row-reverse; }
    viewport (measured), which left a 128px band of exactly the shape the
    media query exists to prevent.
 
-   THE MARK IS NOT ELEVATION. --elev-1 measures 24 levels under the card and
-   --elev-2 measures 23 (tokens.css, measured on a 300x140 card): the second is
-   a wider spread, not a deeper one, so swapping them marks nothing the eye can
-   read. The mark is three things that do read: the badge, the filled button,
-   and a 2px accent edge inset along the top, which is the same device
-   `.row-selected` and `.palette-row.active` use for the row the system is
-   pointing at. --accent on --surface-1 measures 6.48:1 dark and 4.60:1 light,
+   THE MARK IS NOT ELEVATION. --contact-2 buys a wider spread than --contact-1,
+   not a deeper one: tokens.css carries both depths and is the one place they are
+   written. Swapping them marks nothing the eye can read, so the mark is three
+   things that do: the badge, the filled button, and a 2px accent edge inset
+   along the top, which is the same device `.row-selected` uses for the row the
+   system is pointing at. --accent on --surface-1 measures 6.48:1 dark and 4.60:1 light,
    over the 3:1 graphics floor. The card itself is never tinted: a coloured
    tier and a filled button in the same cell are two marks competing. */
 .pricing {
@@ -5130,7 +5631,7 @@ th.num-col .th-sort { flex-direction: row-reverse; }
 }
 /* both classes on purpose: written one class longer than `.card`, so the pair
    cannot be decided by wherever this block lands in the file */
-.tier.tier-marked { box-shadow: var(--elev-1), inset 0 2px 0 0 var(--accent); }
+.tier.tier-marked { box-shadow: var(--contact-1), inset 0 2px 0 0 var(--accent); }
 
 .tier-head {
   display: flex;
@@ -5242,7 +5743,7 @@ th.num-col .th-sort { flex-direction: row-reverse; }
   gap: var(--space-4);
 }
 @media (max-width: 768px) { .footer-brand { grid-column: 1 / -1; } }
-/* the sidebar's own brand pair, on a link: `.logo-mark` and `.logo-name` are
+/* the sidebar's own brand pair, on a link: `.sona` and `.logo-name` are
    already the system's mark and wordmark */
 .footer-logo {
   display: inline-flex;
@@ -5345,7 +5846,7 @@ th.num-col .th-sort { flex-direction: row-reverse; }
    dragged out is the END, not the band: a committed end is filled, a tentative
    end is outlined. A second, weaker tint would have to be translucent, and a
    translucent tint over the glass panel composites twice - the trap
-   `--glass-quiet` exists to answer.
+   the glass block's opaque quiet mix exists to answer.
 
    The day number is mono: it is a numeric readout, and a proportional face puts
    the 1s and the 8s on different centres down a column. */
@@ -5373,6 +5874,13 @@ th.num-col .th-sort { flex-direction: row-reverse; }
   z-index: 60;
   display: flex;
   flex-direction: column;
+  /* The width clamp, for the coarse overhang bands: 44px cells put 334px of
+     panel against a 320px viewport, and the document grows a scrollbar for a
+     popover. The bound keeps a 40px gutter beside the trigger's own offset and
+     never bites a fine pointer: the fine panel's narrowest is 276 at a 320
+     viewport against a 280 bound, and the 560 cap keeps the clamp off the
+     beside-form (494 at its widest) at every width that can hold it. */
+  max-width: min(560px, calc(100vw - 2 * var(--space-5)));
   /* no background and no border here: `.popover` carries both, and the glass
      block restates them at (0,1,0) after this one */
 }
@@ -5406,19 +5914,40 @@ th.num-col .th-sort { flex-direction: row-reverse; }
 .daterange-presets {
   display: flex;
   flex-direction: column;
-  padding-block: var(--space-1);
+  gap: 2px;                  /* the list panel's lane */
+  padding: var(--space-1);   /* and its gutter */
   border-inline-end: 1px solid var(--line-soft);
-  /* "last 30 days" at --t-3 inside `.menu-item`'s 14px gutters measures 132px;
-     160 leaves the longest shipped preset a whole line and no more */
-  min-width: 160px;
-  flex-shrink: 0;
+  /* "last 30 days" at --t-3 measures 132px from column edge to column edge,
+     gutters included; 160 leaves the longest shipped preset a whole line and no
+     more. It stays out of the shared lane rule: this column turns into a
+     wrapping row under 560px and would take that rule's column back.
+
+     A WIDTH THAT MAY SHRINK, not a floor that may not. The panel is clamped,
+     and `.popover` clips, so whatever the clamp takes has to come out of this
+     column or out of the content: at `min-width: 160px; flex-shrink: 0` it came
+     out of the content, and a preset label past the ceiling was cut inside the
+     popover with no scroll and no ellipsis - measured 48px lost at a 35
+     character label, identically at coarse 830, coarse 900 and fine 1440, which
+     is what says it is the clamp and not any one viewport. Resting width is
+     unchanged at 160. */
+  width: 160px;
+  min-width: 0;
+  flex-shrink: 1;
 }
 /* the rows are `.menu-item` on `role="option"`, the shape `.select-menu` already
    uses, so the hover, the active fill and the 44px coarse floor all arrive with
    the class. Roving tabindex moves real focus, so the row needs no second
    keyboard marker. --text-2 on the panel 4.62:1 dark and 6.67:1 light; active,
-   --accent-text on the opaque --glass-quiet, 5.95:1 and 4.89:1. */
-.daterange-preset { padding-inline: 14px; }
+   --accent-text on the panel's opaque quiet mix, 5.95:1 and 4.89:1.
+
+   The one thing it does NOT take from `.menu-item` is nowrap: this row is in a
+   column that shrinks, so it takes two lines rather than losing its end. The
+   two rules tie at (0,1,0) and this one is later, which `props white-space`
+   shows and `ties` cannot, since the two are different subjects. Without it a
+   label past the shrunken column runs under the panel's clip and is cut with no
+   ellipsis to say so - measured, "quarter to date" wanted 110px of a 97px
+   button and lost 13 silently. */
+.daterange-preset { padding-inline: 10px; white-space: normal; }   /* plus the column's own 4px */
 
 .daterange-cal { padding: var(--space-3); }
 .daterange-head {
@@ -5513,22 +6042,23 @@ th.num-col .th-sort { flex-direction: row-reverse; }
   background: currentColor;
 }
 
-/* --accent-text on the opaque --glass-quiet: 5.95:1 dark, 4.89:1 light */
+/* --accent-text on the panel's opaque quiet mix: 5.95:1 dark, 4.89:1 light */
 .daterange-day.is-in-range { background: var(--accent-quiet); color: var(--accent-text); }
 /* --on-accent on the fill: 8.22:1 dark, 4.62:1 light */
 .daterange-day:is(.is-start, .is-end) {
   background: var(--accent);
+  --tint-ground: transparent;
   color: var(--on-accent);
   font-weight: 500;
 }
 .daterange-day.is-start { border-start-start-radius: var(--r-1); border-end-start-radius: var(--r-1); }
 .daterange-day.is-end { border-start-end-radius: var(--r-1); border-end-end-radius: var(--r-1); }
 /* THE inset focus ring, and every row in the system that needs one takes it from
-   here. Each of these six clips at its own edge, so the page's 3px outward ring
+   here. Each of these clips at its own edge, so the page's 3px outward ring
    is cut on a start or end edge, lands on a neighbouring cell, or rules across
    the body under an open summary. The base ring pairs its outline with a 1px
    --bg separator shadow, which at a negative offset is a stray keyline drawn
-   around the box, so it goes with it. Her call 2026-09-03: all six match.
+   around the box, so it goes with it. All the rows here take it.
    Nothing here restates the selected row's edge: a selected tree row's band is
    the whole active mark, and an inset edge would trace its radius as a crescent.
 
@@ -5540,6 +6070,7 @@ th.num-col .th-sort { flex-direction: row-reverse; }
 .daterange-day:focus-visible,
 .tree-row:focus-visible,
 .ctxmenu > .menu-item:focus-visible,
+.popover-menu .menu-item:focus-visible,
 .daterange-preset:focus-visible { outline-offset: -2px; box-shadow: none; }
 /* the end being dragged out is outlined, not filled. The band already shows the
    range; a second fill would say this end is committed when it is not. The ring
@@ -5549,15 +6080,27 @@ th.num-col .th-sort { flex-direction: row-reverse; }
   border-start-end-radius: var(--r-1);
   border-end-end-radius: var(--r-1);
 }
+/* and it rounds that end only where the band STOPS. Rounded against a cell that
+   carries the band, the ring reads as a second object cut into the run: the
+   corner has to answer the neighbour, which is why the test is on the cell and
+   not on the day. */
+.daterange-grid td:has(+ td > .daterange-day:is(.is-in-range, .is-start, .is-end)) > .daterange-day.is-preview-end {
+  border-start-end-radius: 0;
+  border-end-end-radius: 0;
+}
 
 /* hover paints the neutral cell and leaves every range state alone: the state is
-   already the feedback, and a hover fill over the band breaks the run. Each
-   restatement is one class longer than the base, so order decides nothing.
+   already the feedback, and a hover fill over the band breaks the run.
+   ORDER IS THE ONLY THING DECIDING THESE THREE. `:not()` carries its argument's
+   specificity, so the base measures (0,3,0) and both restatements tie it there
+   rather than leading it by a class: each has to stay BELOW the base, and a
+   resting screenshot cannot see them swap. The state-merge check drives
+   the hover and reads the paint, which is what holds it.
    --text on --surface-2 measures 8.56:1 dark and 11.28:1 light; --on-accent on
-   --accent-hover 10.04:1 and 5.90:1. */
-.daterange-day:hover:not(:disabled) { background: var(--surface-2); }
+   --accent-hover 10.03:1 and 5.90:1. */
+.daterange-day:hover:not(:disabled) { background: var(--surface-2); --tint-ground: transparent; }
 .daterange-day.is-in-range:hover { background: var(--accent-quiet); color: var(--accent-text); }
-.daterange-day:is(.is-start, .is-end):hover { background: var(--accent-hover); color: var(--on-accent); }
+.daterange-day:is(.is-start, .is-end):hover { background: var(--accent-hover); --tint-ground: transparent; color: var(--on-accent); }
 
 /* on the two filled ends the inset ring takes the fill's own on-colour, which an
    accent ring would vanish into */
@@ -5589,10 +6132,36 @@ th.num-col .th-sort { flex-direction: row-reverse; }
   .daterange-presets {
     flex-direction: row;
     flex-wrap: wrap;
+    /* the side column's own 160px is a COLUMN width; stacked, the row is as
+       wide as the panel */
+    width: auto;
     min-width: 0;
     border-inline-end: none;
     border-block-end: 1px solid var(--line-soft);
   }
+}
+/* The preset column gives up its whole-line width before the panel gives up
+   its shape. A 44px grid makes the beside-form 494 wide, and a shell whose
+   content column starts 308 in leaves less than that, so the panel overhung
+   the document from 769 to 801 (measured 33 and 2).
+
+   THE CLAMP IS A LENGTH, NOT A CONTENT WIDTH, and that is the whole point:
+   letting the column shrink without capping the panel leaves the panel exactly
+   as wide as its longest preset string, so the overhang came back at a label
+   two characters longer than the sheet's - measured at coarse 769, uniform
+   labels, 12 characters clears and 14 overhangs by 3, 17 by 26, 20 by 46. 440
+   is the bound the shell case allows (461 of column at 769, less the page's own
+   gutters), so the panel is 440 whatever it holds, and the preset column's own
+   `flex-shrink` and wrap pay for it.
+
+   TRADING WIDTH FOR HEIGHT IS WHAT THIS AVOIDS: stacking the column takes the
+   panel from 383 tall to 528, and a popover that deep hanging off a control is
+   the case `.daterange-up` exists to flip, in a band where the viewport is wide
+   enough that nothing needed to move. Measured in a 431px frame, the stacked
+   form stood 145px past it. Under 560 the panel stacks anyway and that block's
+   own `min-width: 0` owns it. */
+@media (pointer: coarse) and (min-width: 561px) and (max-width: 820px) {
+  .daterange-panel { max-width: min(440px, calc(100vw - 2 * var(--space-5))); }
 }
 
 /* ---- Tree navigation ----
@@ -5605,12 +6174,10 @@ th.num-col .th-sort { flex-direction: row-reverse; }
    knows how far down it is. The indent is the group's padding, which is what
    lets the line sit on the parent twist's centre at every level with one value.
 
-   The selected row's band is the shared active-row band: the quiet fill, rounded
-   like the sidebar's, starting at the row's own edge. Its mark stays the
-   system's inset accent edge, and on the rounded band the 2px edge follows the
-   curve. The outer corners of the tree's own top and bottom rows are the one
-   exception: flush with a rounded card they take the card's radius, or the band
-   cuts it.
+   The selected row's band is the shared active-row band, and the whole mark:
+   the quiet fill on the --r-1 corners every row already carries, starting at
+   the row's own edge. The 2px accent capsule that used to sit beside it went
+   with `.nav-indicator`.
 
    The band starts at the row's own edge rather than the tree's, which is what
    nesting the padding buys. A band that spans the full width at every depth
@@ -5637,7 +6204,7 @@ th.num-col .th-sort { flex-direction: row-reverse; }
   inset-block: 0;
   inset-inline-start: calc(var(--space-2) + var(--tree-twist) / 2 - 1px);
   width: 2px;
-  background: color-mix(in srgb, var(--text-4) 28%, transparent);
+  background: color-mix(in srgb, var(--text-4) 28%, var(--tint-ground));
 }
 
 .tree-row {
@@ -5648,7 +6215,7 @@ th.num-col .th-sort { flex-direction: row-reverse; }
   min-height: var(--ctl-sm);
   padding: 0 var(--space-2);
   border: none;
-  border-radius: 0;
+  border-radius: var(--r-1);   /* the list panel's row radius, in every state */
   background: none;
   font: 400 var(--t-3)/1.3 var(--font-sans);
   color: var(--text-3);   /* 5.48:1 on --surface-1 and 6.34:1 on --bg dark, 5.92 / 5.28 light */
@@ -5658,13 +6225,18 @@ th.num-col .th-sort { flex-direction: row-reverse; }
   user-select: none;
   transition: background var(--dur-tint) var(--ease), color var(--dur-tint) var(--ease);
 }
-.tree-row:hover { background: var(--surface-2); color: var(--text-2); }   /* 6.17:1 dark, 7.00:1 light */
-/* The top-level rows are full width, so the first and last take the card's
-   radius the way a setting row's edge rows do. The last row takes its bottom
-   radius only as a leaf: an expanded last node puts an indented row below it,
-   and that indented row is the visual bottom. */
-.tree > li:first-child > .tree-row { border-radius: var(--r-2) var(--r-2) 0 0; }
-.tree > li:last-child:not(:has(> .tree-group)) > .tree-row { border-radius: 0 0 var(--r-2) var(--r-2); }
+.tree-row:hover { background: var(--surface-2); --tint-ground: transparent; color: var(--text-2); }   /* 6.17:1 dark, 7.00:1 light */
+/* The active row's band, one rule across the three rows that paint one: the
+   quiet accent fill spans the row and starts at the row's own indent. Derived
+   from .nav-item.active. It sits HERE, after
+   `.tree-row:hover`, because the two tie at (0,2,0) and the last of the three
+   member hover rules is the tree's: placed in the sidebar block as it shipped,
+   a hovered selected tree row repainted its band grey (measured
+   oklch(0.345 0.026 280) under the pointer). The sidebar's and the palette's
+   hover rules sit above it in the file, so the one move covers all three. */
+.nav-item.active,
+.tree-row[aria-selected="true"],
+.palette-row.active { background: var(--accent-quiet); }
 /* The band is the shared active-row rule; this is the accent text on it.
    --accent-text on the quiet fill measures 5.78:1 over --surface-1 and 6.66:1
    over --bg, dark. */
@@ -5761,6 +6333,7 @@ th.num-col .th-sort { flex-direction: row-reverse; }
   flex-shrink: 0;
   border-radius: var(--r-pill);
   background: var(--status);
+  --tint-ground: transparent;
 }
 .status-key-success { --status: var(--success); }
 .status-key-warning { --status: var(--warning); }
@@ -5801,7 +6374,7 @@ th.num-col .th-sort { flex-direction: row-reverse; }
   place-items: center;
   padding: var(--space-10) var(--space-6);
 }
-/* Her call 2026-09-01: these screens make the dot grid the subject, and the copy
+/* these screens make the dot grid the subject, and the copy
    sits in a gap torn in it. The grid has to be visible for that to be true, and
    at the shipped resting alpha it is not: measured, a resting dot lands 5 sRGB
    levels off the page at 0.24 and 13 dark / 12 light at 0.60. The lift is on the
@@ -5814,6 +6387,10 @@ th.num-col .th-sort { flex-direction: row-reverse; }
    grid because of a 404 six levels deep inside a panel. Measured, the direct-child
    form matches the route and misses the specimen. */
 html:has(> body > .page-state) { --dot-rest: 0.60; }
+/* The same route keeps the flat page under the grid. The gap below is a
+   page-toned shape, so over the sky it cut a dark cap out of the light above
+   the copy; the grid is this screen's subject, and the sky is not. */
+html:has(> body > .page-state) > body::after { content: none; }
 /* The gap IS the design, and it is TORN rather than cut. A page-toned box with a
    radius paints a hard-edged rectangle across the canvas, which reads as a card
    laid on the grid: her words, "a gray square that blocks the view of background
@@ -5838,8 +6415,8 @@ html:has(> body > .page-state) { --dot-rest: 0.60; }
   max-width: var(--page-narrow);
   text-align: center;
 }
-/* --t-7, the section title's own step. --t-8 belongs to `.page-title`, which
-   names a screen inside a product; this screen has no product around it.
+/* --t-7, a step under the two display sizes. --t-9 belongs to `.page-title`,
+   which names a screen inside a product; this screen has no product around it.
    --text measures 11.67:1 on --bg and 10.09 on --surface-1 dark, 12.00 / 13.45
    light. */
 .page-state-title {
@@ -5900,6 +6477,7 @@ html:has(> body > .page-state) { --dot-rest: 0.60; }
   flex: 1 1 auto;
   height: 1px;
   background: var(--surface-3);
+  --tint-ground: transparent;
 }
 .page-state-foot { font-size: var(--t-2); color: var(--text-3); text-align: center; }   /* 5.48 / 5.92 */
 
@@ -5931,7 +6509,6 @@ html:has(> body > .page-state) { --dot-rest: 0.60; }
   z-index: 550;
   min-width: 180px;
   max-width: min(320px, calc(100vw - 2 * var(--space-4)));
-  padding-block: var(--space-1);
   translate: 0 0;
   transform-origin: top left;
 }
@@ -5997,6 +6574,7 @@ html:has(> body > .page-state) { --dot-rest: 0.60; }
   width: 100%;
   height: 100%;
   background: var(--accent);   /* 7.48:1 dark, 4.10:1 light on --bg, over the 3:1 floor */
+  --tint-ground: transparent;
   transform-origin: left center;
 }
 .route-progress.is-loading { visibility: visible; }
@@ -6039,8 +6617,11 @@ html:has(> body > .page-state) { --dot-rest: 0.60; }
   gap: var(--space-2);
   max-width: 100%;
   min-width: 0;
-  padding-inline: var(--space-2) 2px;
+  /* no end padding: the button's hover well fills the chip's end cap, and a
+     2px sliver of chip around a hovered well read as a gap in the fill */
+  padding-inline: var(--space-2) 0;
   background: var(--well);
+  --tint-ground: transparent;
   border: 1px solid var(--line-soft);
   border-radius: var(--r-1);
   vertical-align: middle;
@@ -6074,10 +6655,19 @@ html:has(> body > .page-state) { --dot-rest: 0.60; }
 }
 /* 24px and bare, the shape `.code-copy` already is: no border, no fill at rest,
    below every control size. --text-3 on --well measures 7.02:1 dark and 4.82:1
-   light, and --text on the hover fill 8.56:1 and 11.28:1. */
+   light, and --text on the hover fill 8.56:1 and 11.28:1.
+   The button takes the chip's full height and its end cap, so the hover well
+   meets the chip's inner edges on all three sides: a fixed 24px height left a
+   1px sliver above and below whenever the chip's row ran taller. Stretch, not
+   a height, so a wrapping value grows the well with the chip; the floor holds
+   the 24 for a chip whose text is shorter than that. The radius is the
+   chip's own --r-1, which sits a hair outside the 1px-border arc
+   an exact concentric fit would take (9px); the chip does not clip, and the
+   difference is sub-pixel at 1x. */
 .copy-chip-btn {
   width: 24px;
-  height: 24px;
+  min-height: 24px;
+  align-self: stretch;
   border-radius: var(--r-1);
   color: var(--text-3);
 }
@@ -6143,9 +6733,10 @@ html:has(> body > .page-state) { --dot-rest: 0.60; }
    The cue that a scrolling box holds more than it shows. The scrollers carry it
    themselves: `initScrollFade` writes the cue class onto every `pre`,
    `.table-wrap`, `.chart-scroll`, `.modal-body`, `.log-view`,
-   `.pagination-pages`, `.sidebar-nav`, `.navbar-nav`, `.select-menu` and
-   `.palette-list`, so no consumer opts in. `no-scroll-fade` on any scroller is
-   the one opt-out.
+   `.pagination-pages`, `.sidebar-nav` and `.navbar-nav`; a consumer scroller
+   opts in with `data-scroll-fade`, and floating panels (`.select-menu`,
+   `.palette-list`) scroll bare. `no-scroll-fade` on any scroller is the one
+   opt-out.
 
    IT IS A MASK, NOT A PAINTED RAMP. A painted ramp has to know the surface
    behind it, and the same scroller sits on a card, on the page and inside a
@@ -6153,7 +6744,7 @@ html:has(> body > .page-state) { --dot-rest: 0.60; }
 
    THE BLEED IS LOAD-BEARING. A mask clips to its own painting area, the painting
    area is the border box, and a masked box therefore loses its shadow outright:
-   measured on a 300x140 card, --elev-1 falls from 22 levels under and 12 beside
+   measured on a 300x140 card, --elev-1 falls from 23 levels under and 11 beside
    to 0 and 0, and it falls there for a mask that fades nothing at all.
    `mask-clip: no-clip` lifts the clip, but the image then has to REACH past the
    box or the region outside it masks to transparent just the same (measured:
@@ -6161,8 +6752,8 @@ html:has(> body > .page-state) { --dot-rest: 0.60; }
    sized 48px past the box on every side and carries an opaque plateau in the
    bleed with a hard stop at the box's own edge. 48 is `.select-menu`'s own bleed
    and for the same reason: --elev-float's widest coat is what has to clear it.
-   On the shipped `.table-wrap` with the fade on, the shadow measures 25 levels
-   under and 13 beside against 24 and 12 on the same page's unmasked one.
+   On the shipped `.table-wrap` with the fade on, the shadow measures 24 levels
+   under and 12 beside against 23 and 11 on the same page's unmasked one.
 
    THE FADE IS OFF AT REST. Both windows are 0 until a controller says the box
    can scroll that way, so a page with no controller paints no fade at all, and
@@ -6182,9 +6773,10 @@ html:has(> body > .page-state) { --dot-rest: 0.60; }
     --fade-start: 0px;
     --fade-end: 0px;
     --fade-bleed: 48px;
+    --fade-dir: to right;
     /* a mask reads alpha and nothing else. #000 and #0000 are the two ends of
        that alpha ramp, not a colour choice, which is why no token fits here. */
-    --fade-mask: linear-gradient(to right,
+    --fade-mask: linear-gradient(var(--fade-dir),
       #000 0 var(--fade-bleed),
       #0000 var(--fade-bleed),
       #000 calc(var(--fade-bleed) + var(--fade-start)),
@@ -6199,16 +6791,9 @@ html:has(> body > .page-state) { --dot-rest: 0.60; }
   }
   /* the block axis, written by the controller when the element scrolls down:
      `.modal-body`, `.log-view`, the sheet's own column. It rides on `.scroll-fade`,
-     which owns the mask. */
-  .scroll-fade-y {
-    --fade-mask: linear-gradient(to bottom,
-      #000 0 var(--fade-bleed),
-      #0000 var(--fade-bleed),
-      #000 calc(var(--fade-bleed) + var(--fade-start)),
-      #000 calc(100% - var(--fade-bleed) - var(--fade-end)),
-      #0000 calc(100% - var(--fade-bleed)),
-      #000 calc(100% - var(--fade-bleed)) 100%);
-  }
+     which owns the mask, and turns it: the axis is the only thing that differs,
+     so it is the only thing this rule says. */
+  .scroll-fade-y { --fade-dir: to bottom; }
   .scroll-fade.has-more-start { --fade-start: var(--fade); }
   .scroll-fade.has-more-end { --fade-end: var(--fade); }
 }
@@ -6237,6 +6822,34 @@ html:has(> body > .page-state) { --dot-rest: 0.60; }
   .scroll-fade-y.has-more-start.has-more-end {
     box-shadow: inset 0 1px 0 var(--line), inset 0 -1px 0 var(--line);
   }
+  /* a scroller that carries elevation restates it beside the hairline: the
+     generic rules above replace `box-shadow` whole, so a scrolling `.table-wrap`
+     spent its three --elev-1 coats on one inset line. At (0,3,0) these win on
+     specificity whatever the order; the scrollers with no shadow of their own
+     keep the generic form. */
+  .table-wrap.scroll-fade.has-more-start {
+    box-shadow: var(--elev-1), inset 1px 0 0 var(--line);
+  }
+  .table-wrap.scroll-fade.has-more-end {
+    box-shadow: var(--elev-1), inset -1px 0 0 var(--line);
+  }
+  .table-wrap.scroll-fade.has-more-start.has-more-end {
+    box-shadow: var(--elev-1), inset 1px 0 0 var(--line), inset -1px 0 0 var(--line);
+  }
+  /* the second scroller in the controller's list that carries its own
+     elevation. It scrolls on the block axis past its own max-height, so it
+     takes the -y forms, and it floats, so the coat it restates is --elev-float:
+     without this a menu long enough to scroll paints no elevation at all over
+     the card behind it. */
+  .select-menu.scroll-fade-y.has-more-start {
+    box-shadow: var(--elev-float), inset 0 1px 0 var(--line);
+  }
+  .select-menu.scroll-fade-y.has-more-end {
+    box-shadow: var(--elev-float), inset 0 -1px 0 var(--line);
+  }
+  .select-menu.scroll-fade-y.has-more-start.has-more-end {
+    box-shadow: var(--elev-float), inset 0 1px 0 var(--line), inset 0 -1px 0 var(--line);
+  }
 }
 
 /* ---- Coarse pointers ----
@@ -6245,7 +6858,20 @@ html:has(> body > .page-state) { --dot-rest: 0.60; }
    by default, and the copy button is a 24px glyph, the same shape `.code-copy`
    grows from. */
 @media (pointer: coarse) {
-  .daterange { --dr-cell: var(--ctl-lg); }
+  /* The cell is what the panel's width IS: seven of them plus the calendar's
+     own 2 * --space-3 gutter. So the panel's clamp is expressed here, on the
+     one number every part of the grid derives from, rather than on a box that
+     `.popover`'s `overflow: hidden` would then cut a date column out of.
+     (100vw - 64px) / 7 is that clamp read back: 64 is the panel's own
+     2 * --space-5 bound plus the calendar gutter. It bites under 372px, where
+     seven 44px cells plus the gutters fit no viewport - measured 44.0 at 373
+     and 374, 42.3 at 360, 36.6 at 320 - so every phone at 373 and up keeps the
+     floor whole, and under it the cell keeps its 44px HEIGHT and gives up
+     width, which is the only thing left to give. */
+  .daterange { --dr-cell: min(var(--ctl-lg), calc((100vw - 64px) / 7)); }
+  /* the token carries both axes, and only the width may give: restated at the
+     base rule's own (0,1,0), later in the file, so the row keeps the floor */
+  .daterange-day { height: var(--ctl-lg); }
   .tree-row { min-height: var(--ctl-lg); }
 }
 
@@ -6257,6 +6883,9 @@ html:has(> body > .page-state) { --dot-rest: 0.60; }
    the ladder's rule is that reduced motion replaces. */
 @media (prefers-reduced-motion: reduce) {
   .tree-twist > svg { transition: none; }
+  /* the flipped menu's own (0,2,0) and (0,3,0) outrank the `.popover` fades */
+  .ctxmenu.ctxmenu-flip-y { animation-name: fade-in; }
+  .ctxmenu.ctxmenu-flip-y.closing { animation-name: fade-out; }
   .copy-chip.is-copied .copy-chip-btn > svg { animation: none; }
   /* keyed on the running state like the sweep it replaces, and at that rule's own
      (0,2,0), or reduce would start the hold on a bar that is at rest */
@@ -6295,7 +6924,7 @@ html:has(> body > .page-state) { --dot-rest: 0.60; }
    1.23:1 light, the same step a card takes over a well band. Every "its own
    surface" in this block is that step.
 
-   ONE NEUTRAL HAIRLINE, `color-mix(in srgb, var(--text-4) 40%, transparent)`,
+   ONE NEUTRAL HAIRLINE, `color-mix(in srgb, var(--text-4) 40%, var(--tint-ground))`,
    for the dropzone's dash, the sticky column's divider and the inline field's
    hover edge. The opaque neutrals cannot do this job: --line measures 1.11:1 on
    the light well and --surface-3 1.06:1, so both vanish in Latte. The mix tracks
@@ -6373,14 +7002,14 @@ html:has(> body > .page-state) { --dot-rest: 0.60; }
 
 /* ---- The panel's non-row states ----
    No match, loading and "type to search" are all `.palette-empty`, the system's
-   row that names the fix. Only the gutter changes, from the palette's 14px to
-   the 12px `.select-menu .menu-item` already uses, so the text column lines up
-   with the options above it. */
+   row that names the fix. Only the gutter changes, from the palette's own 14px
+   to the 8 `.select-menu .menu-item` already uses inside the panel's 4px, so
+   the text column lines up with the options above it. */
 .select-menu .palette-empty {
   display: flex;
   align-items: center;
   gap: var(--space-2);
-  padding-inline: 12px;
+  padding-inline: 8px;
 }
 
 /* The matched substring. `<mark>` carries a UA yellow that nothing in this
@@ -6471,10 +7100,38 @@ html:has(> body > .page-state) { --dot-rest: 0.60; }
    whole color-mix would fall back to transparent. */
 .select-chip {
   background: color-mix(in oklab, var(--surface-1), var(--surface-2) calc(var(--lift, 0) * 100%));
+  --tint-ground: transparent;
   color: var(--text-2);   /* 7.30:1 dark and 8.36:1 light at rest, 6.17 / 7.00 open */
   max-width: 100%;
 }
 .select-chip > .close { color: var(--text-3); }   /* 5.49 / 5.92 at rest, 4.65 / 4.96 open */
+/* THE remove hover, declared here rather than with `.close` in the
+   one-remove-control section because this rest rule ties it at (0,2,0) and a
+   state must not lose to a rest: the order is the same treatment
+   `.menu-item.active` got against `.menu-item:hover`. The chip's own
+   (0,3,0) hover carries the same costume at chip scale either way, so this
+   is the belt to that braces, and the braces reach the select chip because
+   every select chip is spelled `tag filter-chip select-chip`: derive that set
+   from the markup rather than carrying its count, which differs per tree.
+   Measured 2026-09-07: with this rest colour planted BELOW the hover, winning
+   the (0,2,0) tie, a hovered select chip still paints --danger through the
+   filter-chip rule. A select chip written without `.filter-chip` puts it back
+   on order alone. Numbers and the light-theme record live with the skeleton
+   rules in the one-remove-control section. */
+.close:hover {
+  color: var(--danger);
+  background: var(--well);
+  --tint-ground: transparent;
+}
+/* a glass panel is the one ground where --well loses and --surface-2 reads:
+  1.28:1 dark over the black plate and 1.34 over the white, against --well's
+  1.18. --danger is --glass-danger inside these panels, and holds 6.11:1 on
+  the fill. Light is one of the three grounds no grey clears 1.2 on:
+  --surface-2 reads 1.05 / 1.19, the same fill the neutral hover already
+  painted there, and --surface-1 clears the black plate at 1.25 only to read
+  1.00 on the white one. */
+.toast .close:hover,
+.modal .close:hover { background: var(--surface-2); --tint-ground: transparent; }
 
 /* One line, the remainder folded into a count the controller writes. Same
    contract `.tabs-boxed-wrap.has-ink` runs under: the class is added at runtime,
@@ -6513,7 +7170,8 @@ html:has(> body > .page-state) { --dot-rest: 0.60; }
   text-align: center;
   border-radius: var(--r-2);
   background: var(--well);
-  border: 1px dashed color-mix(in srgb, var(--text-4) 40%, transparent);
+  --tint-ground: transparent;
+  border: 1px dashed color-mix(in srgb, var(--text-4) 40%, var(--tint-ground));
   cursor: pointer;
   transition: background var(--dur-tint) var(--ease), border-color var(--dur-tint) var(--ease);
 }
@@ -6572,6 +7230,7 @@ html:has(> body > .page-state) { --dot-rest: 0.60; }
    lifts a step for this state only. */
 .dropzone.is-over > .dropzone-target {
   background: color-mix(in srgb, var(--accent) 10%, var(--well));
+  --tint-ground: transparent;
   border-color: var(--accent);
   border-style: dashed;
 }
@@ -6588,6 +7247,7 @@ html:has(> body > .page-state) { --dot-rest: 0.60; }
    of them shipped the lift. */
 .dropzone.is-rejected > .dropzone-target {
   background: color-mix(in srgb, var(--danger) 8%, var(--well));
+  --tint-ground: transparent;
   border-color: var(--danger);
 }
 .dropzone.is-rejected > .dropzone-target > svg { color: var(--danger); }
@@ -6599,7 +7259,7 @@ html:has(> body > .page-state) { --dot-rest: 0.60; }
   color: var(--text-disabled);
   /* the dashed edge is DERIVED from the same token as the copy, so quieting the
      copy quiets the edge with it and the zone keeps one construction */
-  border-color: color-mix(in srgb, var(--text-disabled) 40%, transparent);
+  border-color: color-mix(in srgb, var(--text-disabled) 40%, var(--tint-ground));
   cursor: not-allowed;
 }
 
@@ -6618,6 +7278,7 @@ html:has(> body > .page-state) { --dot-rest: 0.60; }
   gap: var(--space-3);
   padding: var(--space-2) var(--space-3);
   background: var(--well);
+  --tint-ground: transparent;
   border-radius: var(--r-1);
   /* the entrance carries no fill mode, so a page with no controller paints the
      settled row and the row is never hidden behind a class */
@@ -6649,14 +7310,18 @@ html:has(> body > .page-state) { --dot-rest: 0.60; }
    dark and 1.23:1 light, with --accent on it at 6.48 / 4.60 over the 3:1 floor. */
 .dropzone-file .progress {
   background: var(--surface-1);
+  --tint-ground: transparent;
   margin-top: var(--space-2);
 }
 /* The remove is `.close`, the one remove control with the coarse floor already
-   on it. Only the hover changes: its --surface-2 fill measures 1.03:1 on the
-   light well and is not there, and removing a file is destructive, so the
-   colour carries it. --danger reads 6.64:1 dark and 4.89:1 light on the row. */
+   on it. The row's ground is --well, the one ground where the well itself is
+   invisible: --well on --well measures 1.00:1 in both themes. The fill rises
+   instead, the move this block already makes for the file's progress track:
+   --surface-1 reads 1.28:1 dark and 1.23:1 light on the row, and --danger on
+   it 5.17:1 dark and 6.00:1 light. */
 .dropzone-file > .close:hover {
-  background: none;
+  background: var(--surface-1);
+  --tint-ground: transparent;
   color: var(--danger);
 }
 
@@ -6679,19 +7344,12 @@ html:has(> body > .page-state) { --dot-rest: 0.60; }
   border-radius: var(--r-1);
   --ring-color: var(--accent-line);
 }
-/* the corners are the ladder's: --r-1 outside, square inside. Logical, so a
-   right-to-left page rounds the end the reader's eye actually starts at. */
+/* the corners are the ladder's: --r-1 outside, square inside. The two end radii
+   are the same pair every joined group takes, so they are declared once for all
+   three in the button-group block. */
 .input-group > * {
   position: relative;
   border-radius: 0;
-}
-.input-group > :first-child {
-  border-start-start-radius: var(--r-1);
-  border-end-start-radius: var(--r-1);
-}
-.input-group > :last-child {
-  border-start-end-radius: var(--r-1);
-  border-end-end-radius: var(--r-1);
 }
 .input-group > * + * { margin-inline-start: -1px; }
 .input-group > .input { flex: 1 1 auto; min-width: 0; }
@@ -6699,7 +7357,7 @@ html:has(> body > .page-state) { --dot-rest: 0.60; }
 .input-group > .input:focus { --ring: 0px; z-index: 2; }
 .input-group:has(> .input:focus) { box-shadow: 0 0 0 3px var(--ring-color); }
 .input-group:has(> .input:is(.input-invalid, [aria-invalid="true"])) {
-  --ring-color: color-mix(in srgb, var(--danger) 30%, transparent);
+  --ring-color: color-mix(in srgb, var(--danger) 30%, var(--glass-ground));
 }
 /* a disabled field takes its addons with it: `.input:disabled` dims only itself.
    The addon's own icon names --text-4, so it is restated or it stays lit inside a
@@ -6717,6 +7375,7 @@ html:has(> body > .page-state) { --dot-rest: 0.60; }
   flex-shrink: 0;
   padding: 0 12px;   /* `.input`'s own inline padding, so the two texts line up */
   background: var(--surface-1);
+  --tint-ground: transparent;
   border: 1px solid var(--line);
   color: var(--text-3);   /* 5.49:1 dark, 5.92:1 light on --surface-1 */
   font: 400 var(--t-3)/1.4 var(--font-sans);
@@ -6739,6 +7398,7 @@ html:has(> body > .page-state) { --dot-rest: 0.60; }
   flex-shrink: 0;
   padding: 0;
   background: var(--surface-1);
+  --tint-ground: transparent;
   border: 1px solid var(--line);
   color: var(--text-3);   /* 5.49:1 dark, 5.92:1 light on --surface-1, over the 3:1 floor */
   cursor: pointer;
@@ -6750,32 +7410,16 @@ html:has(> body > .page-state) { --dot-rest: 0.60; }
    page's, and the raised z-index keeps it over both neighbours */
 .input-step:focus-visible { z-index: 2; }
 
-/* A quantity is a numeric readout, so it takes the mono face and tabular
-   figures, and it centres because the two controls flank it. --text measures
-   12.98:1 dark and 10.95:1 light on --well. */
-.input-group-num > .input {
-  text-align: center;
-  font-family: var(--font-mono);
-  font-variant-numeric: tabular-nums;
-  font-feature-settings: "tnum";
-}
-.input-group-num > .input[type="number"] { appearance: textfield; }
-.input-group-num > .input::-webkit-outer-spin-button,
-.input-group-num > .input::-webkit-inner-spin-button {
-  appearance: none;
-  margin: 0;
-}
+/* The value centres because the two controls flank it. The mono face and the
+   spinners-off are the number field's own, declared with `.input` above.
+   --text measures 12.98:1 dark and 10.95:1 light on --well. */
+.input-group-num > .input { text-align: center; }
 
 /* ============================================================
    Button group and split button
    ============================================================ */
 
-/* `.tabs-boxed-wrap` is the SEGMENTED TAB CONTROL: a track, a sliding ink, and
-   it selects a panel. `.btn-group` is actions or a pressed-state toggle set
-   sharing one outline, and it selects nothing. Reaching for the wrong one is
-   the mistake this pair exists to prevent.
-
-   The corners are the ladder's --r-1 outside and square inside; no new number
+/* The corners are the ladder's --r-1 outside and square inside; no new number
    appears anywhere in this block. Members shrink rather than scroll, so a group
    can never widen the page: put a `.truncate` span inside a label that has to
    give way. Past four segments the control is a `.select`. */
@@ -6791,11 +7435,18 @@ html:has(> body > .page-state) { --dot-rest: 0.60; }
   flex: 0 1 auto;
   min-width: 0;
 }
+/* the run's two end radii, for all three joined groups. Logical, so a
+   right-to-left page rounds the end the reader's eye actually starts at. It has
+   to sit AFTER the `border-radius: 0` resets above: `.btn-split > .btn` ties
+   `.btn-split > .btn-split-toggle` at (0,2,0), so an earlier placement squares
+   the split button's own outer end. */
+.input-group > :first-child,
 .btn-group > .btn:first-child,
 .btn-split > .btn:first-child {
   border-start-start-radius: var(--r-1);
   border-end-start-radius: var(--r-1);
 }
+.input-group > :last-child,
 .btn-group > .btn:last-child,
 .btn-split > .btn-split-toggle {
   border-start-end-radius: var(--r-1);
@@ -6842,9 +7493,21 @@ html:has(> body > .page-state) { --dot-rest: 0.60; }
    to the tag family, where each variant remixes its OWN semantic token, and only
    --info happens to resolve to the accent.
 
-   It lives HERE because the two `.btn-group` selectors tie the dark rule above at
-   (0,4,0) and have to come after it. Every other member is unopposed. */
+   ITS PLACEMENT IS FREE WHILE BOTH ITS `.btn-group` SELECTORS TRAVEL TOGETHER,
+   and the tie this comment used to claim is not the one that exists. Every
+   selector here carries `[data-theme="light"]`, one step above the dark rule it
+   remixes: the pressed pair measures (0,4,0) and (0,5,0) against the dark (0,3,0)
+   and (0,4,0), and every other member gains the same step. The one real tie is
+   this rule's (0,4,0) base selector against the dark rule's (0,4,0) `:hover`
+   selector on a hovered pressed segment, and it is inert only because the (0,5,0)
+   selector beside it wins that element outright. Split the two and the base is
+   order-decided. Measured 2026-09-07 with the dark pair appended last, winning
+   every tie: the light label did not move, hovered or at rest. */
 [data-theme="light"] .pagination .btn[aria-current="page"],
+[data-theme="light"] .tag-accent,
+[data-theme="light"] .tab.active .tab-badge,
+[data-theme="light"] .navbar-link.active .navbar-badge,
+[data-theme="light"] .nav-item.active .nav-badge,
 [data-theme="light"] .step[aria-current="step"] .step-index,
 [data-theme="light"] .avatar,
 [data-theme="light"] .tree-row[aria-selected="true"],
@@ -6872,13 +7535,14 @@ html:has(> body > .page-state) { --dot-rest: 0.60; }
    says the second one opens something. currentColor rather than a token, so it
    tracks the hover and press fills without a rule for each. */
 .btn-split > .btn-fill + .btn-fill {
-  border-inline-start-color: color-mix(in srgb, currentColor 25%, transparent);
+  border-inline-start-color: color-mix(in srgb, currentColor 25%, var(--tint-ground));
 }
 /* One control: hovering either filled half lifts the pair together. Letting
    `.btn-fill:hover` fire on the half under the pointer alone is what made the
    caret segment read as a separate, brighter button. */
 .btn-split:hover > .btn-fill:not(:disabled) {
   background: var(--accent-hover);
+  --tint-ground: transparent;
   border-color: var(--accent-hover);
 }
 /* The outward focus ring wraps one half and reads as a second button on the
@@ -6901,7 +7565,6 @@ html:has(> body > .page-state) { --dot-rest: 0.60; }
 .btn-split-menu {
   inset-inline-start: auto;
   inset-inline-end: 0;
-  padding: var(--space-1) 0;
 }
 
 /* ============================================================
@@ -6955,6 +7618,7 @@ html:has(> body > .page-state) { --dot-rest: 0.60; }
   overflow: hidden;
   content-visibility: hidden;
   background: var(--well);   /* 1.28:1 dark, 1.23:1 light against the table's surface-1 */
+  --tint-ground: transparent;
   /* a detail belonging to its row, not a hole punched across the table: full
      bleed with square corners inside an --r-3 container read as the second */
   border-radius: var(--r-1);
@@ -6997,28 +7661,31 @@ html:has(> body > .page-state) { --dot-rest: 0.60; }
    stays behind while the cell travels. The neutral hairline reads on all four
    grounds - 1.92 / 1.81 / 2.03 / 1.90 dark and 1.77 / 1.69 / 1.68 / 1.70 light
    on --surface-1, the hover fill, the header well and the selection tint. */
-.table-sticky-1 tbody tr { background: var(--surface-1); }
+.table-sticky-1 tbody tr { background: var(--surface-1); --tint-ground: transparent; }
 .table-sticky-1 :is(th, td):first-child {
   position: sticky;
   inset-inline-start: 0;
   z-index: 1;
   background: inherit;
-  box-shadow: inset -1px 0 0 0 color-mix(in srgb, var(--text-4) 40%, transparent);
+  box-shadow: inset -1px 0 0 0 color-mix(in srgb, var(--text-4) 40%, var(--tint-ground));
 }
 /* the row's own selection edge is painted by the row and covered by the cell's
    ground, so the frozen cell carries both marks itself */
 .table-sticky-1 tbody tr.row-selected :is(th, td):first-child {
   box-shadow:
     inset 2px 0 0 var(--accent),
-    inset -1px 0 0 0 color-mix(in srgb, var(--text-4) 40%, transparent);
+    inset -1px 0 0 0 color-mix(in srgb, var(--text-4) 40%, var(--tint-ground));
 }
 
 /* ---- Density ----
    Three steps, both ends off the spacing scale, around the 10px the table
    already ships. The control that sets them is a `.btn-group` with
-   `aria-pressed`, which is the other half of this block. */
-.table-wrap.table-dense :is(thead th, tbody td) { padding: var(--space-1) var(--space-3); }
-.table-wrap.table-roomy :is(thead th, tbody td) { padding: var(--space-4); }
+   `aria-pressed`, which is the other half of this block. BODY rows only: the
+   header keeps the base height at every density, so a dense table's header is
+   not the shortest thing on the page and a roomy one's does not outgrow the
+   card. */
+.table-wrap.table-dense tbody td { padding: var(--space-1) var(--space-3); }
+.table-wrap.table-roomy tbody td { padding: var(--space-4); }
 
 /* ---- Inline edit ----
    The cell holds a real field for its whole life rather than swapping one in on
@@ -7055,11 +7722,42 @@ html:has(> body > .page-state) { --dot-rest: 0.60; }
   border-color: transparent;
   color: var(--text);   /* 10.12:1 dark, 13.47:1 light on --surface-1 */
 }
+/* The transparent edge above is (0,1,0) and sits thousands of lines below
+   `.input-invalid`, which is (0,1,0) too, so it wins on source order and an
+   invalid inline cell painted NO edge at all - measured `rgba(0, 0, 0, 0)` in
+   both themes, with or without the unsaved state. The attribute arm of that
+   rule is (0,2,0) and always did paint; restating the pair here at (0,2,0)
+   makes the class form agree with it, which is what its own comment promises.
+   Scoped to this field rather than reordered upstream: the invalid rule dresses
+   every control in the system and this is the one whose base rule outranks it. */
+.input-inline.input-invalid,
+.input-inline[aria-invalid="true"] {
+  border-color: var(--danger);   /* 5.18:1 dark, 6.02:1 light on --surface-1 */
+}
+/* unsaved. The accent hairline rides the field itself, beside the value it
+   marks: on the cell's edge it sat about 290px away from a numeric column's
+   field and read as a stray line. A BORDER and not a shadow, so it cannot
+   composite with the field's own; the hover companion sits at (0,7,1) and beats
+   the (0,5,0) neutral hover edge below on specificity, so source order does not
+   decide it.
+
+   THE INVALID CARVE-OUT IS LOAD-BEARING, and it is what a shadow did not need:
+   unsaved and failed-to-save are two states of one cell, and this selector is
+   longer than `.input[aria-invalid="true"]` at (0,2,0) and its `:focus` at
+   (0,3,0), so without the `:not()` pair a failed save paints the accent and
+   --danger never reaches the field. The old cell shadow composited beside the
+   border and could not collide with it. Same pair `.input`'s own hover rule
+   carries, for the same reason. A dirty field that is also [readonly] loses to
+   that rule's (0,6,0) form, which is a state pair the component cannot be in. */
+.table-wrap td.cell-edit.is-dirty .input-inline:not(.input-invalid):not([aria-invalid="true"]),
+.table-wrap td.cell-edit.is-dirty .input-inline:hover:not(.input-invalid):not([aria-invalid="true"]) {
+  border-color: var(--accent);   /* 6.48:1 dark, 4.60:1 light on --surface-1 */
+}
 /* `.input:hover:not(:focus):not(.input-invalid):not([aria-invalid="true"])` is
    (0,5,0) and would paint --surface-3, which measures 1.06:1 on the light well.
    Matched here at the same (0,5,0), later in the file. */
 .input-inline:hover:not(:focus):not(.input-invalid):not([aria-invalid="true"]) {
-  border-color: color-mix(in srgb, var(--text-4) 40%, transparent);
+  border-color: color-mix(in srgb, var(--text-4) 40%, var(--tint-ground));
 }
 /* A cell nobody may edit offers no affordance, and carving `[readonly]` out of
    the rule above is not enough: the shipped (0,5,0) rule is still there behind
@@ -7068,7 +7766,7 @@ html:has(> body > .page-state) { --dot-rest: 0.60; }
 .input-inline[readonly]:hover:not(:focus):not(.input-invalid):not([aria-invalid="true"]) {
   border-color: transparent;
 }
-.input-inline:focus { background: var(--well); }
+.input-inline:focus { background: var(--well); --tint-ground: transparent; }
 .input-inline[readonly] {
   color: var(--text-2);   /* 7.30:1 dark, 8.36:1 light on --surface-1 */
   cursor: default;
@@ -7088,9 +7786,6 @@ html:has(> body > .page-state) { --dot-rest: 0.60; }
   min-width: 3ch;
   margin-inline-start: auto;
 }
-/* unsaved. The system's own active-row edge, on the cell rather than on the
-   field, so it cannot be outranked by the (0,6,0) hover rule above. */
-.table-wrap td.cell-edit.is-dirty { box-shadow: inset 2px 0 0 var(--accent); }   /* 6.48:1 dark, 4.60:1 light */
 /* the field shares its cell with a spinner or a retry: it gives up the 100%
    width and takes what the row leaves, keeping its own pulled-back padding */
 .cell-edit-row {
@@ -7132,8 +7827,11 @@ html:has(> body > .page-state) { --dot-rest: 0.60; }
      takes its size from the cell's own line box above the floor. */
   .input-inline { min-height: var(--ctl-lg); }
   /* a dense table on a phone is not a density choice, it is a miss: the variant
-     collapses onto the base row, the way .btn-sm collapses onto the floor */
-  .table-wrap.table-dense :is(thead th, tbody td) { padding: 10px var(--space-4); }
+     collapses onto the base row, the way .btn-sm collapses onto the floor. BODY
+     rows only, like the density rules themselves: the header takes the base
+     height at every density and this block must not be the one place it does
+     not, however equal the two values happen to be today. */
+  .table-wrap.table-dense tbody td { padding: 10px var(--space-4); }
   /* the coarse floor for every bare icon button, and it has to be THIS block:
      each of these has a (0,1,0) box rule further down the file that an earlier
      coarse declaration would lose to on source order */
@@ -7208,13 +7906,48 @@ html:has(> body > .page-state) { --dot-rest: 0.60; }
   .typed-overlay { display: none; }
 }
 
+/* ---- Draw-on underline ----
+   A swash that draws itself under a highlighted word once on load. The host is
+   the highlighted text, made inline-block relative; the consumer pastes this
+   svg inside it with the path normalized (pathLength="1"), so the css dash
+   sweep draws any shape with no js and no measured length. The stroke is the
+   one shape a transform cannot draw, which is why the sweep rides
+   stroke-dashoffset (motion.md's exception table). Reduced motion keeps the
+   full underline and drops the sweep. */
+.draw-underline {
+  position: absolute;
+  left: 0;
+  bottom: -0.16em;
+  width: 100%;
+  height: 0.38em;
+  overflow: visible;
+  pointer-events: none;
+}
+.draw-underline path {
+  fill: none;
+  stroke: var(--accent-2);
+  stroke-width: 3;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  animation: draw-underline var(--dur-far) var(--ease-out) forwards;
+}
+@keyframes draw-underline {
+  to { stroke-dashoffset: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .draw-underline path {
+    animation: none;
+    stroke-dashoffset: 0;
+  }
+}
+
 /* ---- Glass ----
-   Real background blur on the surfaces something actually passes behind: the
-   mobile topbar, the stuck section header, the floating panels, the select's
-   own panel, and a modal or palette panel over its scrim. The navbar is
-   opaque in both of its states and never in the set: at the top nothing
-   passes behind it, and a full-width blurred band is the slab the strength
-   round rejected. The scrim itself stays a flat tint.
+   Real background blur, on the surfaces something actually passes behind.
+   Which six they are is in references/glass.md; the navbar is not one of them,
+   because at the top nothing passes behind it and a full-width blurred band is
+   the slab the strength round rejected. The scrim itself stays a flat tint.
 
    Two materials, one filter. Bars tint with --bg: a bar is the page held still,
    and on a dark page a surface-tone bar reads as an opaque slab whatever the
@@ -7250,9 +7983,9 @@ html:has(> body > .page-state) { --dot-rest: 0.60; }
    The fill list is explicit rather than blanket, or a bare disabled `.btn` would
    grow a fill it does not have at rest.
 
-   A STATIC GUARD CANNOT SEE THIS. The check that keeps it honest is
-   `tools/verify-disabled.py`, which mounts each state and reads the painted
-   colour; that gate is only as good as the specimens the pages carry.
+   A STATIC GUARD CANNOT SEE THIS. The check that keeps it honest mounts each
+   state and reads the painted colour; that gate is only as good as the
+   specimens the pages carry.
 
    THIS IS THE ONLY DECLARATION of the disabled label colour for the four
    components in the list. Each of them used to restate it as well, six dead
@@ -7265,6 +7998,7 @@ html:has(> body > .page-state) { --dot-rest: 0.60; }
 }
 :is(.btn, .daterange-day, .menu-item):is(:disabled, [aria-disabled="true"]):is([aria-pressed="true"], [aria-current="page"], .is-in-range, .is-start, .is-end, .active) {
   background: var(--surface-2) !important;
+  --tint-ground: transparent;
   border-color: var(--line) !important;
 }
 
@@ -7280,7 +8014,8 @@ html:has(> body > .page-state) { --dot-rest: 0.60; }
     /* the tokens with no headroom left on a translucent panel. --danger is
        3.31:1 unlifted, and a translucent accent fill laid over a translucent
        surface composites twice: 4.40:1 dark, 4.04 light, against 5.95 and 4.89
-       for the same mix laid down opaque. Numbers and method in tokens.css. */
+       for the same mix laid down opaque on a panel. Numbers and method in
+       tokens.css. */
     --text-3: var(--glass-dim);
     --text-4: var(--glass-dim);
     --text-placeholder: var(--glass-dim);
@@ -7289,21 +8024,31 @@ html:has(> body > .page-state) { --dot-rest: 0.60; }
        otherwise. Its own lift is the lowest value still clearing 3:1 there. */
     --text-disabled: var(--glass-disabled);
     --danger: var(--glass-danger);
-    --accent-quiet: var(--glass-quiet);
+    --danger-text: var(--glass-danger-text);
+    /* mixed HERE, on the surface, because a custom property resolves its var()
+       where it is declared: a mix on :root would read the root's transparent
+       --glass-ground. On a bar both land on --bg, on a panel on --surface-1. */
+    --accent-quiet: color-mix(in oklab, var(--accent) var(--glass-quiet-share), var(--glass-ground));
+    --accent-line: color-mix(in srgb, var(--accent) var(--glass-line-share), var(--glass-ground));
     /* the dimmed icon is a graphic against the same moving surface: on the dark
        panel 0.85 leaves a text-3 icon at 2.99:1, under the 3:1 floor, so the
        lift is 0.90: 3.15 dark and 3.89 light on the panel worst cases */
     --icon-dim: 0.90;
   }
   /* the bar is the page held still: page colour, hairline, and whatever passes
-     under it, ghosting through the blur. It carries only --text and --text-2,
-     which hold 6.21:1 on its worst case, so no dim re-floor rides on it. */
+     under it, ghosting through the blur. It re-floors the same tokens as a
+     panel, because the block above names it: a bar eyebrow or placeholder reads
+     --glass-dim, --glass-danger and --glass-disabled there too (the sheet's
+     stuck-header specimen paints a .label on it). */
+  /* --tint-ground is each surface's own tone, so a hover, press or tag tint
+     inside it is an opaque mix the backdrop cannot move; any opaque ground
+     nested inside resets it to transparent (the --tint-ground token's note). */
   .mobile-topbar,
-  .section-sticky.is-stuck { background: var(--glass-bar-tint); }
+  .section-sticky.is-stuck { background: var(--glass-bar-tint); --tint-ground: var(--bg); --glass-ground: var(--bg); }
   .popover,
   .select-menu,
   .toast,
-  .modal { background: var(--glass-tint); }
+  .modal { background: var(--glass-tint); --tint-ground: var(--surface-1); --glass-ground: var(--surface-1); }
   /* A full-bleed bar has one edge that meets the page, so it keeps the hairline
      it already had and only changes its colour. A floating panel gets all four:
      over a photo or a card its own tone is no longer the thing that separates
@@ -7324,8 +8069,8 @@ html:has(> body > .page-state) { --dot-rest: 0.60; }
   .popover,
   .select-menu,
   .toast,
-  .modal {
-    background: var(--surface-1);
+  .modal,
+  .section-sticky.is-stuck {
     -webkit-backdrop-filter: none;
     backdrop-filter: none;
     /* `unset` on a custom property is `inherit`, so each surface takes the root
@@ -7337,22 +8082,23 @@ html:has(> body > .page-state) { --dot-rest: 0.60; }
     --text-placeholder: unset;
     --text-disabled: unset;
     --danger: unset;
+    --danger-text: unset;
     --accent-quiet: unset;
+    --accent-line: unset;
     --icon-dim: unset;
+    --tint-ground: unset;
+    --glass-ground: unset;
   }
+  /* the surface is the only thing that differs across the six */
+  .mobile-topbar,
+  .popover,
+  .select-menu,
+  .toast,
+  .modal { background: var(--surface-1); }
   /* the sticky header's own pre-glass surface is the page, so that is what
      reduce restores, with the plain hairline in place of the glass edge */
   .section-sticky.is-stuck {
     background: var(--bg);   /* same tone the @supports-less fallback paints */
-    -webkit-backdrop-filter: none;
-    backdrop-filter: none;
-    --text-3: unset;
-    --text-4: unset;
-    --text-placeholder: unset;
-    --text-disabled: unset;
-    --danger: unset;
-    --accent-quiet: unset;
-    --icon-dim: unset;
     border-bottom: 1px solid var(--line-soft);
   }
   .mobile-topbar { border-bottom-color: var(--line-soft); }

@@ -87,7 +87,7 @@
   /* Sticks just below the navbar so the approve button stays reachable while rows scroll
      under it; the background and z-index stop table rows from showing through the bar. */
   position: sticky;
-  top: var(--navbar-h);
+  top: var(--pin-top);
   z-index: 10;
   padding: var(--space-2) 0;
   background: var(--bg);
@@ -106,15 +106,11 @@
 .diff-grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-4); margin-bottom: var(--space-8); }
 @media (max-width: 900px) { .diff-grid { grid-template-columns: 1fr; } }
 .diff-code {
-  font: 400 var(--t-2)/1.6 var(--font-mono);
-  background: var(--well);
-  border: 1px solid var(--line);
-  border-radius: var(--r-1);
-  padding: var(--space-4);
+  /* the shipped pre owns the surface (well, hairline, radius, padding); the diff
+     wraps instead of scrolling, which is the one deviation this view adds */
+  margin: 0;
   white-space: pre-wrap;
   word-break: break-word;
-  color: var(--text-2);
-  margin: 0;
 }
 .diff-line { display: block; }
 .diff-anchor {
@@ -135,7 +131,7 @@
 /* The one live region, kept out of sight by the shipped .sr-only utility. */
 .editor-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--space-8); align-items: start; }
 .editor-main { min-width: 0; }
-.editor-rail { display: flex; flex-direction: column; gap: var(--space-6); position: sticky; top: var(--space-8); }
+.editor-rail { display: flex; flex-direction: column; gap: var(--space-6); position: sticky; top: var(--pin-top); }
 @media (max-width: 900px) {
   .editor-grid { grid-template-columns: 1fr; }
   .editor-rail { position: static; }
@@ -152,7 +148,7 @@
    a single click away while reading. The strip sits inside the page's inline padding, clear of content. */
 .editor-nav-btn {
   position: fixed;
-  top: var(--navbar-h);
+  top: var(--pin-top);
   bottom: 0;
   width: 44px;
   display: flex;
@@ -172,8 +168,11 @@
 #editor-region > .callout { margin-bottom: var(--space-4); }
 #editor-region > .btn { margin-top: var(--space-4); }
 .editor-actions { margin-top: var(--space-4); display: flex; align-items: center; gap: var(--space-2); }
-/* The in-flight indicator for an approve or reject from the editor: htmx's own rules fade it in. */
-.editor-actions .htmx-indicator { display: inline-flex; align-items: center; gap: var(--space-2); font-size: var(--t-2); color: var(--text-3); }
+/* The in-flight indicators for an approve/reject from the editor and a style-guide save: htmx
+   fades the span in via .htmx-request, and display:none until then keeps the laid-out span from
+   widening the actions row past the viewport on a narrow screen. */
+.editor-actions .htmx-indicator { display: none; }
+.editor-actions .htmx-indicator.htmx-request { display: inline-flex; align-items: center; gap: var(--space-2); font-size: var(--t-2); color: var(--text-3); }
 
 /* The notes card: the agent's row reuses the constraint row shape; the human's textarea and its
    save button sit below it. */

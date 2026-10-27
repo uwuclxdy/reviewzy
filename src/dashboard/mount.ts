@@ -374,6 +374,10 @@ export function mountDashboard(app: Hono, config: Config, store: Store): void {
     }
     return c.html(styleGuideRegionFragment(vm, state));
   });
+
+  // Any request no route served, any method: the styled not-found page. app.notFound fires only
+  // when no path matches, so a wrong method on a known path keeps its 405.
+  app.notFound((c) => c.html(html`<!doctype html>${notFoundPage(auth.enabled)}`, 404));
 }
 
 /** The three filters straight off an action's POST body, kept alive across a re-render. */

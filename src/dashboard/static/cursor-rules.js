@@ -2,9 +2,11 @@
 const UNUSABLE = /::|&/;   // a pseudo-element is a box closest() can never return
 const STATE_PSEUDO = /:(?:hover|active|focus|focus-visible|focus-within|visited|link|target)\b/g;
 
-// clickable with no cursor declaration anywhere: the browser draws the pointer itself
+// clickable with no cursor declaration anywhere: the browser draws the pointer itself.
+// No `label`: a field label is not a target, and a label that WRAPS its control takes its
+// pointer from the stylesheet sweep instead, which is where the difference belongs.
 export const SEMANTIC_POINTER = [
-  'a[href]', 'area[href]', 'button', 'summary', 'select', 'label[for]',
+  'a[href]', 'area[href]', 'button', 'summary', 'select',
   'input[type="checkbox"]', 'input[type="radio"]', 'input[type="range"]',
   'input[type="color"]', 'input[type="file"]', 'input[type="submit"]',
   'input[type="reset"]', 'input[type="button"]',
@@ -29,30 +31,36 @@ export function splitSelectorList(text) {
   return parts.map(s => s.trim()).filter(Boolean);
 }
 
-/* Every selector any rule gives one of `values` for `prop`, de-duplicated. It NARROWS a
-   walk, never decides one: the computed style still has the last word, so a selector
-   whose rule lives under a media query the viewport does not match costs one match and
-   nothing else. A state pseudo is stripped so `.x:hover { position: sticky }` still names
-   `.x`. The alternative, reading `getComputedStyle` for every element in the document,
-   forces rendering inside any `content-visibility` subtree it crosses, which Chrome
-   reports and this system's collapsed rows all carry. */
-export function collectPropSelectors(sheets, prop, values) {
-  const found = new Set();
+/* One walk for both collectors: every rule of every sheet, in document order. `classify`
+   reads a rule and returns its verdict, or a falsy value to skip it; `take` gets each
+   usable selector that rule names, with that verdict. A state pseudo is stripped before
+   `take` sees it, so `.x:hover` names `.x` and folds onto whatever `.x` already said. */
+const sweep = (sheets, classify, take) => {
   const visit = rules => {
     for (const rule of rules || []) {
-      if (rule.selectorText && rule.style && values.includes(rule.style[prop])) {
-        for (const part of splitSelectorList(rule.selectorText)) {
-          if (UNUSABLE.test(part)) continue;
-          const clean = part.replace(STATE_PSEUDO, '').trim();
-          if (clean) found.add(clean);
-        }
+      const verdict = rule.selectorText && rule.style ? classify(rule) : null;
+      if (verdict) for (const part of splitSelectorList(rule.selectorText)) {
+        if (UNUSABLE.test(part)) continue;
+        const clean = part.replace(STATE_PSEUDO, '').trim();
+        if (clean) take(clean, verdict);
       }
       if (rule.cssRules) visit(rule.cssRules);                 // @media, @supports, nesting
     }
   };
   for (const sheet of sheets || []) {
-    try { visit(sheet.cssRules); } catch { /* cross-origin sheet */ }
+    try { visit(sheet.cssRules); } catch { /* cross-origin sheet, nothing worth a broken boot */ }
   }
+};
+
+/* Every selector any rule gives one of `values` for `prop`, de-duplicated. It NARROWS a
+   walk, never decides one: the computed style still has the last word, so a selector
+   whose rule lives under a media query the viewport does not match costs one match and
+   nothing else. The alternative, reading `getComputedStyle` for every element in the
+   document, forces rendering inside any `content-visibility` subtree it crosses, which
+   Chrome reports and this system's collapsed rows all carry. */
+export function collectPropSelectors(sheets, prop, values) {
+  const found = new Set();
+  sweep(sheets, rule => values.includes(rule.style[prop]), clean => found.add(clean));
   return [...found];
 }
 
@@ -63,21 +71,9 @@ export function collectCursorSelectors(sheets) {
   const bucketFor = c => c === 'pointer' ? buckets.pointer
     : c === 'default' ? buckets.inert
     : c === 'not-allowed' ? buckets.blocked : null;
-  const visit = rules => {
-    for (const rule of rules || []) {
-      const bucket = rule.selectorText && rule.style ? bucketFor(rule.style.cursor) : null;
-      if (bucket) for (const part of splitSelectorList(rule.selectorText)) {
-        if (UNUSABLE.test(part)) continue;
-        const clean = part.replace(STATE_PSEUDO, '').trim();   // folds `.x{default} .x:hover{pointer}`
-        if (!clean) continue;
-        for (const b of Object.values(buckets)) b.delete(clean); // document order stands in for the cascade
-        bucket.add(clean);
-      }
-      if (rule.cssRules) visit(rule.cssRules);                 // @media, @supports, CSS nesting
-    }
-  };
-  for (const sheet of sheets || []) {
-    try { visit(sheet.cssRules); } catch { /* cross-origin sheet, nothing worth a broken boot */ }
-  }
+  sweep(sheets, rule => bucketFor(rule.style.cursor), (clean, bucket) => {
+    for (const b of Object.values(buckets)) b.delete(clean);   // document order stands in for the cascade
+    bucket.add(clean);
+  });
   return { pointer: [...buckets.pointer], inert: [...buckets.inert], blocked: [...buckets.blocked] };
 }

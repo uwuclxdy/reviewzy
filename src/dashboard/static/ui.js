@@ -1,4 +1,4 @@
-/* Controllers. Every component that needs script, in one module.
+/* controllers. Every component that needs script, in one module.
    Load as `<script type="module" src="ui.js"></script>`. It wires itself on load
    against whatever markup is present and does nothing where a component is absent,
    so one script tag is correct for every page in the system.
@@ -35,6 +35,50 @@ const once = (el, key) => {
 // motion retimes every hide without a number in this file
 const animMs = el => (parseFloat(getComputedStyle(el).animationDuration) || 0) * 1000 + 20;
 const transMs = el => Math.max(...getComputedStyle(el).transitionDuration.split(',').map(parseFloat)) * 1000;
+
+// the control a row-level click must not answer for, because its own handler already will
+const isControl = t => t.closest?.('button, a, input, select, textarea, label');
+
+const reducedMotion = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+// keeps a row inside its own scroll box without scrollIntoView, which would also scroll
+// the page when the box sits near a viewport edge
+const scrollIntoBox = (box, top, bottom) => {
+  if (top < box.scrollTop) box.scrollTop = top;
+  else if (bottom > box.scrollTop + box.clientHeight) box.scrollTop = bottom - box.clientHeight;
+};
+
+/* The query rule both filtering lists run on: every word has to land. The tokenizer is
+   its own step because the palette's empty message names the fix from the COUNT:
+   another word for a one-word query, fewer for the rest. */
+const queryWords = typed => typed.toLowerCase().split(/\s+/).filter(Boolean);
+const matchesQuery = (hay, words) => words.every(w => hay.includes(w));
+
+/* The exit every overlay in this file runs: the `.closing` costume, held for `clock`,
+   then hidden with the costume dropped on the same frame. `clock` is a function because
+   the duration belongs to the costume, so it can only be read once the class is on: a
+   modal panel's own exit is declared at `.modal-backdrop.closing .modal`, which needs
+   the class on the BACKDROP too. The timer comes back to the caller, since a reopen
+   mid-exit has to clear it. */
+const runExit = (el, panel, clock) => {
+  el.classList.add('closing');
+  panel?.classList.add('closing');
+  return setTimeout(() => {
+    el.hidden = true;
+    el.classList.remove('closing');
+    panel?.classList.remove('closing');
+  }, clock());
+};
+
+// a press inside a controller belongs to that controller, so only the others close.
+// Controllers are dropped when their root leaves the DOM: a re-render that replaces
+// a tip or a select leaves a dead entry here, and every outside press then walks it.
+const closeOnOutside = controllers => document.addEventListener('pointerdown', e => {
+  for (let i = controllers.length - 1; i >= 0; i--) {
+    if (!controllers[i].root.isConnected) { controllers.splice(i, 1); continue; }
+    if (!controllers[i].root.contains(e.target)) controllers[i].close();
+  }
+});
 
 /* ====================== sliding inks (tabs, navbar) ====================== */
 
@@ -88,12 +132,16 @@ function placeFrom(wrapEl, inkEl, activeSel) {
    a page writes the wrap and gets the whole component. Where a marker sits is
    part of it: these are positioned with no z-index, so paint order is document
    order, and one that paints UNDER its siblings goes first. Existing markup is
-   reused, so a page that still writes one never gets a second. */
-function ownChild(parent, cls, { tag = 'div', first = false } = {}) {
-  let el = parent.querySelector(`:scope > .${cls}`);
+   reused, so a page that still writes one never gets a second. `svg` builds in
+   the SVG namespace, where `className` is read-only, so the class is an
+   attribute for both. */
+const SVG_NS = 'http://www.w3.org/2000/svg';
+function ownChild(parent, cls, { tag = 'div', first = false, svg = false } = {}) {
+  const sel = `:scope > .${cls.trim().split(/\s+/).join('.')}`;
+  let el = parent.querySelector(sel);
   if (!el) {
-    el = document.createElement(tag);
-    el.className = cls;
+    el = svg ? document.createElementNS(SVG_NS, tag) : document.createElement(tag);
+    el.setAttribute('class', cls);
     el.setAttribute('aria-hidden', 'true');
     if (first) parent.prepend(el); else parent.append(el);
   }
@@ -128,6 +176,17 @@ function ownLabel(parent, cls) {
   return el;
 }
 
+// a wrapper is not a child: the component's own node has to end up inside it
+function ownWrap(el, cls) {
+  const have = el.parentElement;
+  if (have && cls.trim().split(/\s+/).every(t => have.classList.contains(t))) return have;
+  const wrap = document.createElement('div');
+  wrap.className = cls;
+  el.parentNode.insertBefore(wrap, el);
+  wrap.appendChild(el);
+  return wrap;
+}
+
 // a resize or a scroll moves the ink without animating the slide: the indicator is
 // following its tab, not travelling to a new one
 function replace(inkEl, run) {
@@ -146,6 +205,8 @@ function replace(inkEl, run) {
    and the control just moves its own marker, which is what a segmented control
    with no panels needs. Keying only on `data-tabs` is why every page carrying a
    panel-less boxed control had a hand-written copy of this. */
+const TAB_WRAP = '.tabs-wrap, .tabs-boxed-wrap';
+
 export function initTabs() {
   /* examples/dashboard.html is what this cost: its wrap held no pill, so the
      segments cross-faded their own backgrounds instead. The two read identical
@@ -153,21 +214,34 @@ export function initTabs() {
      click, the sheet's pill at translate 24.55 on its way to 42.42 against the
      dashboard's nothing. The boxed pill paints under its segments, so it goes
      first. */
-  const inkFor = wrap => wrap && (wrap.classList.contains('tabs-boxed-wrap')
-    ? ownChild(wrap, 'tabs-boxed-ink', { first: true })
-    : ownChild(wrap, 'tab-ink'));
-  const wraps = () => document.querySelectorAll('.tabs-wrap, .tabs-boxed-wrap');
+  /* The underline ink rides the TAB ROW, never the wrap: a wrap may hold its
+     panels too (the sheet's specimen nests them), and the row is the box the
+     ink underlines whatever else the wrap contains. The boxed pill's track is
+     the wrap itself, so the two branch here. */
+  const inkFor = wrap => {
+    if (!wrap) return null;
+    if (wrap.classList.contains('tabs-boxed-wrap')) return ownChild(wrap, 'tabs-boxed-ink', { first: true });
+    // no row, no ink: an ink with no rail resolves against an ancestor the
+    // component does not own
+    const tabsRow = wrap.querySelector(':scope > .tabs');
+    if (!tabsRow) return null;
+    // the rail is hoisted, never queried inline: the builder args are parsed with
+    // a flat scan that closes at the first `)`
+    return ownChild(tabsRow, 'tab-ink');
+  };
+  const wraps = () => document.querySelectorAll(TAB_WRAP);
   const placeWrap = wrap => {
     const ink = inkFor(wrap);
     if (!ink) return;
     const boxed = ink.classList.contains('tabs-boxed-ink');
-    placeFrom(wrap, ink, boxed ? '.tab-box.active' : '.tab.active');
+    // the rail is the ink's own parent, so geometry and paint cannot disagree
+    placeFrom(ink.parentElement, ink, boxed ? '.tab-box.active' : '.tab.active');
     if (boxed) wrap.classList.add('has-ink');
   };
 
   document.querySelectorAll('.tab, .tab-box').forEach(btn => {
     if (!once(btn, 'uiTab')) return;
-    const wrap = btn.closest('.tabs-wrap, .tabs-boxed-wrap');
+    const wrap = btn.closest(TAB_WRAP);
     const kind = btn.classList.contains('tab-box') ? '.tab-box' : '.tab';
     btn.addEventListener('click', () => {
       const group = btn.dataset.tabs;
@@ -185,7 +259,7 @@ export function initTabs() {
       if (panel) panel.classList.add('active');
 
       // a data-tabs group can span wraps, so every wrap holding a peer re-places
-      new Set(peers.map(b => b.closest('.tabs-wrap, .tabs-boxed-wrap')).filter(Boolean))
+      new Set(peers.map(b => b.closest(TAB_WRAP)).filter(Boolean))
         .forEach(placeWrap);
     });
   });
@@ -311,8 +385,6 @@ export function initDrawer() {
    control, so the control's own handler runs once and the row cannot double-toggle
    it. Every page carrying a settings panel had written this by hand. */
 export function initToggles() {
-  const isControl = t => t.closest?.('button, a, input, select, textarea, label');
-
   document.querySelectorAll('.toggle').forEach(t => {
     if (t.disabled || !once(t, 'uiToggle')) return;
     t.addEventListener('click', () => {
@@ -366,6 +438,10 @@ export function initSelect() {
     rendered yet) would leave this in its dead zone and throw at the first
     chip click. */
     const dead = () => trigger.disabled || trigger.getAttribute('aria-disabled') === 'true';
+    // the same dead zone: a chip's remove announces, and it is wired at construction
+    const announce = () => root.dispatchEvent(
+      new CustomEvent('change', { bubbles: true, detail: { value: root.dataset.value } }));
+    const selectOnly = opt => options.forEach(o => o.setAttribute('aria-selected', String(o === opt)));
 
     // one value surface per shape: the shipped .select-value, an <input>
     // trigger's value (combobox), or the chips in a multi-select trigger
@@ -373,7 +449,7 @@ export function initSelect() {
       read: () => valueEl.textContent.trim(),
       value: () => valueEl.textContent.trim(),
       pick(opt) {
-        options.forEach(o => o.setAttribute('aria-selected', String(o === opt)));
+        selectOnly(opt);
         valueEl.textContent = opt.textContent.trim();
         return true;
       },
@@ -389,7 +465,7 @@ export function initSelect() {
         // query a blur left behind cannot pin the panel to one match
         onOpen: () => { trigger.value = committed; showAll(); },
         pick(opt) {
-          options.forEach(o => o.setAttribute('aria-selected', String(o === opt)));
+          selectOnly(opt);
           committed = opt.textContent.trim();
           trigger.value = committed;
           return true;
@@ -403,8 +479,6 @@ export function initSelect() {
       const picked = () => options.filter(o => o.getAttribute('aria-selected') === 'true')
         .map(o => o.textContent.trim()).join(', ');
       const sync = () => { root.dataset.value = picked(); };
-      const announce = () => root.dispatchEvent(
-        new CustomEvent('change', { bubbles: true, detail: { value: root.dataset.value } }));
       const removeChip = chip => {
         if (dead()) return;
         const label = chip.querySelector('span')?.textContent ?? '';
@@ -470,6 +544,31 @@ export function initSelect() {
     trigger.setAttribute('aria-controls', menu.id);
     options.forEach((o, j) => { o.id ||= `select-${i}-opt-${j}`; });
 
+    // the width floor: the trigger's text is only the selected value, so left
+    // to itself a select in a flex row sizes to it and the open panel outgrows
+    // the shut state. Measured after the row reaches the document (a detached
+    // tree has no layout, so offsetWidth reads 0) and again through an explicit
+    // fonts.load, since fonts.ready can resolve before a lazy face even starts.
+    // Pinned at the panel's corner so its box never extends the scroller's
+    // overflow. The floor is the widest option plus the menu's gutter and border.
+    const sizer = document.createElement('span');
+    sizer.className = 'menu-item';
+    sizer.style.cssText = 'position:absolute;visibility:hidden;white-space:nowrap;top:0;left:0;';
+    menu.appendChild(sizer);
+    const fitLongest = () => {
+      if (!root.isConnected) return;
+      let widest = 0;
+      options.forEach(opt => {
+        sizer.textContent = opt.textContent;
+        widest = Math.max(widest, sizer.offsetWidth);
+      });
+      root.style.minWidth = (widest + 10) + 'px';
+    };
+    requestAnimationFrame(fitLongest);
+    document.fonts.ready.then(() => {
+      document.fonts.load(getComputedStyle(sizer).font).then(fitLongest);
+    });
+
     const visible = () => options.filter(o => !o.hidden);
     const selectedVisible = () => {
       const vis = visible();
@@ -480,19 +579,18 @@ export function initSelect() {
     // the value surface exists from load, or a consumer reading it before the
     // first pick disagrees with what aria-selected already announces
     root.dataset.value = adapter.read();
+    // the surface is written before the event, or a consumer reading it from the
+    // change handler still sees the previous pick
+    const commit = () => { root.dataset.value = adapter.value(); announce(); };
     let closingTimer = 0;
     const isOpen = () => root.classList.contains('open');
     // read off --fold, the move itself, so a token change or reduced motion
     // retimes the hold without touching this number
     const exitMs = () => transMs(root);
 
-    // keeps the arrow-key row inside the scroll box without scrollIntoView,
-    // which would also scroll the page when the panel sits near an edge
     const revealFocused = opt => {
       const top = opt.offsetTop;
-      const bottom = top + opt.offsetHeight;
-      if (top < menu.scrollTop) menu.scrollTop = top;
-      else if (bottom > menu.scrollTop + menu.clientHeight) menu.scrollTop = bottom - menu.clientHeight;
+      scrollIntoBox(menu, top, top + opt.offsetHeight);
     };
 
     const markFocus = idx => {
@@ -542,17 +640,13 @@ export function initSelect() {
     const pick = opt => {
       if (!opt) return;
       if (adapter.pick(opt)) close({ focus: true });
-      root.dataset.value = adapter.value();
-      root.dispatchEvent(new CustomEvent('change', { bubbles: true, detail: { value: root.dataset.value } }));
+      commit();
     };
 
     const filter = () => {
-      const typed = trigger.value.trim();
-      // every word has to land, the same rule the palette filters its rows by
-      const words = typed.toLowerCase().split(/\s+/).filter(Boolean);
+      const words = queryWords(trigger.value.trim());
       options.forEach(opt => {
-        const hay = opt.textContent.trim().toLowerCase();
-        opt.hidden = !words.every(w => hay.includes(w));
+        opt.hidden = !matchesQuery(opt.textContent.trim().toLowerCase(), words);
       });
       if (empty) empty.hidden = visible().length > 0;
       markFocus(selectedVisible());
@@ -600,18 +694,13 @@ export function initSelect() {
       e.stopPropagation();
       if (dead()) return;
       adapter.clear();
-      root.dataset.value = adapter.value();
-      root.dispatchEvent(new CustomEvent('change', { bubbles: true, detail: { value: root.dataset.value } }));
+      commit();
     });
 
     selectControllers.push({ root, close });
   });
 
-  if (once(document.body, 'uiSelectOutside')) {
-    document.addEventListener('pointerdown', e => {
-      selectControllers.forEach(c => { if (!c.root.contains(e.target)) c.close(); });
-    });
-  }
+  if (once(document.body, 'uiSelectOutside')) closeOnOutside(selectControllers);
 }
 
 /* ============================= palette ============================ */
@@ -620,6 +709,66 @@ export function initSelect() {
    listbox, so the arrow-key row is named by aria-activedescendant. The controller
    owns nothing a command does: it dispatches `run` on the backdrop with the row's
    data-command. Ctrl/Cmd+K opens it whether or not a trigger button exists. */
+const VISIBLE_ROW = '.palette-row:not([hidden])';
+
+export function initSlider() {
+  document.querySelectorAll('.slider').forEach(root => {
+    if (!once(root, 'uiSlider')) return;
+    const track = root.querySelector('.slider-track');
+    const fill = root.querySelector('.slider-fill');
+    if (!track || !fill) return;   // the controller never throws on half-built markup
+    const min = parseFloat(root.getAttribute('aria-valuemin') ?? '0');
+    const max = parseFloat(root.getAttribute('aria-valuemax') ?? '100');
+    let val = parseFloat(root.getAttribute('aria-valuenow') ?? String(min));
+    const commit = () => {
+      root.setAttribute('aria-valuenow', String(val));
+      fill.style.width = ((val - min) / (max - min)) * 100 + '%';
+    };
+    const setVal = (v, fire) => {
+      val = Math.min(max, Math.max(min, v));
+      commit();
+      if (fire) root.dispatchEvent(new Event('input', { bubbles: true }));
+    };
+    const valFromX = clientX => {
+      const r = track.getBoundingClientRect();
+      return min + ((clientX - r.left) / r.width) * (max - min);
+    };
+    root.addEventListener('pointerdown', e => {
+      e.preventDefault();
+      root.focus();
+      setVal(valFromX(e.clientX), true);
+      // a synthetic event carries no active pointer and the capture throws,
+      // which would also bail the ring through its error listener
+      try { root.setPointerCapture(e.pointerId); } catch {}
+      root.dataset.dragging = '1';
+    });
+    root.addEventListener('pointermove', e => {
+      if (root.dataset.dragging) setVal(valFromX(e.clientX), true);
+    });
+    const end = e => {
+      if (!root.dataset.dragging) return;
+      delete root.dataset.dragging;
+      try { if (root.hasPointerCapture(e.pointerId)) root.releasePointerCapture(e.pointerId); } catch {}
+    };
+    root.addEventListener('pointerup', end);
+    root.addEventListener('pointercancel', end);
+    root.addEventListener('keydown', e => {
+      const step =
+        e.key === 'ArrowUp' || e.key === 'ArrowRight' ? 1 :
+        e.key === 'ArrowDown' || e.key === 'ArrowLeft' ? -1 :
+        e.key === 'PageUp' ? 10 :
+        e.key === 'PageDown' ? -10 :
+        e.key === 'Home' ? min - val :
+        e.key === 'End' ? max - val : 0;
+      if (!step) return;
+      e.preventDefault();
+      setVal(val + step, true);
+    });
+    Object.defineProperty(root, 'value', { get: () => String(val) });
+    commit();
+  });
+}
+
 export function initPalette() {
   // the sheet's own catalogue anchor is named `palette`, so an id lookup finds
   // the section that documents the component instead of the live palette
@@ -652,18 +801,12 @@ export function initPalette() {
   // .closing counts as closed: a second Escape mid-exit must not restart the
   // exit, and a reopen mid-exit must not return early
   const isOpen = () => !backdrop.hidden && !backdrop.classList.contains('closing');
-  const exitMs = () => animMs(panel);
 
-  // keeps the active row inside the scroll box without scrollIntoView, which
-  // would scroll the page under the palette as well. A row that opens its
-  // group scrolls the group in, or Home lands on a cut-off label.
+  // a row that opens its group scrolls the group in, or Home lands on a cut-off label
   const reveal = row => {
     const group = row.parentElement;
-    const opensGroup = row === group.querySelector('.palette-row:not([hidden])');
-    const top = (opensGroup ? group : row).offsetTop;
-    const bottom = row.offsetTop + row.offsetHeight;
-    if (top < list.scrollTop) list.scrollTop = top;
-    else if (bottom > list.scrollTop + list.clientHeight) list.scrollTop = bottom - list.clientHeight;
+    const opensGroup = row === group.querySelector(VISIBLE_ROW);
+    scrollIntoBox(list, (opensGroup ? group : row).offsetTop, row.offsetTop + row.offsetHeight);
   };
 
   const markActive = i => {
@@ -679,16 +822,14 @@ export function initPalette() {
 
   const filter = () => {
     const typed = input.value.trim();
-    // every word has to land, so the hint names the actual fix: another word
-    // for a one-word query, fewer for the rest
-    const words = typed.toLowerCase().split(/\s+/).filter(Boolean);
+    const words = queryWords(typed);
     shown = [];
     rows.forEach(row => {
-      const hit = words.every(w => row.dataset.hay.includes(w));
+      const hit = matchesQuery(row.dataset.hay, words);
       row.hidden = !hit;
       if (hit) shown.push(row);
     });
-    groups.forEach(g => { g.hidden = !g.querySelector('.palette-row:not([hidden])'); });
+    groups.forEach(g => { g.hidden = !g.querySelector(VISIBLE_ROW); });
     const none = !shown.length;
     list.hidden = none;
     if (empty) empty.hidden = !none;
@@ -723,14 +864,8 @@ export function initPalette() {
 
   const close = () => {
     if (!isOpen()) return;
-    backdrop.classList.add('closing');
-    panel.classList.add('closing');
     clearTimeout(closeTimer);
-    closeTimer = setTimeout(() => {
-      backdrop.hidden = true;
-      backdrop.classList.remove('closing');
-      panel.classList.remove('closing');
-    }, exitMs());
+    closeTimer = runExit(backdrop, panel, () => animMs(panel));
     // focus goes back where it came from, or to the control that names the palette
     const back = lastFocus && lastFocus.isConnected && lastFocus !== document.body ? lastFocus : trigger;
     back?.focus();
@@ -792,7 +927,6 @@ export function initTooltip() {
 
     let hovering = false, focused = false, hideTimer = 0, hoverTimer = 0;
     const isOpen = () => !tip.hidden;
-    const exitMs = () => animMs(tip);
 
     const place = () => {
       const r = root.getBoundingClientRect();
@@ -814,12 +948,8 @@ export function initTooltip() {
     };
     const close = () => {
       if (!isOpen()) return;
-      tip.classList.add('closing');
       clearTimeout(hideTimer);
-      hideTimer = setTimeout(() => {
-        tip.hidden = true;
-        tip.classList.remove('closing');
-      }, exitMs());
+      hideTimer = runExit(tip, null, () => animMs(tip));
     };
     const maybeClose = () => { if (!hovering && !focused) close(); };
 
@@ -838,7 +968,12 @@ export function initTooltip() {
     });
     // touch has no hover: the first contact shows it
     trigger.addEventListener('pointerdown', e => { if (e.pointerType !== 'mouse') open(); });
-    trigger.addEventListener('focus', () => { focused = true; open(); });
+    trigger.addEventListener('focus', () => {
+      // click focuses the trigger too, and a pointer focus must not count as the
+      // show condition: :focus-visible separates keyboard focus from pointer focus
+      focused = trigger.matches(':focus-visible');
+      if (focused) open();
+    });
     trigger.addEventListener('blur', () => { focused = false; maybeClose(); });
     trigger.addEventListener('keydown', e => { if (e.key === 'Escape') close(); });
 
@@ -846,9 +981,7 @@ export function initTooltip() {
   });
 
   if (once(document.body, 'uiTooltipGlobal')) {
-    document.addEventListener('pointerdown', e => {
-      tooltipControllers.forEach(c => { if (!c.root.contains(e.target)) c.close(); });
-    });
+    closeOnOutside(tooltipControllers);
     // an open tooltip re-places on resize; it is anchored to its wrapper,
     // so scrolling carries it with the page
     addEventListener('resize', () => {
@@ -938,14 +1071,8 @@ export function initModal() {
     if (backdrop.hidden || backdrop.classList.contains('closing')) return;
     const s = state.get(backdrop) || {};
     const panel = backdrop.querySelector('.modal');
-    backdrop.classList.add('closing');
-    panel?.classList.add('closing');
     clearTimeout(s.timer);
-    s.timer = setTimeout(() => {
-      backdrop.hidden = true;
-      backdrop.classList.remove('closing');
-      panel?.classList.remove('closing');
-    }, panel ? animMs(panel) : 180);
+    s.timer = runExit(backdrop, panel, () => (panel ? animMs(panel) : 180));
     s.inert?.forEach(el => { el.inert = false; });
     s.inert = null;
     state.set(backdrop, s);
@@ -1003,7 +1130,7 @@ export function showToast(type, title, msg) {
     </button>`;
   t.querySelector('.toast-title').textContent = title;
   t.querySelector('.toast-msg').textContent = msg;
-  t.querySelector('.close').addEventListener('click', () => removeToast(t));
+  wireDismiss(t.querySelector('.close'));
   stack.appendChild(t);
   setTimeout(() => removeToast(t), 5000);
   return t;
@@ -1015,26 +1142,29 @@ export function removeToast(t) {
   setTimeout(() => t.remove(), 110);   // --dur-out-near, the toast's own exit
 }
 
-/* Dismiss controls that already sit in the markup: a toast written into the page,
-   and the page-level banner. `.close` is the one remove. */
-export function initDismiss() {
-  document.querySelectorAll('.close').forEach(btn => {
-    if (!once(btn, 'uiDismiss')) return;
-    btn.addEventListener('click', () => {
-      const toast = btn.closest('.toast');
-      if (toast) return removeToast(toast);
-      const banner = btn.closest('.banner');
-      if (!banner) return;
-      banner.classList.add('closing');
-      setTimeout(() => banner.remove(), animMs(banner));
-    });
+/* `.close` is the one remove, for a toast and for the page-level banner alike. A toast
+   this file builds is wired here at creation, because nothing re-runs init() after it:
+   the sweep below only ever sees the controls already sitting in the markup. */
+const wireDismiss = btn => {
+  if (!once(btn, 'uiDismiss')) return;
+  btn.addEventListener('click', () => {
+    const toast = btn.closest('.toast');
+    if (toast) return removeToast(toast);
+    const banner = btn.closest('.banner');
+    if (!banner) return;
+    banner.classList.add('closing');
+    setTimeout(() => banner.remove(), animMs(banner));
   });
+};
+
+export function initDismiss() {
+  document.querySelectorAll('.close').forEach(wireDismiss);
 }
 
 /* ============================== theme ============================= */
 
 /* The saved theme is restored in <head> before the stylesheet loads, so a light
-   visitor never sees a dark flash; that snippet cannot live
+   visitor never sees a dark flash; that snippet is in SKILL.md and cannot live
    here, because a module runs too late to beat the first paint. */
 export function setTheme(t) {
   document.documentElement.dataset.theme = t;
@@ -1120,11 +1250,61 @@ export function initSticky() {
   });
 }
 
+/* Plays each target once, in batches of what arrives together: when it crosses
+   the line 10% above the bottom edge, or when it is on screen and no scroller
+   holding it can lift it any higher. Without the second clause a short element
+   at a page's end, or one low on a page that cannot scroll, stays hidden for
+   good: measured, a 40px chart as the sheet's last element sat at 859-899px of
+   a 900px window at full scroll, under the 810px line. Returns the call that
+   plays a batch from outside, for the reveal's net. */
+function watchEntrance(targets, play) {
+  const pending = new Set(targets);
+  const onScreen = new Set();
+  const settle = els => {
+    const batch = els.filter(el => pending.delete(el));
+    batch.forEach(el => {
+      onScreen.delete(el);
+      line.unobserve(el);
+      seen.unobserve(el);
+    });
+    if (!pending.size) {
+      removeEventListener('scroll', sweep, true);
+      removeEventListener('resize', sweep);
+    }
+    if (batch.length) play(batch);
+  };
+  function sweep() { settle([...onScreen].filter(cannotRise)); }
+  const line = new IntersectionObserver(
+    entries => settle(entries.filter(e => e.isIntersecting).map(e => e.target)),
+    { threshold: 0, rootMargin: '0px 0px -10% 0px' });
+  const seen = new IntersectionObserver(entries => {
+    entries.forEach(e => e.isIntersecting ? onScreen.add(e.target) : onScreen.delete(e.target));
+    sweep();
+  }, { threshold: 0 });
+  addEventListener('scroll', sweep, { capture: true, passive: true });
+  addEventListener('resize', sweep);
+  targets.forEach(el => {
+    line.observe(el);
+    seen.observe(el);
+  });
+  return settle;
+}
+
+/* every scroller holding the element already sits at its end */
+const cannotRise = el => {
+  for (let n = el.parentElement; n && n !== document.body; n = n.parentElement) {
+    const overflowY = getComputedStyle(n).overflowY;
+    const scrolls = overflowY === 'auto' || overflowY === 'scroll';
+    if (scrolls && n.scrollTop < n.scrollHeight - n.clientHeight - 1) return false;
+  }
+  const page = document.scrollingElement;
+  return page.scrollTop >= page.scrollHeight - page.clientHeight - 1;
+};
+
 /* JS adds the hiding class at runtime, so no-JS keeps the content visible.
    Reduced motion skips the hide entirely rather than zeroing a duration. */
 export function initReveal() {
-  const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
-  if (reduced || !('IntersectionObserver' in window)) return;
+  if (reducedMotion() || !('IntersectionObserver' in window)) return;
 
   const targets = [...document.querySelectorAll('[data-reveal]')].filter(el => once(el, 'uiReveal'));
   if (!targets.length) return;
@@ -1138,20 +1318,14 @@ export function initReveal() {
   const land = els => els.forEach((el, i) => {
     el.style.transitionDelay = Math.min(i, 5) * 40 + 'ms';
     el.classList.add('in');
-    io.unobserve(el);
   });
-
-  const io = new IntersectionObserver(
-    entries => land(entries.filter(e => e.isIntersecting).map(e => e.target)),
-    { threshold: 0, rootMargin: '0px 0px -10% 0px' });
-  targets.forEach(el => io.observe(el));
+  const settle = watchEntrance(targets, land);
 
   /* The net covers an observer that never fired, so it reveals only what is ON
      SCREEN when it lands. Revealing every target instead settles the whole page
      before the reader reaches any of it: measured on the rendered sheet, 44 of
      46 sections were off screen at 1500ms, so no section could ever animate. */
-  setTimeout(() => land(targets.filter(el => {
-    if (el.classList.contains('in')) return false;
+  setTimeout(() => settle(targets.filter(el => {
     const r = el.getBoundingClientRect();
     return r.top < innerHeight && r.bottom > 0;
   })), 1500);
@@ -1181,7 +1355,7 @@ function initCardButtons() {
   });
 }
 
-/* A legend built from buttons is a control, and the design docs had described this
+/* A legend built from buttons is a control, and `charts.md` had described this
    one for a round before anything wrote it: every key on every page was inert
    text beside a swatch. The toggle names its slot with the same
    `chart-series-N` class the mark carries, so the pair cannot drift, and it
@@ -1202,8 +1376,56 @@ function initLegend() {
   });
 }
 
+/* A line's area and its end point are the line's own geometry, so a page writes
+   the polyline and this derives the other two: the flat tint down to the plot's
+   floor, under the line, and the round mark on its last point, over it. Both are
+   read off the `points` attribute rather than kept, so a page that redraws a line
+   rewrites that one attribute and the pair follows; an emptied or removed line
+   takes its pair with it, or a tint would outlive the line it stood under. A write through
+   the `SVGPointList` API fires no mutation, measured in Chrome, so it redraws
+   nothing. A sparkline takes the same pair. A `<path>` line has no point list to
+   read, and gets neither. */
+let lineMarks = null;
+function drawLineMarks(line) {
+  const n = line.points?.numberOfItems;
+  const box = line.ownerSVGElement?.viewBox.baseVal;
+  const parent = line.parentNode;
+  if (!parent) return;
+  if (!n || !box?.height) {
+    parent.querySelectorAll(':scope > .chart-area, :scope > .chart-point.chart-end').forEach(m => m.remove());
+    return;
+  }
+  const pts = Array.from({ length: n }, (_, i) => line.points.getItem(i));
+  const floor = box.y + box.height;
+  const first = pts[0];
+  const last = pts[n - 1];
+  const area = ownChild(parent, 'chart-area', { tag: 'polygon', svg: true, first: true });
+  area.setAttribute('points',
+    [...pts.map(p => `${p.x},${p.y}`), `${last.x},${floor}`, `${first.x},${floor}`].join(' '));
+  const end = ownChild(parent, 'chart-point chart-end', { tag: 'line', svg: true });
+  end.setAttribute('x1', last.x);
+  end.setAttribute('y1', last.y);
+  end.setAttribute('x2', last.x);
+  end.setAttribute('y2', last.y);
+}
+function initLineMarks() {
+  document.querySelectorAll('.chart-series > .chart-line, .stat-spark svg > polyline').forEach(line => {
+    if (!once(line, 'uiLineMarks')) return;
+    lineMarks ||= new MutationObserver(records => records.forEach(r => {
+      if (r.type === 'attributes') return drawLineMarks(r.target);
+      if (![...r.removedNodes].some(n => n.matches?.('.chart-line, polyline'))) return;
+      if (r.target.querySelector(':scope > .chart-line, :scope > polyline')) return;
+      r.target.querySelectorAll(':scope > .chart-area, :scope > .chart-point.chart-end').forEach(m => m.remove());
+    }));
+    drawLineMarks(line);
+    lineMarks.observe(line, { attributes: true, attributeFilter: ['points'] });
+    lineMarks.observe(line.parentNode, { childList: true });
+  });
+}
+
 export function initChart() {
   initLegend();
+  initLineMarks();
   const charts = [...document.querySelectorAll('.chart')].filter(el => once(el, 'uiChart'));
   if (!charts.length) return;
 
@@ -1214,15 +1436,7 @@ export function initChart() {
     charts.forEach(el => el.classList.add('is-drawn'));
     return;
   }
-  const io = new IntersectionObserver(entries => {
-    entries.forEach(e => {
-      if (e.isIntersecting) {
-        e.target.classList.add('is-drawn');
-        io.unobserve(e.target);
-      }
-    });
-  }, { threshold: 0, rootMargin: '0px 0px -10% 0px' });
-  charts.forEach(el => io.observe(el));
+  watchEntrance(charts, els => els.forEach(el => el.classList.add('is-drawn')));
 }
 
 /* ========================== popovers and menus ========================== */
@@ -1240,38 +1454,126 @@ export function initChart() {
 const popoverPairs = [];
 
 export function initPopovers() {
-  const isControl = t => t.closest?.('button, a, input, select, textarea, label');
   const close = (menu, btn) => {
     if (menu.hidden || menu.classList.contains('closing')) return;
-    menu.classList.add('closing');
     btn?.setAttribute('aria-expanded', 'false');
-    setTimeout(() => { menu.hidden = true; menu.classList.remove('closing'); }, animMs(menu));
+    menu.querySelectorAll('.menu-item.focus').forEach(r => r.classList.remove('focus'));
+    menu.uiPopoverExit = runExit(menu, null, () => animMs(menu));
   };
 
   document.querySelectorAll('[aria-controls][aria-haspopup]').forEach(btn => {
     const menu = document.getElementById(btn.getAttribute('aria-controls'));
     if (!menu || !menu.classList.contains('popover') || !once(btn, 'uiPopover')) return;
     popoverPairs.push({ btn, menu, close });
+
+    const show = () => {
+      clearTimeout(menu.uiPopoverExit);
+      menu.classList.remove('closing');
+      menu.hidden = false;
+      btn.setAttribute('aria-expanded', 'true');
+    };
+
     // a checkbox row has to survive several picks, so an input inside the
     // item keeps the menu open; a button row is an action, and an action
     // row that opens a modal leaves a menu open behind the dialog, whose
     // Escape handler then eats the dialog's
     menu.addEventListener('click', e => {
       const item = e.target.closest?.('.menu-item');
-      if (!item || isControl(e.target)) return;
-      close(menu, btn);
-      btn.focus();
-    });
-    menu.addEventListener('click', e => {
-      if (!e.target.closest?.('button.menu-item')) return;
+      if (!item || (isControl(e.target) && !e.target.closest?.('button.menu-item'))) return;
       close(menu, btn);
       btn.focus();
     });
     btn.addEventListener('click', () => {
       if (!menu.hidden) return close(menu, btn);
-      menu.classList.remove('closing');
-      menu.hidden = false;
-      btn.setAttribute('aria-expanded', 'true');
+      show();
+    });
+
+    // the keyboard model and the row focus belong to the menu costume alone;
+    // a bare popover keeps the base open / outside-click / Escape / exit
+    if (!menu.classList.contains('popover-menu')) return;
+
+    const rows = [...menu.querySelectorAll('.menu-item')];
+    // the menu-button pattern: the button is the one Tab stop, rows are focusable
+    // by script only, and a checkbox row's input is never a second target; the
+    // box stays the state and the row's aria-checked mirrors it
+    rows.forEach(row => {
+      row.tabIndex = -1;
+      const input = row.querySelector('input');
+      if (input) {
+        input.tabIndex = -1;
+        // the menuitemcheckbox row is the one checkbox a screen reader hears;
+        // the input stays the state and is never announced or Tab-stopped
+        input.setAttribute('aria-hidden', 'true');
+        const sync = () => row.setAttribute('aria-checked', String(input.checked));
+        sync();
+        input.addEventListener('change', sync);
+      }
+    });
+    let focusIdx = 0;
+    const isOpen = () => !menu.hidden && !menu.classList.contains('closing');
+    const activeIndex = () => {
+      const at = rows.findIndex(r => r.classList.contains('active'));
+      return at >= 0 ? at : 0;
+    };
+    const focusRow = idx => {
+      if (!rows.length) return;
+      focusIdx = ((idx % rows.length) + rows.length) % rows.length;
+      rows[focusIdx].focus();
+    };
+    // the .focus mark follows the real focus wherever it lands, and the row is
+    // the only thing that ever holds focus: a pointer click focuses the checkbox
+    // input, which is aria-hidden, so focus moves to its row instead
+    menu.addEventListener('focusin', e => {
+      const row = e.target.closest?.('.menu-item');
+      if (!row) return;
+      if (e.target.matches?.('input')) { row.focus(); return; }
+      const pos = rows.indexOf(row);
+      if (pos >= 0) {
+        focusIdx = pos;
+        rows.forEach(r => r.classList.toggle('focus', r === rows[pos]));
+      }
+    });
+    // Enter/Space fire the row's own click, so a consumer's listener on it runs;
+    // the menu's click listener above then closes it. A checkbox row toggles its
+    // box and stays open.
+    const activate = () => {
+      const row = rows[focusIdx];
+      if (!row) return;
+      const input = row.querySelector('input');
+      if (input) { input.click(); return; }
+      row.click();
+    };
+    const open = (toLast = false) => {
+      if (isOpen()) return;
+      show();
+      focusRow(toLast ? rows.length - 1 : activeIndex());
+    };
+
+    // focus is on the button: closed keys open, and a pointer-opened menu moves
+    // focus into the rows on the first arrow
+    btn.addEventListener('keydown', e => {
+      switch (e.key) {
+        case 'ArrowDown': e.preventDefault(); isOpen() ? focusRow(activeIndex()) : open(false); break;
+        case 'ArrowUp':   e.preventDefault(); isOpen() ? focusRow(rows.length - 1) : open(true); break;
+        case 'Home':      if (isOpen()) { e.preventDefault(); focusRow(0); } break;
+        case 'End':       if (isOpen()) { e.preventDefault(); focusRow(rows.length - 1); } break;
+        case 'Enter':
+        case ' ':         e.preventDefault(); isOpen() ? close(menu, btn) : open(false); break;
+        case 'Tab':       close(menu, btn); break;
+      }
+    });
+    // focus is on a row: the arrows walk it, Enter/Space activate, Escape is the
+    // global handler's, and Tab closes while the default moves focus on
+    menu.addEventListener('keydown', e => {
+      switch (e.key) {
+        case 'ArrowDown': e.preventDefault(); focusRow(focusIdx + 1); break;
+        case 'ArrowUp':   e.preventDefault(); focusRow(focusIdx - 1); break;
+        case 'Home':      e.preventDefault(); focusRow(0); break;
+        case 'End':       e.preventDefault(); focusRow(rows.length - 1); break;
+        case 'Enter':
+        case ' ':         e.preventDefault(); activate(); break;
+        case 'Tab':       close(menu, btn); break;
+      }
     });
   });
   if (!once(document.body, 'uiPopoverGlobal')) return;
@@ -1281,6 +1583,9 @@ export function initPopovers() {
     openPairs().forEach(({ btn, menu }) => {
       if (menu.contains(e.target) || btn.contains(e.target)) return;
       close(menu, btn);
+      // focus moves into the rows now, so an outside press must not leave it on
+      // a row the exit is about to hide
+      if (menu.contains(document.activeElement)) btn.focus();
     });
   });
   document.addEventListener('keydown', e => {
@@ -1301,6 +1606,8 @@ export function initPopovers() {
      `table:page`      {page}
    Every one of them bubbles from the `.table-wrap`. Nothing here needs to know
    what a row holds, which is why it can wire every table on every page. */
+const ROW_BOX = 'input[type="checkbox"][data-name]';
+
 export function initTables() {
   const ariaSort = { asc: 'ascending', desc: 'descending' };
 
@@ -1326,7 +1633,7 @@ export function initTables() {
     });
 
     const selectAll = wrap.querySelector('input[type="checkbox"][data-select-all], thead input[type="checkbox"]');
-    const boxes = () => [...wrap.querySelectorAll('tbody input[type="checkbox"][data-name]')];
+    const boxes = () => [...wrap.querySelectorAll(`tbody ${ROW_BOX}`)];
     const selected = () => boxes().filter(b => b.checked).map(b => b.dataset.name);
     const syncAll = () => {
       if (!selectAll) return;
@@ -1348,7 +1655,7 @@ export function initTables() {
       announce();
     });
     wrap.addEventListener('change', e => {
-      const b = e.target.closest?.('tbody input[type="checkbox"][data-name]');
+      const b = e.target.closest?.(`tbody ${ROW_BOX}`);
       if (!b) return;
       b.closest('tr')?.classList.toggle('row-selected', b.checked);
       syncAll();
@@ -1357,8 +1664,8 @@ export function initTables() {
     // the row is the target, the same ruling the setting row runs on: a click
     // anywhere on a selectable row that missed a control drives its own box
     wrap.addEventListener('click', e => {
-      if (e.target.closest?.('button, a, input, select, textarea, label')) return;
-      e.target.closest('tr')?.querySelector('input[type="checkbox"][data-name]')?.click();
+      if (isControl(e.target)) return;
+      e.target.closest('tr')?.querySelector(ROW_BOX)?.click();
     });
 
     // a re-rendered body arrives with its own checked state: re-derive rather
@@ -1438,7 +1745,7 @@ const TYPE_CHAR = 80, TYPE_ERASE = 50, TYPE_HOLD = 5000, TYPE_GAP = 400, TYPE_ST
 export function initTypedPlaceholder() {
   // ambient motion is off under reduced motion, and this one has no reduced form:
   // a typed line with the typing removed is just a placeholder the field already has
-  if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  if (reducedMotion()) return;
 
   document.querySelectorAll('input[data-typed], textarea[data-typed]').forEach(input => {
     if (!once(input, 'uiTyped')) return;
@@ -1451,10 +1758,7 @@ export function initTypedPlaceholder() {
     }
     if (!Array.isArray(examples) || !examples.length) return;
 
-    const wrap = document.createElement('div');
-    wrap.className = 'typed-wrap';
-    input.parentNode.insertBefore(wrap, input);
-    wrap.appendChild(input);
+    const wrap = ownWrap(input, 'typed-wrap');
     // a marker this module owns, aria-hidden like the inks: the field's own
     // label names it, so the typed examples need no second voice
     const overlay = ownChild(wrap, 'typed-overlay');
@@ -1521,9 +1825,21 @@ export function initTypedPlaceholder() {
    consumer opts in: this one selector names every component the stylesheet makes
    scroll, and the controller writes the cue class onto each. The axis is derived
    from what the element actually scrolls, never from a class the author wrote.
-   `no-scroll-fade` on any scroller is the one opt-out. Off at rest, so a no-JS
+   A consumer scroller opts in with `data-scroll-fade`; `no-scroll-fade` on any
+   scroller is the one opt-out. Floating panels never carry it: the select menu
+   and the palette scroll bare, her call 2026-09-23. Off at rest, so a no-JS
    page paints no cue. The two has-more classes are the CSS's own gate. */
-const SCROLL_FADE_SELECTOR = 'pre, .table-wrap, .chart-scroll, .modal-body, .log-view, .pagination-pages, .sidebar-nav, .navbar-nav, .select-menu, .palette-list';
+const SCROLL_FADE_SELECTOR = 'pre, .table-wrap, .chart-scroll, .modal-body, .log-view, .pagination-pages, .sidebar-nav, .navbar-nav, [data-scroll-fade]';
+
+/* One resize listener and one observer serve every scroller on the page. A
+   consumer that swaps markup (an htmx partial on every tick) replaces a
+   scroller each time, and a per-element listener plus observation would hold
+   every replaced node in memory for the page's life. */
+const fadeSyncs = new Map();
+const fadeObserver = new ResizeObserver(entries => {
+  for (const entry of entries) fadeSyncs.get(entry.target)?.();
+});
+let fadeResizeBound = false;
 
 export function initScrollFade() {
   document.querySelectorAll(SCROLL_FADE_SELECTOR).forEach(el => {
@@ -1538,14 +1854,26 @@ export function initScrollFade() {
       el.classList.toggle('has-more-start', pos > 1);
       el.classList.toggle('has-more-end', pos + view < full - 1);
     };
+    fadeSyncs.set(el, sync);
     el.addEventListener('scroll', sync, { passive: true });
-    addEventListener('resize', sync);
     /* The box changes size with no scroll and no window resize: the rail collapse
        takes this nav's clientHeight 756 to 722, which left the cue saying nothing
        was below with 34px still there, until the next scroll. */
-    new ResizeObserver(sync).observe(el);
+    fadeObserver.observe(el);
     sync();
   });
+  if (!fadeResizeBound) {
+    addEventListener('resize', () => {
+      for (const [el, sync] of fadeSyncs) if (el.isConnected) sync();
+    });
+    fadeResizeBound = true;
+  }
+  for (const [el, sync] of fadeSyncs) {
+    if (el.isConnected) continue;
+    el.removeEventListener('scroll', sync);
+    fadeObserver.unobserve(el);
+    fadeSyncs.delete(el);
+  }
 }
 
 /* ============================ scrollbar =========================== */
@@ -1566,6 +1894,8 @@ export function initScrollFade() {
 const SCROLLBAR_IDLE = 900;
 const SCROLLBAR_MIN = 28;    // a thumb shorter than this stops reading as a handle
 const SCROLLBAR_GAP = 2;     // the scroller's own edge to the thumb's outer edge
+const SCROLLBAR_LANE = 8;    // and on to its inner edge: the 6px thumb plus that gap.
+                             // The lane is where the bar is placed, hit-tested and held
 const SCROLLBAR_HOLD = 10;   // slop around a 6px thumb, so the hold is reachable
 const SCROLLBAR_Z = 999;     // the bar's own slot in the stacking ladder
 const SCROLLBAR_CHAIN = 1;   // px of gap a cover chain still composes through:
@@ -1575,11 +1905,10 @@ const SCROLLBAR_CHAIN = 1;   // px of gap a cover chain still composes through:
 export function initScrollbars() {
   if (!once(document.documentElement, 'uiScrollbars')) return;
   const root = document.scrollingElement || document.documentElement;
-  const bars = { y: document.createElement('div'), x: document.createElement('div') };
-  bars.y.className = 'ui-scrollbar ui-scrollbar-y';
-  bars.x.className = 'ui-scrollbar ui-scrollbar-x';
-  for (const b of Object.values(bars)) b.setAttribute('aria-hidden', 'true');
-  document.body.append(bars.y, bars.x);
+  const bars = {
+    y: ownChild(document.body, 'ui-scrollbar ui-scrollbar-y'),
+    x: ownChild(document.body, 'ui-scrollbar ui-scrollbar-x'),
+  };
   // the stylesheet hides the platform's bars only once these two exist
   document.documentElement.classList.add('has-drawn-scrollbars');
 
@@ -1590,15 +1919,23 @@ export function initScrollbars() {
   const at = (el, axis) => axis === 'y' ? el.scrollTop : el.scrollLeft;
 
   const scrolls = (el, axis) => {
+    /* `no-scrollbar` opts a scroller out of the drawn bar: it keeps scrolling,
+       and the bar keeps riding the page or column it belongs to. A surface
+       that reads as fixed chrome carries it, so it never grows a bar of its
+       own. */
+    if (el.closest('.no-scrollbar')) return false;
     if (full(el, axis) <= view(el, axis) + 1) return false;
     if (el === root) return true;
     const ov = getComputedStyle(el)[axis === 'y' ? 'overflowY' : 'overflowX'];
     return ov === 'auto' || ov === 'scroll';
   };
-  // the INNERMOST scroller under a node, so a table inside a modal wins
-  const scrollerFrom = node => {
+  /* The INNERMOST scroller ON THIS AXIS under a node, so a table inside a modal
+     wins and a table that scrolls only x leaves the y bar with the page. Asking
+     one question for both axes answered the wrong one: a wide table inside a
+     tall page took BOTH bars, and the page's own y bar went with it. */
+  const scrollerFrom = (node, axis) => {
     for (let el = node; el instanceof Element; el = el.parentElement) {
-      if (scrolls(el, 'y') || scrolls(el, 'x')) return el;
+      if (scrolls(el, axis)) return el;
     }
     return root;
   };
@@ -1710,8 +2047,8 @@ export function initScrollbars() {
 
   const cover = (el, axis) => {
     const box = boxOf(el);
-    const lane = axis === 'y' ? [box.right - 8, box.right - SCROLLBAR_GAP]
-                              : [box.bottom - 8, box.bottom - SCROLLBAR_GAP];
+    const lane = axis === 'y' ? [box.right - SCROLLBAR_LANE, box.right - SCROLLBAR_GAP]
+                              : [box.bottom - SCROLLBAR_LANE, box.bottom - SCROLLBAR_GAP];
     const spans = [];
     /* `checkVisibility` is guarded because this runs inside an rAF callback, and a
        TypeError there reaches the ring's `window.onerror` bail, which drops the
@@ -1770,37 +2107,67 @@ export function initScrollbars() {
     return { padA, track, len, room, max: full(el, axis) - v };
   };
 
-  let active = root;
+  /* ONE OWNER PER AXIS. A page scroll used to hand both bars to the document, so
+     a wide table's x bar lost its scroller in the middle of a wheel: `place`
+     returns before it repositions, and the bar then fades out over four frames
+     wherever it last painted. Measured on the reference sheet, one 240px wheel
+     with the pointer inside the table: the bar held top 545.1 while the table's
+     bottom went 553.1 to 313.1, so it sat 240px low, outside the card, over the
+     section under it. Per axis it keeps its owner and tracks the table instead. */
+  const active = { x: root, y: root };
   let hideAt = 0;
   let drag = null;
   let frame = 0;
   let pointer = null;
+  // the thumb's last painted state per scroller and axis, for place()'s re-anchor
+  let anchors = new WeakMap();
+  const anchor = (el, axis) => {
+    let c = anchors.get(el);
+    if (!c) anchors.set(el, c = {});
+    return c[axis] || (c[axis] = {});
+  };
 
   const place = axis => {
     const bar = bars[axis];
-    const el = drag ? drag.el : active;
+    const el = drag && drag.axis === axis ? drag.el : active[axis];
     if (!el.isConnected || !scrolls(el, axis)) { bar.classList.remove('is-on'); return; }
     const box = boxOf(el);
     const { padA, track, len, room, max } = metrics(el, axis);
     // pinned chrome can take the whole scrollport, and a track with no room for
     // a handle is a mark, not a bar
     if (room < SCROLLBAR_MIN) { bar.classList.remove('is-on'); return; }
-    const run = padA + (max > 0 ? (at(el, axis) / max) * (track - len) : 0);
+    /* A cover that moves under a live scroll (a stuck header at its section's
+       end) shrinks `padA` one-to-one with the scroll while the progress term
+       follows only at (track - len) / max, so the thumb runs backward under a
+       forward scroll. Re-anchoring the line at the last painted position keeps
+       the thumb continuous through the change and still reaches the track's end
+       exactly at full scroll. With static chrome the re-anchored line IS the
+       standard one, so nothing else changes. */
+    const s = at(el, axis);
+    const a = anchor(el, axis);
+    let run;
+    if (max > 0 && track - len >= 1 && a.at < max) {
+      run = a.run + (s - a.at) * (padA + track - len - a.run) / (max - a.at);
+    } else {
+      run = padA + (max > 0 ? (s / max) * (track - len) : 0);
+    }
+    a.at = s;
+    a.run = run;
     if (axis === 'y') {
       bar.style.top = `${box.top + run}px`;
-      bar.style.left = `${box.right - 8}px`;
+      bar.style.left = `${box.right - SCROLLBAR_LANE}px`;
       bar.style.height = `${len}px`;
     } else {
       bar.style.left = `${box.left + run}px`;
-      bar.style.top = `${box.bottom - 8}px`;
+      bar.style.top = `${box.bottom - SCROLLBAR_LANE}px`;
       bar.style.width = `${len}px`;
     }
     // the thumb's own box, padded: a bar that retired under a pointer reaching
     // for it would take the grab with it
     const near = pointer && (axis === 'y'
-      ? pointer.x >= box.right - 8 - SCROLLBAR_HOLD && pointer.x <= box.right - SCROLLBAR_GAP + SCROLLBAR_HOLD
+      ? pointer.x >= box.right - SCROLLBAR_LANE - SCROLLBAR_HOLD && pointer.x <= box.right - SCROLLBAR_GAP + SCROLLBAR_HOLD
         && pointer.y >= box.top + run - SCROLLBAR_HOLD && pointer.y <= box.top + run + len + SCROLLBAR_HOLD
-      : pointer.y >= box.bottom - 8 - SCROLLBAR_HOLD && pointer.y <= box.bottom - SCROLLBAR_GAP + SCROLLBAR_HOLD
+      : pointer.y >= box.bottom - SCROLLBAR_LANE - SCROLLBAR_HOLD && pointer.y <= box.bottom - SCROLLBAR_GAP + SCROLLBAR_HOLD
         && pointer.x >= box.left + run - SCROLLBAR_HOLD && pointer.x <= box.left + run + len + SCROLLBAR_HOLD);
     const on = drag ? drag.axis === axis : Boolean(near) || performance.now() < hideAt;
     const wasOn = bar.classList.contains('is-on');
@@ -1836,13 +2203,18 @@ export function initScrollbars() {
     if (drag || performance.now() < hideAt) sync();
   };
   const sync = () => { frame ||= requestAnimationFrame(tick); };
+  // every route that shows the bar restarts its retirement from now
+  const arm = () => { hideAt = performance.now() + SCROLLBAR_IDLE; sync(); };
 
   addEventListener('scroll', e => {
     const el = e.target === document || e.target === root ? root : e.target;
     if (!(el instanceof Element) && el !== root) return;
-    if (!drag) active = el;
-    hideAt = performance.now() + SCROLLBAR_IDLE;
-    sync();
+    // a bare scroller never claims the bar, nor arms it for the page behind it
+    if (el.closest('.no-scrollbar')) return;
+    // the event names the element that scrolled and never the axis, so it takes
+    // the axes it can actually drive and leaves the other bar with its owner
+    if (!drag) for (const axis of ['x', 'y']) if (scrolls(el, axis)) active[axis] = el;
+    arm();
   }, { capture: true, passive: true });
 
   addEventListener('pointermove', e => {
@@ -1857,12 +2229,11 @@ export function initScrollbars() {
        `active` by construction, so leave it alone. */
     const onBar = e.target instanceof Element && e.target.classList.contains('ui-scrollbar');
     if (!drag && !onBar) {
-      const el = scrollerFrom(e.target);
-      if (el !== active) active = el;
+      active.x = scrollerFrom(e.target, 'x');
+      active.y = scrollerFrom(e.target, 'y');
     }
     // the move is what arms the timer: a resting pointer retires the bar
-    hideAt = performance.now() + SCROLLBAR_IDLE;
-    sync();
+    arm();
   }, { passive: true });
 
   /* `pointer` was write-only, and the Y bar's hold band runs to `innerWidth + 8`,
@@ -1872,11 +2243,11 @@ export function initScrollbars() {
      for the same reason. */
   document.documentElement.addEventListener('pointerleave', () => { pointer = null; sync(); });
 
-  addEventListener('resize', () => { radii = new WeakMap(); sync(); });
+  addEventListener('resize', () => { radii = new WeakMap(); anchors = new WeakMap(); sync(); });
 
   for (const axis of ['y', 'x']) {
     bars[axis].addEventListener('pointerdown', e => {
-      const el = active;
+      const el = active[axis];
       if (!scrolls(el, axis)) return;
       if (e.pointerType === 'mouse' && e.button !== 0) return;   // middle and right are not a drag
       if (drag) return;                 // one bar at a time: a second press would
@@ -1903,15 +2274,13 @@ export function initScrollbars() {
       const now = axis === 'y' ? e.clientY : e.clientX;
       const to = drag.from + (now - drag.origin) * drag.rate;
       if (axis === 'y') drag.el.scrollTop = to; else drag.el.scrollLeft = to;
-      hideAt = performance.now() + SCROLLBAR_IDLE;
-      sync();
+      arm();
     });
     const end = () => {
       if (!drag || drag.axis !== axis) return;
       drag = null;
       bars[axis].classList.remove('is-drag');
-      hideAt = performance.now() + SCROLLBAR_IDLE;
-      sync();
+      arm();
     };
     bars[axis].addEventListener('pointerup', end);
     bars[axis].addEventListener('pointercancel', end);
@@ -1959,6 +2328,120 @@ export function initDropzone() {
   });
 }
 
+/* ============================== stepper =========================== */
+
+/* Both bounds are read off the value, so an authored `disabled` is overwritten on
+   the first sync: the state belongs to the component. A NaN loses both comparisons,
+   which is what carries an empty field and an undeclared bound: neither can be at a
+   floor or a ceiling, so neither button goes dead. */
+const syncParts = ({ input, minus, plus }) => {
+  const n = input.valueAsNumber;
+  minus.disabled = n <= parseFloat(input.min);
+  plus.disabled = n >= parseFloat(input.max);
+};
+
+/* The parts each wired wrap's listeners actually hold, so the reset writes bounds
+   onto the same buttons a press does: a fresh lookup diverges the moment a wrap
+   grows a third `.input-step`, and the button the user clicks then stays live at
+   its own ceiling while an inert one goes dead. Weak, so a wrap a page drops is
+   collectable rather than held by this file, which is what the per-form listener
+   this replaced got wrong. Membership is also the only honest answer to "did THIS
+   controller wire it": `once`'s mark is an attribute, and an attribute survives the
+   clone that a repeated form row is built from, listeners and all left behind. */
+const wiredSteppers = new WeakMap();
+
+/* The number stepper's two routes into one value: the buttons and the keyboard.
+   `stepUp` and `stepDown` ARE the bounded move, so nothing here restates the grid
+   snap, the clamp or the number formatting. They throw where the field declares no
+   allowed value step, and a throw inside a listener reaches the cursor's `error`
+   handler and takes the page's ring down with it, so a field that cannot step is
+   left unwired rather than caught on every press. */
+const STEPPER = '[data-stepper]';
+
+export function initStepper() {
+  /* A form reset restores its fields with no event on any of them, so the bounds
+     would stay where the old values left them and a `+` could sit dead over a
+     mid-range number for the life of the page. `reset` bubbles, and the restore
+     lands after it, on the NEXT TASK rather than on a microtask: measured on one
+     instrumented handler, a trusted press reads the old value at the first and
+     second microtask tick and the restored one at a timeout and a frame, while a
+     scripted `.click()` reads it restored at the first tick. So the activation a
+     person performs is exactly the one a microtask is too early for, and a probe
+     that drives the button from inside the page cannot see it.
+
+     ONE page-level listener, never one per stepper on its own form. A listener on a
+     node outside the once() mark outlives the markup it was wired for: measured, a
+     wrap replaced inside a persisting form left the detached generation still being
+     synced. A reset is rare and user-driven, so the sweep asks no question about
+     which form owns which field, which is also what carries a field associated by
+     `form=""` from outside the form's own subtree. What it does ask is whether this
+     controller wired the wrap, so a stepper it refused cannot take a bound costume
+     from a reset elsewhere on the page and still answer no press. */
+  if (once(document.body, 'uiStepperReset')) {
+    document.addEventListener('reset', () => setTimeout(() =>
+      document.querySelectorAll(STEPPER).forEach(wrap => {
+        const parts = wiredSteppers.get(wrap);
+        if (parts) syncParts(parts);
+      }), 0));
+  }
+
+  // the field and its two controls, from the wrap alone: a `.input-step` before the
+  // field decrements and one after it increments
+  document.querySelectorAll(STEPPER).forEach(wrap => {
+    const kids = [...wrap.children];
+    const input = kids.find(el => el.matches('input[type="number"]'));
+    if (!input) return;
+    const at = kids.indexOf(input);
+    const minus = kids.slice(0, at).findLast(el => el.matches('.input-step'));
+    const plus = kids.slice(at + 1).find(el => el.matches('.input-step'));
+    if (!minus || !plus) return;
+    if (input.step.trim().toLowerCase() === 'any' || !once(wrap, 'uiStepper')) return;
+    const parts = { input, minus, plus };
+    wiredSteppers.set(wrap, parts);
+    const sync = () => syncParts(parts);
+
+    // a programmatic value write fires neither event, so a consumer would hear a
+    // press and a keystroke differently
+    const notify = () => input.dispatchEvent(new Event('input', { bubbles: true }));
+    const commit = () => {
+      notify();
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+    };
+
+    const press = (btn, move) => btn.addEventListener('click', () => {
+      if (input.disabled) return;   // the group's :has() rule refuses the pointer, never the keyboard
+      const before = input.value;
+      move();
+      sync();
+      if (input.value !== before) commit();
+    });
+    press(minus, () => input.stepDown());
+    press(plus, () => input.stepUp());
+
+    /* Typing is the route the platform leaves open: a number field holds 99 under
+       max="12" and only reports itself invalid. `min` is the one floor the markup
+       declares, so an empty or unparseable field falls back to it, and to nothing
+       where no min is declared rather than to a zero this file would be inventing.
+
+       This one only NOTIFIES: the commit it corrects is the change still dispatching
+       around it, and that one carries the clamped value to every listener after this
+       file's, because the write above lands before they run. A second dispatch here
+       would run the whole listener list a second time nested, and the outer dispatch
+       would then resume into the same consumer, so one keystroke would commit twice. */
+    input.addEventListener('change', () => {
+      const before = input.value;
+      const n = input.valueAsNumber;
+      if (Number.isNaN(n)) { if (input.min !== '') input.value = input.min; }
+      else if (n < parseFloat(input.min)) input.value = input.min;
+      else if (n > parseFloat(input.max)) input.value = input.max;
+      sync();
+      if (input.value !== before) notify();
+    });
+
+    sync();
+  });
+}
+
 /* ============================== boot ============================== */
 
 export function init() {
@@ -1970,6 +2453,7 @@ export function init() {
   initToggles();
   initDisclosures();
   initSelect();
+  initSlider();
   initPalette();
   initTooltip();
   initPopovers();
@@ -1986,6 +2470,7 @@ export function init() {
   initScrollFade();
   initScrollbars();
   initDropzone();
+  initStepper();
 }
 
 // a module script is deferred, so the document is parsed by the time this runs
