@@ -115,6 +115,11 @@
 /* ---- Entry editor ---- */
 .editor-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--space-8); align-items: start; }
 .editor-main { min-width: 0; }
+/* The main column's cards sit inside the swap region, not directly under .editor-main, so the
+   gap rides the cards themselves: without it two card edges meet on one seam. */
+.editor-main .card + .card { margin-top: var(--space-6); }
+/* A card holding an empty state keeps the component's page-level block padding out of it. */
+.card-content > .empty-state { padding-block: var(--space-6); }
 .editor-rail { display: flex; flex-direction: column; gap: var(--space-6); position: sticky; top: var(--pin-top); }
 @media (max-width: 900px) {
   .editor-grid { grid-template-columns: 1fr; }
