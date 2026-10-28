@@ -285,7 +285,7 @@ describe("the current text card", () => {
     });
     const html = await (await env.get(`/entries/${id}`)).text();
 
-    expect(html).toContain('<div class="card-title">Current text</div>');
+    expect(html).toContain('<div class="card-title">The change</div>');
     expect(html).toContain('<div class="card-title">Proposed text</div>');
     expect(html).toContain("&lt;script&gt;before&lt;/script&gt;");
     expect(html).toContain("&lt;script&gt;anchor&lt;/script&gt;");
@@ -315,7 +315,7 @@ describe("the current text card", () => {
     env.store.db.run("UPDATE entries SET agent_draft = NULL, human_text = NULL WHERE id = ?", [id]);
     const html = await (await env.get(`/entries/${id}`)).text();
 
-    expect(html).toContain('<div class="card-title">Current text</div>');
+    expect(html).toContain('<div class="card-title">The change</div>');
     expect(html).toContain("Run this before anything else.");
     expect(html).not.toContain("diff-remove");
     env.close();

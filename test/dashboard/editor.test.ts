@@ -8,6 +8,7 @@ import { fileEntries } from "../../src/db/queries.ts";
 import type { NewEntry } from "../../src/db/queries.ts";
 import { openStore } from "../../src/db/store.ts";
 import type { Store } from "../../src/db/store.ts";
+import { diffWords } from "../../src/dashboard/word-diff.ts";
 
 const tempDirs: string[] = [];
 
@@ -130,7 +131,7 @@ describe("editor page", () => {
     // disclosure. The anchor, repo and file live in the page header, so the order check is scoped
     // to the pane itself, and the context value is matched with its cell markup since the current
     // text card carries the same words.
-    const contextPane = html.slice(html.indexOf('<div class="card-title">Details</div>'));
+    const contextPane = html.slice(html.indexOf("<span>Details</span>"));
     expectOrder(contextPane, ["<td>where</td>", "setup docs", "<td>code</td>", "<td>bun install</td>"]);
     expect(html).toContain("https://example.com/org/repo.git");
     expect(html).toContain("docs/setup.md");
@@ -767,11 +768,38 @@ describe("the word diff", () => {
     const res = await env.post(`/entries/${id}/save`, saveForm("Run npm install"), HX);
     const html = await res.text();
 
-    // "bun" exists only in the anchor, so the current text marks it; the proposal's textarea
-    // carries the authored words as plain text.
-    expect(html).toContain('Run <span class="diff-remove">bun</span> install');
+    // "bun" exists only in the anchor, so the unified passage marks it removed and the word that
+    // replaces it added; the proposal's textarea carries the authored words as plain text.
+    expect(html).toContain('Run <span class="diff-remove">bun</span><span class="diff-add">npm</span> install');
     expect(html).toContain(">Run npm install</textarea>");
     env.close();
+  });
+
+  test("the unified stream reads the removed words before the words that replace them", () => {
+    const tokens = diffWords("Run bun install", "Run npm install");
+    expect(tokens.map((token) => `${token.kind}:${token.text}`)).toEqual([
+      "same:Run",
+      "same: ",
+      "removed:bun",
+      "added:npm",
+      "same: ",
+      "same:install",
+    ]);
+  });
+
+  test("keeps a shared phrase intact instead of marking its words removed and added", () => {
+    // The true LCS of these token streams is "foo bar" (the anchor's leading pair against the
+    // proposal's trailing pair); a walk that keeps a shorter match marks "bar" changed twice.
+    const tokens = diffWords("foo bar foo", "baz foo bar");
+    expect(tokens.map((token) => `${token.kind}:${token.text}`)).toEqual([
+      "added:baz",
+      "added: ",
+      "same:foo",
+      "same: ",
+      "same:bar",
+      "removed: ",
+      "removed:foo",
+    ]);
   });
 
   test("renders no marks for identical text", async () => {

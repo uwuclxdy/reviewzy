@@ -1195,20 +1195,19 @@ function EditorHeader({ vm }: { vm: EditorViewModel }) {
 }
 
 /**
- * The anchored snippet as it reads in the file: the surrounding lines with the anchor between
- * them, the anchor marked as the annotation. When a compare text is given, words the anchor has
- * and it does not carry the removed mark; the proposal side is the editor's own textarea, so
- * nothing here renders a second copy of it. The diff route re-renders this card against the
- * textarea's live value.
+ * The change card: the anchored snippet with the anchor line marked, diffed against the compare
+ * text when one is given. The anchor line renders the unified stream, so removed and added words
+ * both mark in place while the kept words read once. A null or empty compare renders the anchor
+ * plain. The diff route re-renders this card against the textarea's live value.
  */
 export function currentTextCard(entry: EntryRow, compareText: string | null): JSX.Element {
-  const diff = compareText === null ? null : diffWords(entry.anchor_text, compareText);
+  const diff = compareText === null || compareText === "" ? null : diffWords(entry.anchor_text, compareText);
   return (
     <div class="card current-text-card" id="current-text">
       <div class="card-header">
         <div>
-          <div class="card-title">Current text</div>
-          <div class="card-subtitle">As it reads in the file.</div>
+          <div class="card-title">The change</div>
+          <div class="card-subtitle">Removed words tint red; added words tint green.</div>
         </div>
       </div>
       <div class="card-content">
@@ -1217,11 +1216,11 @@ export function currentTextCard(entry: EntryRow, compareText: string | null): JS
           <span class="diff-line diff-anchor annot-mark">
             {diff === null
               ? entry.anchor_text
-              : diff.before.map((token, index) =>
-                  token.kind === "removed" ? (
-                    <span class="diff-remove" key={index}>{token.text}</span>
-                  ) : (
+              : diff.map((token, index) =>
+                  token.kind === "same" ? (
                     token.text
+                  ) : (
+                    <span class={token.kind === "removed" ? "diff-remove" : "diff-add"} key={index}>{token.text}</span>
                   ),
                 )}
           </span>
@@ -1232,99 +1231,102 @@ export function currentTextCard(entry: EntryRow, compareText: string | null): JS
   );
 }
 
+/** One disclosure section of the editor's single support card. */
+function SupportSection({ label, children }: { label: string; children: Child }) {
+  return (
+    <details class="disclosure support-section" open>
+      <summary>
+        <svg aria-hidden="true"><use href="#i-chevron-right" /></svg>
+        <span>{label}</span>
+      </summary>
+      <div class="disclosure-body">{children}</div>
+    </details>
+  );
+}
+
 /**
  * The entry's agent-supplied context rows plus the provenance (hash, filer, stale note) collapsed
  * behind the disclosure. The anchor, repo, file and filed time all live in the page header, so no
  * row here repeats them.
  */
-function DetailsCard({ entry }: { entry: EntryRow }) {
+function DetailsSection({ entry }: { entry: EntryRow }) {
   const context = parseContext(entry.context);
   const rows = Object.entries(context);
   return (
-    <div class="card details-card">
-      <div class="card-header">
-        <div class="card-title">Details</div>
-      </div>
-      <div class="card-content">
-        {rows.length > 0 ? (
+    <SupportSection label="Details">
+      {rows.length > 0 ? (
+        <table class="info-table">
+          {rows.map(([key, value]) => (
+            <tr key={key}>
+              <td>{key}</td>
+              <td>{typeof value === "string" ? value : JSON.stringify(value)}</td>
+            </tr>
+          ))}
+        </table>
+      ) : null}
+      <details class="disclosure context-secondary">
+        <summary>
+          <svg aria-hidden="true"><use href="#i-chevron-right" /></svg>
+          <span>More</span>
+        </summary>
+        <div class="disclosure-body">
           <table class="info-table">
-            {rows.map(([key, value]) => (
-              <tr key={key}>
-                <td>{key}</td>
-                <td>{typeof value === "string" ? value : JSON.stringify(value)}</td>
-              </tr>
-            ))}
-          </table>
-        ) : null}
-        <details class="disclosure context-secondary">
-          <summary>
-            <svg aria-hidden="true"><use href="#i-chevron-right" /></svg>
-            <span>More</span>
-          </summary>
-          <div class="disclosure-body">
-            <table class="info-table">
+            <tr>
+              <td>File hash</td>
+              <td>{entry.file_hash}</td>
+            </tr>
+            {entry.filed_by !== null ? (
               <tr>
-                <td>File hash</td>
-                <td>{entry.file_hash}</td>
+                <td>Filed by</td>
+                <td>{entry.filed_by}</td>
               </tr>
-              {entry.filed_by !== null ? (
-                <tr>
-                  <td>Filed by</td>
-                  <td>{entry.filed_by}</td>
-                </tr>
-              ) : null}
-              {entry.stale_note !== null ? (
-                <tr>
-                  <td>Stale note</td>
-                  <td>{entry.stale_note}</td>
-                </tr>
-              ) : null}
-            </table>
-          </div>
-        </details>
-      </div>
-    </div>
+            ) : null}
+            {entry.stale_note !== null ? (
+              <tr>
+                <td>Stale note</td>
+                <td>{entry.stale_note}</td>
+              </tr>
+            ) : null}
+          </table>
+        </div>
+      </details>
+    </SupportSection>
   );
 }
 
 /** The audit log of saved revisions: the shipped timeline, one dot per entry. */
-function RevisionHistory({ revisions, editable }: { revisions: readonly RevisionRow[]; editable: boolean }) {
+function RevisionHistorySection({ revisions, editable }: { revisions: readonly RevisionRow[]; editable: boolean }) {
   return (
-    <div class="card history-card">
-      <div class="card-header">
-        <div class="card-title">Revision history</div>
-      </div>
-      <div class="card-content">
-        {revisions.length === 0 ? (
-          <div class="empty-state">
-            <div class="empty-title">No saved revisions yet</div>
-          </div>
-        ) : (
-          <ol class="timeline">
-            {revisions.map((revision) => (
-              <li class="timeline-item" key={revision.id}>
-                <span class={`timeline-dot ${STATUS_DOT[revision.status]}`} aria-hidden="true"></span>
-                <div>
-                  <div class="timeline-head">
-                    <span class={`tag tag-data ${STATUS_TAG[revision.status]}`}>{STATUS_LABEL[revision.status]}</span>
-                    <time class="timeline-time" datetime={new Date(revision.created_at).toISOString()}>
-                      {new Date(revision.created_at).toLocaleString()}
-                    </time>
-                    {/* A terminal entry has no textarea to load into; the button would be dead. */}
-                    {editable ? (
-                      <button class="btn btn-secondary btn-sm" type="button" data-use-revision>
-                        Use
-                      </button>
-                    ) : null}
-                  </div>
-                  <div class="timeline-body clamp-2">{revision.human_text}</div>
+    <SupportSection label="Revision history">
+      {revisions.length === 0 ? (
+        <div class="empty-state">
+          <div class="empty-title">No saved revisions yet</div>
+        </div>
+      ) : (
+        <ol class="timeline">
+          {revisions.map((revision) => (
+            <li class="timeline-item" key={revision.id}>
+              <span class={`timeline-dot ${STATUS_DOT[revision.status]}`} aria-hidden="true"></span>
+              <div>
+                <div class="timeline-head">
+                  <span class={`tag tag-data ${STATUS_TAG[revision.status]}`}>{STATUS_LABEL[revision.status]}</span>
+                  <time class="timeline-time" datetime={new Date(revision.created_at).toISOString()}>
+                    {new Date(revision.created_at).toLocaleString()}
+                  </time>
+                  {/* A terminal entry has no textarea to load into; the button would be dead. */}
+                  {editable ? (
+                    <button class="btn btn-secondary btn-sm" type="button" data-use-revision>
+                      Use
+                    </button>
+                  ) : null}
                 </div>
-              </li>
-            ))}
-          </ol>
-        )}
-      </div>
-    </div>
+                <div class="timeline-body clamp-2">{revision.human_text}</div>
+              </div>
+            </li>
+          ))}
+        </ol>
+      )}
+    </SupportSection>
   );
 }
 
@@ -1450,7 +1452,6 @@ function TerminalTextCard({ entry }: { entry: EntryRow }) {
       <div class="card-header">
         <div>
           <div class="card-title">Settled text</div>
-          <div class="card-subtitle">Read only: this state is final, as noted above.</div>
         </div>
       </div>
       <div class="card-content">
@@ -1462,64 +1463,60 @@ function TerminalTextCard({ entry }: { entry: EntryRow }) {
 
 /**
  * The proposal pane: the editable card for a draft or approved entry, or the settled text of a
- * terminal one. The swap region lives here; the refusal and read-only notices sit above the pair.
+ * terminal one. A terminal entry has no change card, so the pane spans the full workspace. The
+ * swap region lives here; the refusal and read-only notices sit above the pair.
  */
 function EditorRegion({ vm, state }: { vm: EditorViewModel; state: EditorState | undefined }) {
   const terminal = vm.entry.status === "applied" || vm.entry.status === "rejected";
   return (
-    <div id="editor-region" tabindex={-1}>
+    <div id="editor-region" tabindex={-1} class={terminal ? "editor-region-wide" : undefined}>
       {terminal ? <TerminalTextCard entry={vm.entry} /> : <ProposalForm vm={vm} state={state} />}
     </div>
   );
 }
 
 /**
- * The notes card: the agent's notes (from `constraints.notes`, read-only) above the human's own
+ * The notes section: the agent's notes (from `constraints.notes`, read-only) above the human's own
  * notes as an editable textarea with its own save. The textarea carries `hx-preserve`, so any swap
  * (a text save, an image add) keeps the human's in-progress note; the save targets the whole
- * editor view like the save form, so the saved value re-renders in place. The card always renders:
- * the human's notes need a home even before the agent sent any.
+ * editor view like the save form, so the saved value re-renders in place. The section always
+ * renders: the human's notes need a home even before the agent sent any.
  */
-function NotesCard({ vm }: { vm: EditorViewModel }) {
+function NotesSection({ vm }: { vm: EditorViewModel }) {
   return (
-    <div class="card notes-card">
-      <div class="card-header">
-        <div class="card-title">Notes</div>
-      </div>
-      <div class="card-content">
-        <table class="info-table">
-          <tr>
-            <td>Agent's notes</td>
-            <td>{vm.constraints.notes ?? "None."}</td>
-          </tr>
-        </table>
-        <form
-          id="notes-form"
-          method="post"
-          action={`/entries/${vm.entry.id}/notes`}
-          hx-post={`/entries/${vm.entry.id}/notes`}
-          hx-target="#editor-view"
-          hx-swap="outerHTML"
-        >
-          <div class="field notes-field">
-            <label class="field-label" for="editor-notes">Your notes</label>
-            <textarea
-              id="editor-notes"
-              class="input"
-              name="notes"
-              rows={4}
-              aria-label="Your notes"
-              hx-preserve="true"
-            >
-              {vm.entry.human_notes ?? ""}
-            </textarea>
-          </div>
-          <div class="notes-actions">
-            <button class="btn btn-secondary btn-sm" type="submit">Save notes</button>
-          </div>
-        </form>
-      </div>
-    </div>
+    <SupportSection label="Notes">
+      <table class="info-table">
+        <tr>
+          <td>Agent's notes</td>
+          <td>{vm.constraints.notes ?? "None."}</td>
+        </tr>
+      </table>
+      <form
+        id="notes-form"
+        method="post"
+        action={`/entries/${vm.entry.id}/notes`}
+        hx-post={`/entries/${vm.entry.id}/notes`}
+        hx-target="#editor-view"
+        hx-swap="outerHTML"
+      >
+        <div class="field notes-field">
+          <label class="field-label" for="editor-notes">Your notes</label>
+          <textarea
+            id="editor-notes"
+            class="input"
+            name="notes"
+            rows={4}
+            aria-label="Your notes"
+            hx-preserve="true"
+          >
+            {vm.entry.human_notes ?? ""}
+          </textarea>
+        </div>
+        <div class="notes-actions">
+          <button class="btn btn-secondary btn-sm" type="submit">Save notes</button>
+        </div>
+      </form>
+    </SupportSection>
   );
 }
 
@@ -1529,78 +1526,73 @@ function isRenderableImage(item: string): boolean {
 }
 
 /**
- * The images attached to an entry, one card: each valid item as a real `img` (sized by css), an
+ * The images attached to an entry, one section: each valid item as a real `img` (sized by css), an
  * invalid one as a "not shown" note, a remove form per image, and the one-file upload as the
  * system dropzone. Both forms target the whole editor view like the save form, so a change
- * re-renders the card in place.
+ * re-renders the section in place.
  */
-function ImagesCard({ entry }: { entry: EntryRow }) {
+function ImagesSection({ entry }: { entry: EntryRow }) {
   const images = parseEntryImages(entry.images);
   return (
-    <div class="card images-card">
-      <div class="card-header">
-        <div class="card-title">Images</div>
+    <SupportSection label="Images">
+      <div class="dropzone">
+        {/* The native input is the picker and its accessible name; the zone is its paint.
+            It is associated to the submit form by id rather than nested in it, so the zone
+            keeps the direct-child shape the dropzone's own state rules select on. */}
+        <label class="dropzone-target">
+          <svg class="icon" aria-hidden="true"><use href="#i-upload" /></svg>
+          <span class="dropzone-lede">Image file</span>
+          <input
+            class="dropzone-input"
+            type="file"
+            name="file"
+            accept="image/*"
+            aria-label="Image file"
+            form="image-upload"
+          />
+        </label>
+        {images.length === 0 ? (
+          <p class="field-hint">No images yet.</p>
+        ) : (
+          <ul class="dropzone-list image-list">
+            {images.map((item, index) =>
+              isRenderableImage(item) ? (
+                <li key={index}>
+                  <img class="entry-image" src={item} alt={`Image ${index + 1}`} loading="lazy" />
+                  <form
+                    class="image-remove"
+                    method="post"
+                    action={`/entries/${entry.id}/images/${index}/remove`}
+                    hx-post={`/entries/${entry.id}/images/${index}/remove`}
+                    hx-target="#editor-view"
+                    hx-swap="outerHTML"
+                  >
+                    <button class="btn btn-secondary btn-sm" type="submit">Remove</button>
+                  </form>
+                </li>
+              ) : (
+                <li key={index}>
+                  <p class="image-skip">Image {index + 1} not shown: unsupported source.</p>
+                </li>
+              ),
+            )}
+          </ul>
+        )}
+        <form
+          id="image-upload"
+          class="image-upload"
+          method="post"
+          action={`/entries/${entry.id}/images`}
+          enctype="multipart/form-data"
+          hx-post={`/entries/${entry.id}/images`}
+          hx-encoding="multipart/form-data"
+          hx-target="#editor-view"
+          hx-swap="outerHTML"
+        >
+          <button class="btn btn-secondary btn-sm" type="submit" hx-disabled-elt="this">Add image</button>
+        </form>
       </div>
-      <div class="card-content">
-        <div class="dropzone">
-          {/* The native input is the picker and its accessible name; the zone is its paint.
-              It is associated to the submit form by id rather than nested in it, so the zone
-              keeps the direct-child shape the dropzone's own state rules select on. */}
-          <label class="dropzone-target">
-            <svg class="icon" aria-hidden="true"><use href="#i-upload" /></svg>
-            <span class="dropzone-lede">Image file</span>
-            <input
-              class="dropzone-input"
-              type="file"
-              name="file"
-              accept="image/*"
-              aria-label="Image file"
-              form="image-upload"
-            />
-          </label>
-          {images.length === 0 ? (
-            <p class="field-hint">No images yet.</p>
-          ) : (
-            <ul class="dropzone-list image-list">
-              {images.map((item, index) =>
-                isRenderableImage(item) ? (
-                  <li key={index}>
-                    <img class="entry-image" src={item} alt={`Image ${index + 1}`} loading="lazy" />
-                    <form
-                      class="image-remove"
-                      method="post"
-                      action={`/entries/${entry.id}/images/${index}/remove`}
-                      hx-post={`/entries/${entry.id}/images/${index}/remove`}
-                      hx-target="#editor-view"
-                      hx-swap="outerHTML"
-                    >
-                      <button class="btn btn-secondary btn-sm" type="submit">Remove</button>
-                    </form>
-                  </li>
-                ) : (
-                  <li key={index}>
-                    <p class="image-skip">Image {index + 1} not shown: unsupported source.</p>
-                  </li>
-                ),
-              )}
-            </ul>
-          )}
-          <form
-            id="image-upload"
-            class="image-upload"
-            method="post"
-            action={`/entries/${entry.id}/images`}
-            enctype="multipart/form-data"
-            hx-post={`/entries/${entry.id}/images`}
-            hx-encoding="multipart/form-data"
-            hx-target="#editor-view"
-            hx-swap="outerHTML"
-          >
-            <button class="btn btn-secondary btn-sm" type="submit" hx-disabled-elt="this">Add image</button>
-          </form>
-        </div>
-      </div>
-    </div>
+    </SupportSection>
   );
 }
 
@@ -1624,10 +1616,11 @@ function RepoValue({ repo }: { repo: string }) {
 }
 
 /**
- * The editor view, one swap node: a fixed-height comparison pair (current text against the
- * proposal), an optional notice above it, then the support cards in a two-up grid so neither
- * pane can tower alone. A save re-renders the whole view because the marks follow the text and
- * the status can move; the live diff swaps only the current-text card.
+ * The editor view, one swap node: the change card beside the proposal pane, an optional notice
+ * above them, then one support card holding the four sections across the full width. A terminal
+ * entry drops the change card and lets the settled pane span the workspace. A save re-renders the
+ * whole view because the marks follow the text and the status can move; the live diff swaps only
+ * the current-text card.
  */
 function EditorView({ vm, state }: { vm: EditorViewModel; state: EditorState | undefined }) {
   const entry = vm.entry;
@@ -1651,13 +1644,17 @@ function EditorView({ vm, state }: { vm: EditorViewModel; state: EditorState | u
         ) : null}
       </div>
       <div class="editor-grid">
-        {currentTextCard(entry, compareText)}
+        {terminal ? null : currentTextCard(entry, compareText)}
         <EditorRegion vm={vm} state={state} />
         <div class="editor-support">
-          <DetailsCard entry={entry} />
-          <NotesCard vm={vm} />
-          <RevisionHistory revisions={vm.revisions} editable={!terminal} />
-          <ImagesCard entry={entry} />
+          <div class="card editor-support-card">
+            <div class="card-content">
+              <DetailsSection entry={entry} />
+              <NotesSection vm={vm} />
+              <ImagesSection entry={entry} />
+              <RevisionHistorySection revisions={vm.revisions} editable={!terminal} />
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -1673,7 +1670,8 @@ export function editorPage(vm: EditorViewModel, state: EditorState | undefined =
         <a class="skip-link" href="#main">Skip to content</a>
         <IconSprite />
         <Shell signedIn={signedIn} active="entries" draftCount={vm.draftCount}>
-          {/* The workspace caps its own measure; the list keeps the full page track. */}
+          {/* The workspace takes the page column's full track; a cap beside the sidebar shell
+              leaves a dead strip once the track outgrows it. */}
           <div class="editor-page">
             <EditorHeader vm={vm} />
             <EditorView vm={vm} state={state} />

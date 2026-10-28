@@ -164,7 +164,7 @@
 /* ---- Empty-state actions: this page's filter-miss state holds two ways onward ---- */
 .empty-actions { display: flex; gap: var(--space-2); justify-content: center; }
 
-/* ---- Current text: the anchored snippet as code on the well ----
+/* ---- The change: the anchored snippet as code on the well ----
    The shipped pre owns the surface; the diff wraps instead of scrolling, which is the one
    deviation this view adds. The anchor's annotation bar is the shipped .annot-mark. */
 .diff-code {
@@ -174,51 +174,60 @@
 }
 .diff-line { display: block; }
 
-/* ---- Entry editor: one capped comparison workspace ----
-   The workspace caps its own measure under the page title, so a wide monitor does not stretch
-   two panes of prose across the whole page. The pair is one grid row of equal-height cards:
-   the current pane scrolls its own text and the proposal caps its textarea, so neither side
-   grows the page with content. The support cards sit in a two-up grid below, each row's cards
-   the same height, so an editable card can no longer tower alone. */
-.editor-page { max-width: var(--page-w); }
+/* ---- Entry editor: one full-track workspace ----
+   The workspace takes the page column's full width; a cap beside the sidebar shell leaves a dead
+   strip once the track outgrows it. The page is the query container, so the pair's collapse
+   follows the track width, not the viewport. Each pane sizes to its own content and scrolls past
+   a share of the viewport; one support card spans the workspace below the pair. */
+.editor-page { container-type: inline-size; }
+.editor-title { font-size: var(--t-7); }
+/* The title steps down with the page column, not the viewport: the sidebar's collapse moves the
+   track width on its own, and a 34px title wraps to three lines on the narrow column. */
+@container (max-width: 800px) {
+  .editor-title { font-size: var(--t-6); }
+}
 .editor-grid {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: var(--space-4);
-  align-items: stretch;
+  align-items: start;
 }
 #current-text { grid-column: 1; }
-#editor-region { grid-column: 2; display: flex; flex-direction: column; gap: var(--space-4); min-width: 0; }
-#editor-region > .card { flex: 1; min-width: 0; }
-/* Both panes take one height, written by dashboard.js: the taller of the two contents, floored
-   so a short entry still has an edit box and capped so a long one scrolls in place. */
-.editor-pane { min-height: 140px; overflow: auto; }
-.editor-support {
-  grid-column: 1 / -1;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: var(--space-4);
-  align-items: stretch;
+#editor-region { grid-column: 2; min-width: 0; }
+/* A terminal entry has no change card: the settled pane takes the full row. */
+#editor-region.editor-region-wide { grid-column: 1 / -1; }
+.editor-pane { max-height: 60vh; overflow: auto; }
+#editor-text { height: clamp(200px, 32vh, 360px); }
+/* One support card spans the workspace; its sections stack with a hairline between them. */
+.editor-support { grid-column: 1 / -1; min-width: 0; }
+.editor-support-card .card-content { padding: var(--space-2); }
+/* The section labels head their sections, so they take the next type step; the nested "More"
+   disclosure keeps the shipped summary size. */
+.editor-support-card .support-section > summary { font-size: var(--t-4); }
+.support-section + .support-section {
+  border-top: 1px solid var(--line-soft);
+  margin-top: var(--space-2);
+  padding-top: var(--space-2);
 }
-.editor-support > .card { min-width: 0; }
+/* The shipped empty state's block padding is card-scale; one line of it inside a section leaves
+   a tall blank band. */
+.support-section .empty-state { padding-block: var(--space-4); }
 #editor-notice:empty { display: none; }
 #editor-notice { margin-bottom: var(--space-4); }
-@media (max-width: 900px) {
+/* The pair collapses when the page column, not the viewport, narrows past 1000px: the sidebar's
+   collapse moves the track width on its own. The explicit desktop columns reset, or the placements
+   open an implicit second column and the page stacks into a sliver; the proposal leads on the
+   narrow track. */
+@container (max-width: 1000px) {
   .editor-grid { grid-template-columns: minmax(0, 1fr); }
-  .editor-support { grid-template-columns: minmax(0, 1fr); }
-  /* The explicit desktop columns reset, or the placements open an implicit second column and
-     the page stacks into a sliver; the proposal leads on the narrow screen. */
   #current-text { grid-column: 1; }
   #editor-region { grid-column: 1; order: -1; }
-  .editor-support { grid-column: 1 / -1; }
 }
-/* A card holding an empty state keeps the component's page-level block padding out of it. */
-.card-content > .empty-state { padding-block: var(--space-6); }
 
 /* ---- Textareas: no manual resize ----
    The shipped .input pins a control height and the shipped textarea rule adds a resize
-   handle; both fight the page's sizing. The editor and notes boxes hold one stable height
-   with their own scroll; the style-guide fields autosize to their content. */
+   handle; both fight the page's sizing. The editor box holds a viewport-clamped height and the
+   notes box a fixed one; the style-guide fields autosize to their content. */
 main.page textarea.input { height: auto; resize: none; }
 #editor-text { font-family: var(--font-mono); }
 #editor-notes { height: 120px; min-height: 120px; max-height: 120px; overflow-y: auto; }

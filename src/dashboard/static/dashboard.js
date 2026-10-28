@@ -255,7 +255,6 @@ import { initDismiss, initScrollFade, initTables, initTabs, initViewportWidth, s
     const swapTarget = event.target instanceof Element ? event.target : null;
     const editorSwap = swapTarget !== null && (swapTarget.id === "editor-view" || swapTarget.id === "editor-region");
     if (swapTarget?.id === "current-text") {
-      sizeComparisonPanes();
       const pane = document.querySelector("#current-text .editor-pane");
       if (pane) pane.scrollTop = currentPaneScroll;
     }
@@ -318,39 +317,6 @@ import { initDismiss, initScrollFade, initTables, initTabs, initViewportWidth, s
     }
   }
 
-  // --- Comparison panes ---
-  // Both panes of the editor pair take one height: the taller of the two contents, floored so a
-  // short entry still has an edit box and capped so a long one scrolls in place. The current
-  // card then stretches to the proposal card's height, so neither side towers alone.
-  function sizeComparisonPanes() {
-    const pane = document.querySelector("#current-text .editor-pane");
-    const textarea = document.getElementById("editor-text");
-    const settled = document.querySelector("#editor-region .editor-pane");
-    if (pane === null || (textarea === null && settled === null)) return;
-    const floor = 140;
-    const cap = 320;
-    const natural = (el) => {
-      if (!el) return 0;
-      const previous = el.style.height;
-      el.style.height = "auto";
-      const height = el.scrollHeight;
-      el.style.height = previous;
-      return height;
-    };
-    // Measuring sets a pane's height to auto, which clamps its scroll to the top; put the
-    // reader's place back after the new height lands.
-    const paneScroll = pane.scrollTop;
-    const textareaScroll = textarea?.scrollTop ?? 0;
-    const settledScroll = settled?.scrollTop ?? 0;
-    const height = Math.min(cap, Math.max(floor, natural(textarea), natural(settled), natural(pane)));
-    if (textarea) textarea.style.height = `${height}px`;
-    if (settled) settled.style.height = `${height}px`;
-    pane.style.height = `${height}px`;
-    pane.scrollTop = paneScroll;
-    if (textarea) textarea.scrollTop = textareaScroll;
-    if (settled) settled.scrollTop = settledScroll;
-  }
-
   // --- Editor live metrics ---
   // The constraint row lives inside the htmx swap region now, so it re-renders with the swap;
   // between swaps the char count and the placeholder checklist track the textarea as the user
@@ -359,7 +325,6 @@ import { initDismiss, initScrollFade, initTables, initTabs, initViewportWidth, s
     const textarea = document.getElementById("editor-text");
     if (!textarea) return;
     autosizeTextareas();
-    sizeComparisonPanes();
     const announcements = [];
 
     const charCount = document.getElementById("char-count");
@@ -418,7 +383,6 @@ import { initDismiss, initScrollFade, initTables, initTabs, initViewportWidth, s
   document.addEventListener("htmx:afterSwap", autosizeTextareas);
   // The cap is a share of the current viewport, so a resize or rotation re-derives it.
   addEventListener("resize", autosizeTextareas);
-  addEventListener("resize", sizeComparisonPanes);
 
   // "Use" on a revision loads its text into the editor and re-syncs the panel, ready to save.
   document.addEventListener("click", (event) => {
@@ -459,8 +423,8 @@ import { initDismiss, initScrollFade, initTables, initTabs, initViewportWidth, s
   // its dismiss control wired, since ui.js's one sweep ran at boot.
   document.addEventListener("htmx:afterSwap", initDismiss);
 
-  // First paint: the boxes take their content's height, the editor panel syncs with the prefill,
-  // and the batch button reflects the (empty) selection before the viewer touches anything.
+  // First paint: the boxes take their content's height, the metrics row reads the prefill, and
+  // the batch button reflects the (empty) selection before the viewer touches anything.
   autosizeTextareas();
   refreshEditorMetrics();
   updateApproveButton();

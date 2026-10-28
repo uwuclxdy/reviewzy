@@ -215,25 +215,58 @@ describe("editor information architecture", () => {
     expect(html).not.toContain('class="editor-nav-btn');
   });
 
-  test("the editor is a capped comparison workspace: equal panes, one action row, a support grid", async () => {
+  test("the editor is a comparison workspace: one change card, one proposal card, one sectioned support card", async () => {
     const { env, draftId } = seededEnv();
     const html = await (await env.get(`/entries/${draftId}`)).text();
 
     expect(html).toContain('<div class="editor-page">');
     expect(html).toContain('<div class="editor-grid">');
-    expect(html).toContain('<div class="card-title">Current text</div>');
+    expect(html).toContain('<div class="card-title">The change</div>');
     expect(html).toContain('<div class="card current-text-card" id="current-text">');
-    expect(html).toContain('<div class="card-subtitle">As it reads in the file.</div>');
+    expect(html).toContain('<div class="card-subtitle">Removed words tint red; added words tint green.</div>');
     expect(html).toContain('<pre class="diff-code editor-pane">');
     expect(html).toContain('<div class="card-title">Proposed text</div>');
     expect(html).toContain('<textarea id="editor-text" class="input editor-pane"');
     expect(html).toContain('<form id="editor-form" class="card"');
     expect(html).toContain('<div class="editor-actions">');
-    expect(html).toContain('<div class="editor-support">');
     expect(html).not.toContain('class="editor-col');
     expect(html).not.toContain(">After</div>");
     expect(html).not.toContain(">Before</div>");
     expect(html).not.toContain('<div class="diff-grid">');
+  });
+
+  test("the support cards are one card of four disclosure sections, revision history last", async () => {
+    const { env, draftId } = seededEnv();
+    const html = await (await env.get(`/entries/${draftId}`)).text();
+
+    expect(html).toContain('<div class="editor-support">');
+    expect(html).toContain('<div class="card editor-support-card">');
+    expect(html.match(/<details class="disclosure support-section" open(?:="")?>/g)?.length).toBe(4);
+    const sections = ["<span>Details</span>", "<span>Notes</span>", "<span>Images</span>", "<span>Revision history</span>"];
+    for (let i = 1; i < sections.length; i++) {
+      const previous = html.indexOf(sections[i - 1]!);
+      const current = html.indexOf(sections[i]!);
+      expect(previous).toBeGreaterThanOrEqual(0);
+      expect(previous).toBeLessThan(current);
+    }
+    // The four standalone cards are gone; each body's own form and readout survive inside its section.
+    expect(html).not.toContain('class="card details-card"');
+    expect(html).not.toContain('class="card notes-card"');
+    expect(html).not.toContain('class="card history-card"');
+    expect(html).not.toContain('class="card images-card"');
+    expect(html).toContain('id="editor-notes"');
+    expect(html).toContain("No saved revisions yet");
+  });
+
+  test("a terminal entry renders one settled card instead of the same text twice", async () => {
+    const { env, appliedId, rejectedId } = seededEnv();
+    for (const id of [appliedId, rejectedId]) {
+      const html = await (await env.get(`/entries/${id}`)).text();
+      expect(html).toContain('<div class="card-title">Settled text</div>');
+      expect(html).not.toContain('<div class="card-title">The change</div>');
+      expect(html).not.toContain('id="current-text"');
+      expect(html.match(/editor-pane/g)?.length).toBe(1);
+    }
   });
 
   test("the textarea drives a live diff through the diff route", async () => {
@@ -255,13 +288,47 @@ describe("editor information architecture", () => {
     expect(res.status).toBe(200);
     const html = await res.text();
 
-    expect(html).toContain('<div class="card-title">Current text</div>');
+    expect(html).toContain('<div class="card-title">The change</div>');
     expect(html).toContain('<div class="card current-text-card" id="current-text">');
     expect(html).toContain('<span class="diff-remove">install</span>');
     expect(html).not.toContain("<html");
     // A preview never writes: the entry is still a draft with no human text.
     const after = await (await env.get(`/entries/${draftId}`)).text();
     expect(after).toContain('<span class="tag tag-warning"><span class="tag-dot"></span>Draft</span>');
+  });
+
+  test("the diff route marks added words beside the kept ones", async () => {
+    const { env, draftId } = seededEnv();
+    const form = new FormData();
+    form.set("text", "Run bun install now");
+    const html = await (await env.post(`/entries/${draftId}/diff`, form, HX)).text();
+
+    expect(html).toContain('<span class="diff-add">now</span>');
+    // The kept words render once, unmarked: the passage stays a sentence, not two copies.
+    expect(html).not.toContain("diff-remove");
+    expect(html.match(/Run bun install/g)?.length).toBe(1);
+  });
+
+  test("the diff route leaves an empty proposal unmarked", async () => {
+    const { env, draftId } = seededEnv();
+    const form = new FormData();
+    form.set("text", "");
+    const html = await (await env.post(`/entries/${draftId}/diff`, form, HX)).text();
+
+    expect(html).not.toContain("diff-remove");
+    expect(html).not.toContain("diff-add");
+  });
+
+  test("a refused save marks the refused text's additions too", async () => {
+    const { env, draftId } = seededEnv();
+    // The seeded constraints require the "command" placeholder, so this save refuses and the
+    // whole editor view re-renders with the typed text as the proposal.
+    const form = new FormData();
+    form.set("text", "Run bun install now");
+    const html = await (await env.post(`/entries/${draftId}/save`, form, HX)).text();
+
+    expect(html).toContain("Text not saved");
+    expect(html).toContain('<span class="diff-add">now</span>');
   });
 
   test("a plain POST to the diff route goes back to the editor", async () => {
@@ -281,7 +348,7 @@ describe("editor information architecture", () => {
     const html = await res.text();
 
     expect(html).toContain("Text not saved");
-    expect(html).toContain('<div class="card-title">Current text</div>');
+    expect(html).toContain('<div class="card-title">The change</div>');
     expect(html).toContain('<div class="card current-text-card" id="current-text">');
     expect(html).toContain('<span class="diff-remove">install</span>');
   });
@@ -340,7 +407,7 @@ describe("editor information architecture", () => {
     const res = await env.post(`/entries/${approvedId}/reject`, form, HX);
     const html = await res.text();
 
-    expect(html).toContain('<div id="editor-region" tabindex="-1">');
+    expect(html).toContain('<div id="editor-region" tabindex="-1" class="editor-region-wide">');
     expect(html).toContain('<span id="entry-status" hx-swap-oob="true">');
     expect(html).toContain('<span class="tag tag-danger"><span class="tag-dot"></span>Rejected</span>');
     expect(html).not.toContain('id="editor-form"');
