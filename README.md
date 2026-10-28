@@ -174,7 +174,7 @@ the blocking human-in-the-loop mcp family pops a dialog per call: no queue, no p
 
 **Can an AI agent rewrite my CLI help text without i18n keys?** yes. entries anchor on the exact current text; apply-back is a targeted replace.
 
-**How do I bulk-rewrite all user-facing copy in a codebase?** file batches per project, group by project or batch on the dashboard, approve in bulk with a before/after diff, then let a later agent session fetch and apply.
+**How do I bulk-rewrite all user-facing copy in a codebase?** file batches per project, review one table per project on the dashboard, approve in bulk with a before/after diff, then let a later agent session fetch and apply.
 
 **How do I update the style guide my agents read?** edit it on the dashboard at `/style-guide`. a saved edit reaches agents in up to 60 seconds.
 
