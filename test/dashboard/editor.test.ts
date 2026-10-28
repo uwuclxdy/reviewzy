@@ -90,14 +90,18 @@ function revisionCount(store: Store, entryId: string): number {
 }
 
 describe("editor page", () => {
-  test("serves the editor shell: navbar, header, context, prefill, constraints, and empty history", async () => {
+  test("serves the editor shell: sidebar, header, context, prefill, constraints, and empty history", async () => {
     const { env, id } = envWithDraft();
     const res = await env.get(`/entries/${id}`);
     expect(res.status).toBe(200);
     const html = await res.text();
 
     expect(html).toContain("<!doctype html>");
-    expect(html).toContain("navbar-brand");
+    // The same sidebar shell as the list: Entries active, and the badge on the store's draft count.
+    expect(html).toContain('<nav class="sidebar" id="sidebar" aria-label="Dashboard">');
+    expect(html).toContain('<a class="nav-item active" href="/" aria-current="true"><span>Entries</span><span class="nav-badge" id="entries-badge">1</span></a>');
+    expect(html).toContain('<a class="nav-item" href="/style-guide"><span>Style guide</span></a>');
+    expect(html).not.toContain('class="navbar"');
     expect(html).toContain("Entry review");
     expect(html).toContain("<h1 class=\"page-title\">Edit entry</h1>");
     expect(html).toContain("Saving the text approves the entry and releases it to agents.");
@@ -619,6 +623,9 @@ describe("saving from the editor", () => {
     expect(html).not.toContain('role="alert"');
     expect(html).toContain("Revision history");
     expect(html).toContain(text);
+    // A save on the only draft approves it, so the shell's queue badge moves out of band with
+    // the region: the page it sits on is not part of the main swap.
+    expect(html).toContain('<span class="nav-badge" id="entries-badge" hx-swap-oob="true">0</span>');
     // The history row records the status the entry held at the save: a draft that approves records "Draft".
     expectOrder(html, ["timeline-head", "Draft", "timeline-time", "Use"]);
     expect(html).toContain('data-use-revision');

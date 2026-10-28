@@ -93,11 +93,12 @@ describe("style guide page", () => {
     const res = await env.get("/style-guide");
     expect(res.status).toBe(200);
     const html = await res.text();
-    // The navbar marks the current section: Style guide active, Entries not.
+    // The sidebar marks the current section: Style guide active, Entries not.
     expectOrder(html, [
-      '<a class="navbar-link" href="/">Entries</a>',
-      '<a class="navbar-link active" href="/style-guide">Style guide</a>',
+      '<a class="nav-item" href="/"><span>Entries</span><span class="nav-badge" id="entries-badge">0</span></a>',
+      '<a class="nav-item active" href="/style-guide" aria-current="true"><span>Style guide</span></a>',
     ]);
+    expect(html).not.toContain('class="navbar"');
     expect(html).toContain("Voice");
     expect(html).toContain('name="project" value=""');
     expect(html).toContain('name="markdown"');
@@ -317,14 +318,14 @@ describe("session guard", () => {
   });
 });
 
-describe("navbar", () => {
+describe("sidebar", () => {
   test("the entries page links to the style guide, keeping Entries active", async () => {
     const env = openEnv();
     const res = await env.get("/");
     const html = await res.text();
     expectOrder(html, [
-      '<a class="navbar-link active" href="/">Entries</a>',
-      '<a class="navbar-link" href="/style-guide">Style guide</a>',
+      '<a class="nav-item active" href="/" aria-current="true"><span>Entries</span><span class="nav-badge" id="entries-badge">0</span></a>',
+      '<a class="nav-item" href="/style-guide"><span>Style guide</span></a>',
     ]);
     env.close();
   });

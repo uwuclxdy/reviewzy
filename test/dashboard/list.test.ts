@@ -105,19 +105,6 @@ const batchD = fileEntries(env.store, "zeta", "probe-agent", [
   }),
 ]);
 
-// Force a same-millisecond pair so the ordering tiebreak is reachable: batchC's id is rewritten
-// to share batchA's ms prefix (minted prefixes tie only by luck, so the pair is crafted) and its
-// entry backdated, so only the batch's newest created_at can separate them. The tail is the
-// maximal Crockford char repeated (a shape the ulid writer can mint), so removing the tiebreak —
-// falling back to full-id order — would also flip the pair and the pin below catches presence as
-// well as direction. Direct UPDATEs are the fixture's own pattern — statuses and filers move the
-// same way below.
-const batchCId = `${batchA.batchId.slice(0, 10)}ZZZZZZZZZZZZZZZZ`;
-env.store.db.run(
-  "UPDATE entries SET batch_id = ?, created_at = (SELECT MIN(created_at) FROM entries WHERE batch_id = ?) - 1000 WHERE id = ?",
-  [batchCId, batchA.batchId, batchC.results[0]!.id],
-);
-
 // The approve flow is a later task, so statuses move here through the store directly; the
 // human_text replacement is what a sign-off will write.
 env.store.db.run("UPDATE entries SET status = 'approved', human_text = 'Explain where the cache lives.' WHERE id = ?", [
@@ -125,17 +112,15 @@ env.store.db.run("UPDATE entries SET status = 'approved', human_text = 'Explain 
 ]);
 env.store.db.run("UPDATE entries SET status = 'applied' WHERE id = ?", [batchB.results[0]!.id]);
 env.store.db.run("UPDATE entries SET status = 'rejected' WHERE id = ?", [batchB.results[1]!.id]);
-// A second filer in batchB makes it a mixed-filer batch: the header names no filer, each row names its own.
-env.store.db.run("UPDATE entries SET filed_by = 'other-agent' WHERE id = ?", [batchB.results[0]!.id]);
 
-/** The rendered title of each fixture entry (the anchor text here, since none of these filed a title), keyed by entry id. */
-const RENDERED: { batchId: string; id: string; text: string }[] = [
-  { batchId: batchA.batchId, id: batchA.results[0]!.id, text: "Run bun install" },
-  { batchId: batchA.batchId, id: batchA.results[1]!.id, text: "The cache lives at" },
-  { batchId: batchB.batchId, id: batchB.results[0]!.id, text: "AGPL-3.0" },
-  { batchId: batchB.batchId, id: batchB.results[1]!.id, text: "shields badge" },
-  { batchId: batchCId, id: batchC.results[0]!.id, text: "Run the migration" },
-  { batchId: batchD.batchId, id: batchD.results[0]!.id, text: "Frequently asked" },
+/** The rendered title of each fixture entry (the anchor text here, since none of these filed a title), keyed by project. */
+const RENDERED: { project: "alpha" | "zeta"; id: string; text: string }[] = [
+  { project: "alpha", id: batchA.results[0]!.id, text: "Run bun install" },
+  { project: "alpha", id: batchA.results[1]!.id, text: "The cache lives at" },
+  { project: "alpha", id: batchB.results[0]!.id, text: "AGPL-3.0" },
+  { project: "alpha", id: batchB.results[1]!.id, text: "shields badge" },
+  { project: "alpha", id: batchC.results[0]!.id, text: "Run the migration" },
+  { project: "zeta", id: batchD.results[0]!.id, text: "Frequently asked" },
 ];
 
 afterAll(() => {
@@ -153,18 +138,9 @@ function expectOrder(html: string, needles: readonly string[]) {
   }
 }
 
-/** The head+tail short form of a ulid, mirroring the view's `shortUlid`. */
+/** The head+tail chip the list used to render, kept so the flattened chrome is asserted absent. */
 function shortUlid(id: string): string {
   return `${id.slice(0, 6)}…${id.slice(-6)}`;
-}
-
-/** The batch's disclosure summary region, from its details open tag to the table that follows. */
-function batchHeader(html: string, batchId: string): string {
-  const idMark = html.indexOf(`aria-label="Select all drafts in batch ${shortUlid(batchId)}"`);
-  expect(idMark, `batch ${batchId} header rendered`).toBeGreaterThan(-1);
-  const start = html.lastIndexOf('<details class="disclosure batch-disclosure"', idMark);
-  const end = html.indexOf('<div class="table-wrap"', start);
-  return html.slice(start, end);
 }
 
 /** The `.cell-actions` region for an entry, from its `<td>` to the row's close. */
@@ -177,7 +153,7 @@ function entryActions(html: string, id: string): string {
 }
 
 describe("dashboard entry list", () => {
-  test("serves the page shell: navbar, filter form, list region, and error box template", async () => {
+  test("serves the page shell: sidebar, filter form, list region, and error box template", async () => {
     const res = await env.get("/");
     expect(res.status).toBe(200);
     const html = await res.text();
@@ -187,15 +163,36 @@ describe("dashboard entry list", () => {
     expect(html).toContain('lang="en"');
     expect(html).toContain('data-theme="dark"');
 
-    // Navbar shell with brand and the two nav links; ui.js builds the sliding ink, so no markup carries it.
-    expect(html).toContain('<nav class="navbar">');
+    // One shell: the mobile topbar and overlay outside the grid, the sidebar and page column
+    // inside it. The drawer is the same sidebar element, so there is no second nav tree.
+    expect(html).toContain('<div class="mobile-topbar">');
+    expect(html).toContain('id="hamburger-btn"');
+    expect(html).toContain('id="sidebar-overlay"');
+    expect(html).toContain('<div class="layout">');
+    expect(html).toContain('<nav class="sidebar" id="sidebar" aria-label="Dashboard">');
     expect(html).toContain('<div class="logo-name">reviewzy</div>');
-    expect(html).toContain('<a class="navbar-link active" href="/">Entries</a>');
+    expect(html).toContain('class="sidebar-collapse"');
+    expect(html).toContain('<div class="nav-group-label">Queue</div>');
+    expect(html).toContain('<div class="nav-group-label">Content</div>');
+    expect(html).toContain('<a class="nav-item active" href="/" aria-current="true"><span>Entries</span><span class="nav-badge" id="entries-badge">3</span></a>');
+    expect(html).toContain('<a class="nav-item" href="/style-guide"><span>Style guide</span></a>');
+    // The desktop navbar is gone; no page carries a second navigation pattern.
+    expect(html).not.toContain('class="navbar"');
+    expect(html).not.toContain('class="navbar-link');
     expect(html).not.toContain("navbar-ink");
 
-    // Page header: the title plus the total count in the metadata row, no eyebrow or lede.
+    // Page header: title, then the store's entry and project counts, with no eyebrow or lede.
     expect(html).toContain("<h1 class=\"page-title\">Entries</h1>");
     expect(html).toContain('<span class="page-meta-item num">6 entries</span>');
+    expect(html).toContain('<span class="page-meta-item num">2 projects</span>');
+
+    // The reference rhythm: the banner slot, the four status cards, then the queue section.
+    expect(html).toContain('<div id="page-banner">');
+    expect(html).toContain('<div class="stat-grid" id="page-stats">');
+    expect(html).toContain('<div class="section-head"><div class="label">Queue</div></div>');
+    // One display title on the page: the section names itself with its eyebrow alone.
+    expect(html).not.toContain('<h2 class="section-title">Entries</h2>');
+    expect(html.match(/<h1 class="page-title">Entries<\/h1>/g)?.length).toBe(1);
     expect(html).not.toContain("Review queue");
     expect(html).not.toContain("Agent drafts waiting for your approval.");
 
@@ -246,156 +243,110 @@ describe("dashboard entry list", () => {
     expect(html.indexOf('localStorage.getItem("cloudy-theme")')).toBeLessThan(html.indexOf('href="/static/tokens.css"'));
   });
 
-  test("lists entries grouped by project then batch, actionable first and newest batch first", async () => {
-    // `status=all` so the full fixture renders: the default Active view hides the terminal batch.
+  test("lists one dense table per project, projects in slug order", async () => {
+    // `status=all` so the full fixture renders: the default Active view hides the terminal rows.
     const html = await (await env.get("/?status=all")).text();
 
     // Projects in slug order; each project header carries its entry count.
-    expect(html.indexOf('<h2 class="project-name">alpha</h2>')).toBeLessThan(
-      html.indexOf('<h2 class="project-name">zeta</h2>'),
+    expect(html.indexOf('<h2 class="section-title project-name">alpha</h2>')).toBeLessThan(
+      html.indexOf('<h2 class="section-title project-name">zeta</h2>'),
     );
     expect(html).toContain(">5 entries</span>");
     expect(html).toContain(">1 entry</span>");
 
-    // The batch order derives from the store, mirroring the view's own rule: a batch with any
-    // draft or approved entry is actionable and leads; both partitions sort newest first (ulid
-    // millisecond prefix descending, the batch's newest created_at breaking a same-ms tie, then
-    // the id), and projects stay in slug order.
-    const walked = listEntries(env.store, {
-      projectId: undefined,
-      status: undefined,
-      ids: undefined,
-      q: undefined,
-      cursor: undefined,
-      limit: 1000,
-    }).rows;
-    const batchOf = new Map<string, { statuses: string[]; createdAt: number }>();
-    for (const row of walked) {
-      const prev = batchOf.get(row.batch_id);
-      batchOf.set(row.batch_id, {
-        statuses: [...(prev?.statuses ?? []), row.status],
-        createdAt: Math.max(prev?.createdAt ?? 0, row.created_at),
-      });
-    }
-    const actionable = (id: string) =>
-      (batchOf.get(id)?.statuses ?? []).some((status) => status === "draft" || status === "approved");
-    const desc = (a: string, b: string) => (a < b ? 1 : a > b ? -1 : 0);
-    const newestFirst = (ids: readonly string[]) =>
-      [...ids].sort((a, b) => {
-        const timeCmp = desc(a.slice(0, 10), b.slice(0, 10));
-        if (timeCmp !== 0) return timeCmp;
-        const aCreated = batchOf.get(a)!.createdAt;
-        const bCreated = batchOf.get(b)!.createdAt;
-        if (aCreated !== bCreated) return bCreated - aCreated;
-        return desc(a, b);
-      });
-    const alphaBatches = [batchA.batchId, batchB.batchId, batchCId];
-    const expectedOrder = [
-      ...newestFirst(alphaBatches.filter(actionable)),
-      ...newestFirst(alphaBatches.filter((id) => !actionable(id))),
-      ...newestFirst([batchD.batchId]),
-    ];
-    const textsByBatch = new Map<string, { id: string; text: string }[]>();
-    for (const item of RENDERED) {
-      textsByBatch.set(item.batchId, [...(textsByBatch.get(item.batchId) ?? []), { id: item.id, text: item.text }]);
-    }
-    expectedOrder.forEach((batchId, i) => {
-      const start = html.indexOf(`aria-label="Select all drafts in batch ${shortUlid(batchId)}"`);
-      expect(start, `batch ${batchId} rendered in batch order`).toBeGreaterThan(-1);
-      const end = i + 1 < expectedOrder.length ? html.indexOf(`aria-label="Select all drafts in batch ${shortUlid(expectedOrder[i + 1]!)}"`) : html.length;
-      const texts = textsByBatch
-        .get(batchId)!
-        .sort((a, b) => a.id.localeCompare(b.id))
-        .map((t) => t.text);
-      expectOrder(html.slice(start, end), texts);
-    });
+    // One table per project, both dense: two tables, never one per batch.
+    expect(html.match(/<div class="table-wrap table-dense">/g) ?? []).toHaveLength(2);
+    expect(html.match(/<table>/g) ?? []).toHaveLength(2);
 
-    // The partition pins hardcode the fixture's known statuses instead of re-deriving them: alpha's
-    // actionable batches (A holds a draft and an approved entry, C a draft) render before its
-    // terminal batch (B holds the applied and rejected entries), and zeta's D follows, whatever the
-    // same-ms tie order inside each partition.
-    const mark = (batchId: string) => html.indexOf(`aria-label="Select all drafts in batch ${shortUlid(batchId)}"`);
-    expect(mark(batchA.batchId)).toBeLessThan(mark(batchB.batchId));
-    expect(mark(batchCId)).toBeLessThan(mark(batchB.batchId));
-    // The tiebreak direction, pinned explicitly: batchC's id shares batchA's millisecond prefix
-    // and its entry is backdated, so only the newer batch's created_at can put A first.
-    expect(mark(batchA.batchId)).toBeLessThan(mark(batchCId));
-    expect(mark(batchB.batchId)).toBeLessThan(mark(batchD.batchId));
+    // Each project's table holds exactly its own rows, in the list query's ascending id order.
+    const zetaStart = html.indexOf('<h2 class="section-title project-name">zeta</h2>');
+    const alphaSlice = html.slice(html.indexOf('<h2 class="section-title project-name">alpha</h2>'), zetaStart);
+    const zetaSlice = html.slice(zetaStart);
+    const alphaOrder = RENDERED.filter((item) => item.project === "alpha")
+      .sort((a, b) => a.id.localeCompare(b.id))
+      .map((item) => item.text);
+    expectOrder(alphaSlice, alphaOrder);
+    expect(zetaSlice).toContain("Frequently asked");
+    expect(zetaSlice).not.toContain("Run bun install");
 
-    // A row carries the select-all in its checkbox column, whose header keeps its accessible name;
-    // the title, the file path, and the action slots follow.
-    expect(html).toContain('<span class="sr-only">Select</span>');
-    expect(html).toContain('<input type="checkbox" data-select-all="true" aria-label="Select all drafts in batch');
-    expect(html).toContain(">Title</th>");
-    expect(html).toContain(">Status</th>");
-    expect(html).toContain(">File</th>");
-    expect(html).toContain(">Actions</th>");
+    // The rows carry the four statuses and the file column; a row's title leads and truncates.
     expect(html).toContain('<span class="tag tag-warning"><span class="tag-dot"></span>Draft</span>');
     expect(html).toContain('<span class="tag tag-success"><span class="tag-dot"></span>Approved</span>');
     expect(html).toContain('<span class="tag tag-info"><span class="tag-dot"></span>Applied</span>');
     expect(html).toContain('<span class="tag tag-danger"><span class="tag-dot"></span>Rejected</span>');
-    // The title leads (the anchor text when no title was filed) and truncates with the shipped
-    // utility; the file path is a separate mono column that truncates the same way.
     expect(html).toContain('<span class="entry-title truncate">Run bun install</span>');
     expect(html).toContain('<td class="cell-file truncate">docs/setup.md</td>');
+
+    // The flattened chrome stays gone: no disclosures, no batch ulids, no filers in the list.
+    expect(html.match(/data-collapse-key/g) ?? []).toHaveLength(0);
+    expect(html).not.toContain('<details class="disclosure');
+    expect(html).not.toContain(`>${shortUlid(batchA.batchId)}<`);
+    expect(html).not.toContain(`>${shortUlid(batchB.batchId)}<`);
+    expect(html).not.toContain('<span class="entry-filer">');
+    expect(html).not.toContain("probe-agent");
   });
 
-  test("batch header shows the filer only when every entry agrees on one", async () => {
-    const html = await (await env.get("/")).text();
-
-    // A single-filer batch names that filer once in its header; batchA and batchD are both
-    // probe-agent alone, so each of their headers carries the name exactly once.
-    expect(batchHeader(html, batchA.batchId).match(/probe-agent/g) ?? []).toHaveLength(1);
-    expect(batchHeader(html, batchD.batchId).match(/probe-agent/g) ?? []).toHaveLength(1);
-    // An all-null batch shows no filer slot at all.
-    const cHeader = batchHeader(html, batchCId);
-    expect(cHeader).not.toContain("filer");
-    expect(cHeader).not.toContain("probe-agent");
-  });
-
-  test("a mixed-filer batch names no filer in the header and labels each row inline", async () => {
-    // `status=all`: batchB is the applied + rejected batch, hidden by the default Active view.
+  test("the four stat cards read the whole store, not the filtered rows", async () => {
+    // The fixture ends at 3 drafts, 1 approved, 1 applied, 1 rejected: the statuses were moved
+    // through the store above, so these are hand-counted literals, not a re-derivation.
     const html = await (await env.get("/?status=all")).text();
+    for (const [label, value] of [
+      ["Draft", 3],
+      ["Approved", 1],
+      ["Applied", 1],
+      ["Rejected", 1],
+    ] as const) {
+      expect(html).toContain(
+        `<div class="stat-card"><div class="stat-label">${label}</div><div class="stat-value num">${value}</div></div>`,
+      );
+    }
 
-    // batchB holds two filers (probe-agent and other-agent): the header names neither.
-    const bHeader = batchHeader(html, batchB.batchId);
-    expect(bHeader).not.toContain("probe-agent");
-    expect(bHeader).not.toContain("other-agent");
-
-    // Each row names its own filer inline beside the file basename.
-    expect(html).toContain('<span class="entry-filer"> · other-agent</span>');
-    expect(html).toContain('<span class="entry-filer"> · probe-agent</span>');
+    // A filter matching one row leaves the cards on the store's totals.
+    const filtered = await (await env.get("/?q=wording")).text();
+    expect(filtered).toContain("Run bun install");
+    expect(filtered).toContain('<div class="stat-card"><div class="stat-label">Draft</div><div class="stat-value num">3</div></div>');
+    expect(filtered).not.toContain("The cache lives at");
   });
 
-  test("a batch mixing a filer with an unfiled entry labels only the filed row", async () => {
-    const mixed = serveApp();
+  test("the sidebar badge counts the store's drafts", async () => {
+    // The badge rides the shell, so it is store-wide whatever the URL filters.
+    const all = await (await env.get("/?status=all")).text();
+    expect(all).toContain('<span class="nav-badge" id="entries-badge">3</span>');
+    const approved = await (await env.get("/?status=approved")).text();
+    expect(approved).toContain('<span class="nav-badge" id="entries-badge">3</span>');
+  });
+
+  test("renders each entry's filed time as an absolute short stamp", async () => {
+    const stamped = serveApp();
     try {
-      const filed = fileEntries(mixed.store, "alpha", "solo-agent", [
-        draft({ file: "docs/a.md", anchorText: "a", anchorHash: "ha", fileHash: "fa", agentDraft: "A note." }),
-        draft({ file: "docs/b.md", anchorText: "b", anchorHash: "hb", fileHash: "fb", agentDraft: "B note." }),
+      const filed = fileEntries(stamped.store, "alpha", "probe-agent", [
+        draft({ file: "docs/time.md", anchorText: "time", anchorHash: "h-time", fileHash: "f-time", agentDraft: "A note." }),
       ]);
-      // Null one entry's filer so the batch holds a filer and an unfiled entry: not every entry agrees.
-      mixed.store.db.run("UPDATE entries SET filed_by = NULL WHERE id = ?", [filed.results[1]!.id]);
-      const html = await (await mixed.get("/")).text();
-      const header = batchHeader(html, filed.batchId);
-      expect(header).not.toContain("solo-agent");
-      expect(html).toContain('<span class="entry-filer"> · solo-agent</span>');
+      // A hand-set epoch makes the expected text a literal, not the format's own recomputation.
+      stamped.store.db.run("UPDATE entries SET created_at = 0 WHERE id = ?", [filed.results[0]!.id]);
+      const html = await (await stamped.get("/")).text();
+      expect(html).toContain(">Filed</th>");
+      expect(html).toContain(
+        '<td class="cell-time"><time class="num" datetime="1970-01-01T00:00:00.000Z">1970-01-01 00:00</time></td>',
+      );
     } finally {
-      mixed.close();
+      stamped.close();
     }
   });
 
-  test("adds a per-batch select-all and keeps the approve button static and enabled without JS", async () => {
-    // `status=all` so all four batches render; the default Active view hides the terminal batch.
+  test("adds a per-project select-all and keeps the approve button static and enabled without JS", async () => {
+    // `status=all` so both projects render; the default Active view hides the terminal rows.
     const html = await (await env.get("/?status=all")).text();
 
-    // One select-all per batch (4), and it never carries `name`, so it is not submitted as an
-    // entry id — the draft checkboxes alone post as `id`.
-    expect(html.match(/data-select-all/g) ?? []).toHaveLength(4);
+    // One select-all per project table (2), labelled by the project, and it never carries `name`,
+    // so it is not submitted as an entry id — the draft checkboxes alone post as `id`.
+    expect(html.match(/data-select-all/g) ?? []).toHaveLength(2);
+    expect(html).toContain('data-select-all="true" aria-label="Select all drafts in alpha"');
+    expect(html).toContain('data-select-all="true" aria-label="Select all drafts in zeta"');
     expect(html).not.toContain('name="id" data-select-all');
 
-    // Only draft rows carry a selectable checkbox: batchA has one draft, batchB none (applied +
-    // rejected), and batchC and batchD one each.
+    // Only draft rows carry a selectable checkbox: alpha holds two drafts and zeta one; the
+    // applied and rejected rows in alpha carry none.
     expect(html.match(/type="checkbox" name="id"/g) ?? []).toHaveLength(3);
 
     // The no-JS approve button keeps its static label and no `disabled` attribute; the live count
@@ -404,20 +355,6 @@ describe("dashboard entry list", () => {
     expect(html).toContain(
       'class="btn btn-fill btn-sm" type="submit" hx-disabled-elt="this">Approve selected</button>',
     );
-  });
-
-  test("every project section and batch ships a disclosure, expanded and with no JS state", async () => {
-    const html = await (await env.get("/")).text();
-
-    // Two project disclosures plus three batch disclosures: the terminal batch is hidden by default.
-    expect(html.match(/data-collapse-key/g) ?? []).toHaveLength(5);
-    // The server renders everything expanded; dashboard.js owns the collapsed state off the
-    // details' native open attribute.
-    expect(html.match(/<details class="disclosure/g) ?? []).toHaveLength(5);
-    expect(html.match(/open=""/g) ?? []).toHaveLength(5);
-    expect(html).not.toContain('class="table-wrap" hidden');
-    expect(html).toContain('data-collapse-key="project:alpha"');
-    expect(html).toContain(`aria-label="Select all drafts in batch ${shortUlid(batchA.batchId)}"`);
   });
 
   test("renders three icon action slots per status", async () => {
@@ -618,10 +555,17 @@ describe("dashboard entry list", () => {
     const html = await res.text();
     expect(html).toContain("Run bun install");
     expect(html).toContain("Showing 1 of 6 entries");
-    // A fragment is the list region only, not the page shell.
+    // A fragment is the list region plus the out-of-band shell pieces, never the page shell.
     expect(html).not.toContain("<!doctype html>");
     expect(html).not.toContain('id="filters"');
-    expect(html).not.toContain('class="navbar"');
+    expect(html).not.toContain('class="sidebar"');
+    expect(html).not.toContain("<main");
+    // The stat cards, the badge, and the banner sit outside the main swap target, so the
+    // fragment replaces them out of band rather than leaving them stale.
+    expect(html).toContain('<span class="nav-badge" id="entries-badge" hx-swap-oob="true">3</span>');
+    expect(html).toContain('<div id="page-banner" hx-swap-oob="true"></div>');
+    expect(html).toContain('<div class="stat-grid" id="page-stats" hx-swap-oob="true">');
+    expect(html).toContain('<div class="stat-card"><div class="stat-label">Draft</div><div class="stat-value num">3</div></div>');
   });
 
   test("a titled row keeps its anchor text reachable, and never as a title attribute", async () => {
@@ -656,23 +600,24 @@ describe("dashboard entry list", () => {
     expect(js).toContain("wireRetry");
     expect(js).toContain('button.textContent = "Retry"');
     // The failure announces through the shipped toast, the system's own transient surface.
-    expect(js).toContain('import { initTables, showToast } from "./ui.js";');
+    expect(js).toContain('import { initDismiss, initTables, showToast } from "./ui.js";');
     expect(js).toContain('showToast("danger"');
     expect(js).toContain("htmx:responseError");
     expect(js).toContain("htmx:sendError");
   });
 
-  test("wires the collapse disclosures in dashboard.js", async () => {
-    // String-level pin only: the suite has no DOM harness, so the applying and persisting of the
-    // collapsed state is covered by the presence of its hooks, not by executing them. The
-    // details' toggle event does not bubble, so the capture flag is load-bearing.
+  test("re-wires a banner's dismiss after every htmx swap", async () => {
+    // String-level pin only: the suite has no DOM harness, so the wiring is covered by its hooks.
+    // ui.js's one dismiss sweep runs at boot; a banner the fragment replaces out of band arrives
+    // unwired without this listener.
     const js = await Bun.file(
       new URL("../../src/dashboard/static/dashboard.js", import.meta.url),
     ).text();
-    expect(js).toContain("data-collapse-key");
-    expect(js).toContain('"toggle"');
-    expect(js).toContain("localStorage");
-    expect(js).toContain("htmx:afterSwap");
+    expect(js).toContain('document.addEventListener("htmx:afterSwap", initDismiss)');
+    expect(js).toContain('document.addEventListener("htmx:afterSwap", initTables)');
+    // The disclosure state machine left with the disclosures.
+    expect(js).not.toContain("data-collapse-key");
+    expect(js).not.toContain("reviewzy.list-collapsed");
   });
 
   test("serves static assets with the pinned vendor versions", async () => {

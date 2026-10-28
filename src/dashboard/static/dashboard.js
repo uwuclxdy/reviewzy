@@ -1,8 +1,9 @@
 // reviewzy dashboard behaviors. Loads as a module after htmx.min.js.
-// The navbar's ink and dock state, the selects, the tabs, the drawer, the theme toggle, the
-// toasts and the table header label boxes come from ui.js; initTables is re-run after every
-// htmx swap so a freshly rendered table head gets its boxes and its selection state machine.
-import { initTables, showToast } from "./ui.js";
+// The sidebar's rail and drawer, the selects, the tabs, the theme toggle, the toasts and the
+// table header label boxes come from ui.js; initTables is re-run after every htmx swap so a
+// freshly rendered table head gets its boxes and its selection state machine, and initDismiss
+// re-wires a banner the swap replaced out of band.
+import { initDismiss, initTables, showToast } from "./ui.js";
 
 (() => {
   "use strict";
@@ -184,58 +185,8 @@ import { initTables, showToast } from "./ui.js";
   document.addEventListener("table:selection", updateApproveButton);
   document.addEventListener("htmx:afterSwap", updateApproveButton);
 
-  // --- Collapsible project sections and batches ---
-  // The server renders every section and batch open; JS collapses the ones this viewer collapsed
-  // before, from localStorage, and persists each toggle off the details' own toggle event (which
-  // does not bubble, hence the capture). Re-applied after every swap because a filter or action
-  // round replaces the whole list region. Without JS everything stays open.
-  const COLLAPSE_STORAGE = "reviewzy.list-collapsed";
-
-  function readCollapsed() {
-    try {
-      const raw = localStorage.getItem(COLLAPSE_STORAGE);
-      const parsed = raw ? JSON.parse(raw) : {};
-      // A parsed array is not a key map: property sets on it would survive only until the next
-      // JSON.stringify, which drops them, so persistence would silently stop.
-      return typeof parsed === "object" && parsed !== null && !Array.isArray(parsed) ? parsed : {};
-    } catch {
-      return {};
-    }
-  }
-
-  function persistCollapsed(key, collapsed) {
-    const map = readCollapsed();
-    if (collapsed) {
-      map[key] = true;
-    } else {
-      delete map[key];
-    }
-    try {
-      localStorage.setItem(COLLAPSE_STORAGE, JSON.stringify(map));
-    } catch {
-      // Storage can be unavailable (private windows); the toggle still works for the page.
-    }
-  }
-
-  function applyCollapseState() {
-    const collapsed = readCollapsed();
-    for (const details of document.querySelectorAll("details[data-collapse-key]")) {
-      details.open = collapsed[details.dataset.collapseKey ?? ""] !== true;
-    }
-  }
-
-  document.addEventListener(
-    "toggle",
-    (event) => {
-      if (!(event.target instanceof HTMLDetailsElement)) return;
-      const key = event.target.dataset.collapseKey;
-      if (!key) return;
-      persistCollapsed(key, !event.target.open);
-    },
-    true,
-  );
-
-  applyCollapseState();
-  document.addEventListener("htmx:afterSwap", applyCollapseState);
   document.addEventListener("htmx:afterSwap", initTables);
+  // The list fragment replaces the page banner out of band; a banner the swap brought in needs
+  // its dismiss control wired, since ui.js's one sweep ran at boot.
+  document.addEventListener("htmx:afterSwap", initDismiss);
 })();

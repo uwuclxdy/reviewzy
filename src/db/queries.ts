@@ -155,6 +155,20 @@ export function countEntries(store: Store): number {
 }
 
 /**
+ * The store's counts per status, zero-filled for every status the schema's CHECK admits. The
+ * dashboard's four stat cards read one number each; the sidebar's badge reads `draft`.
+ */
+export function countEntriesByStatus(store: Store): Record<EntryStatus, number> {
+  const rows = store.db.query("SELECT status, COUNT(*) AS n FROM entries GROUP BY status").all() as {
+    status: EntryStatus;
+    n: number;
+  }[];
+  const counts: Record<EntryStatus, number> = { draft: 0, approved: 0, applied: 0, rejected: 0 };
+  for (const row of rows) counts[row.status] = row.n;
+  return counts;
+}
+
+/**
  * `INSERT ... ON CONFLICT DO NOTHING` followed by the read: two calls racing to auto-create the
  * same slug both succeed, and the second takes the first's id rather than dying on `UNIQUE(slug)`.
  * Both statements run inside this connection's transaction, and sqlite serializes writers, so no

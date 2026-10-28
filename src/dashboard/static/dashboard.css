@@ -1,28 +1,45 @@
 /* ============================================================
    reviewzy — dashboard page styles
-   The page layer: layout, sizing, and the htmx behavior hooks.
-   Every component surface is a shipped class; nothing here repaints one.
+   The page layer: the sidebar shell, the list's own rhythm, and the
+   htmx behavior hooks. Every component surface is a shipped class;
+   nothing here repaints one.
    ============================================================ */
 
-/* The one override that retunes the column: the navbar's card and inner
-   column, the page width and this shell all read it. */
+/* ---- The shell ----
+   The sidebar is a grid track, so the page column follows the animated
+   column width. A fixed 252px track would leave a 186px gap around the
+   66px rail. */
+.layout { display: grid; grid-template-columns: auto minmax(0, 1fr); min-height: 100vh; }
+
 :root { --page-w: 1400px; }
 
-/* ---- Page shell (navbar shell) ----
-   .page carries inline padding only; the block rhythm is the page's own. */
+/* A named deviation from the sidebar shell's no-cap rule: the content sits in a centred,
+   capped column, so a wide viewport holds slack on both sides instead of running
+   full-bleed to the main track's edge. min-width keeps the grid item from growing to
+   its widest table's min-content width, which would widen the document at 390. */
+.layout > .page { max-width: var(--page-w); margin-inline: auto; min-width: 0; }
+
+/* .page carries inline padding only; the block rhythm is the page's own. */
 .page { padding-top: var(--space-10); padding-bottom: var(--space-10); }
 
-/* The shell picks one mobile pattern: the topbar and drawer carry the nav
-   under 768px, so the desktop navbar hides there; above it the drawer is
-   not shown at all. */
-@media (max-width: 768px) {
-  .navbar { display: none; }
-}
+/* The rail's footer holds one control: the theme toggle keeps the slot, and
+   sign-out returns with the expanded column. */
 @media (min-width: 769px) {
-  .sidebar { display: none; }
+  .sidebar.rail .sidebar-user form { display: none; }
 }
-/* The drawer's action foot holds the theme toggle and sign-out as bare buttons. */
-.drawer-foot { padding: var(--space-3); }
+
+/* ---- List page rhythm: header, banner, stats, then the queue section ---- */
+/* The banner is the component's card form here, not the bleed form: it sits on
+   the page column under the header. */
+#page-banner > .banner { margin-bottom: var(--space-10); }
+
+.stat-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--space-4);
+  margin-bottom: var(--space-16);
+}
+@media (max-width: 768px) { .stat-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 
 /* ---- Entries region ---- */
 /* The loading strip is hidden until htmx marks the request in flight (hx-indicator adds the
@@ -36,10 +53,10 @@
 
 .partial-header { margin-bottom: var(--space-4); }
 
-/* ---- Batch approve bar ----
-   Sticks just below the navbar so the approve button stays reachable while rows scroll under
-   it; the page-toned ground stops table rows showing through. The z slot is the section
-   header's, the ladder's nearest pinned-page-furniture neighbour under the navbar. */
+/* ---- Bulk approve ----
+   Sticks under the shell's top edge so the action stays reachable while rows scroll;
+   its ground is the page's own, and the capped page column keeps the bar (and its
+   background) inside the content width instead of painting a band across the slack. */
 .batch-bar {
   position: sticky;
   top: var(--pin-top);
@@ -49,11 +66,11 @@
   background: var(--bg);
 }
 
-/* ---- Project groups and batches: disclosures on the page ----
-   The summary is the shipped flex row (chevron, gap, hover fill); these rules size the
-   group's own content inside it. */
-.project-group { margin-bottom: var(--space-10); }
-.batch { margin-bottom: var(--space-6); }
+/* ---- Project sections: one heading and one table each ----
+   Batches stay a data concept behind the row selection and the one approve
+   action; nothing on the page discloses or groups by them. */
+.project-section { margin-bottom: var(--space-10); }
+.project-head { display: flex; align-items: baseline; flex-wrap: wrap; gap: var(--space-3); }
 .project-name {
   font: 500 var(--t-5)/1.2 var(--font-mono);
   letter-spacing: -0.01em;
@@ -64,13 +81,14 @@
 }
 
 /* ---- Entry table cells ----
-   The table lays out fixed with a colgroup so the title column takes the remainder and the row
-   never overflows; select, status, file, and actions are the fixed columns. The status pill has
+   The table lays out with a colgroup so the title column takes the remainder and the row never
+   overflows; select, status, file, filed, and actions are the fixed columns. The status pill has
    its own column, so the title truncates at one consistent point and the pill stays tight.
    Truncation itself is the shipped .truncate utility. */
 .col-select { width: 48px; }
 .col-status { width: 106px; }
 .col-file { width: 200px; }
+.col-filed { width: 150px; }
 .col-actions { width: 120px; }
 .entry-head {
   display: flex;
@@ -79,23 +97,31 @@
   min-width: 0;
 }
 .entry-title { font: 400 var(--t-3)/1.4 var(--font-sans); color: var(--text); }
-.entry-filer {
-  flex-shrink: 0;
-  font-size: var(--t-2);
-  color: var(--text-4);
-  white-space: nowrap;
-}
 .cell-file {
   font-family: var(--font-mono);
   font-size: var(--t-2);
   color: var(--text-4);
 }
+.cell-time {
+  font-family: var(--font-mono);
+  font-size: var(--t-2);
+  color: var(--text-4);
+  white-space: nowrap;
+}
 .cell-actions { white-space: nowrap; display: inline-flex; align-items: center; gap: var(--space-1); }
 .table-wrap tbody td.cell-actions { padding-left: var(--space-1); padding-right: var(--space-1); }
 
-/* ---- Notices ---- */
-.notice-list { margin: 0; padding-left: var(--space-5); display: flex; flex-direction: column; gap: var(--space-1); }
-.callout-content { min-width: 0; }
+/* ---- Notices ----
+   The refusal list rides inside the page banner's body, in the banner text's voice. */
+.notice-list {
+  margin: var(--space-2) 0 0;
+  padding-left: var(--space-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  font-size: var(--t-3);
+  color: var(--text-2);
+}
 
 /* ---- Empty-state actions: this page's filter-miss state holds two ways onward ---- */
 .empty-actions { display: flex; gap: var(--space-2); justify-content: center; }
@@ -142,14 +168,15 @@
 .editor-actions .htmx-indicator.htmx-request { display: inline-flex; align-items: center; gap: var(--space-2); font-size: var(--t-2); color: var(--text-3); }
 
 /* ---- Editor prev/next rails ----
-   One full-height fixed strip per side, below the navbar, so the previous and next entries are
-   a single click away while reading. The glyph is the icon button's 15px box; the strip sits
-   inside the page's inline padding, clear of content. */
+   One full-height fixed strip per side, so the previous and next entries are a single click away
+   while reading. Its width is the page's own inline padding, so it sits in that gutter and never
+   covers the column; where the column is capped the surrounding slack keeps it clear anyway.
+   Hidden below 900px, where the sidebar's drawer and the stacked editor own the narrow viewport. */
 .editor-nav-btn {
   position: fixed;
   top: var(--pin-top);
   bottom: 0;
-  width: 44px;
+  width: var(--space-8);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -158,7 +185,8 @@
   z-index: 5;
   transition: background var(--dur-tint) var(--ease), color var(--dur-tint) var(--ease);
 }
-.editor-nav-prev { left: 0; }
+.editor-nav-prev { left: 252px; }
+.sidebar.rail ~ .page .editor-nav-prev { left: 66px; }
 .editor-nav-next { right: 0; }
 .editor-nav-btn:hover { background: var(--surface-2); color: var(--text); }
 .editor-nav-btn.is-disabled { color: var(--text-disabled); pointer-events: none; }

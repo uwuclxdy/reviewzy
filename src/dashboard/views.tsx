@@ -1,12 +1,14 @@
 /** @jsxImportSource hono/jsx */
 import { readFileSync } from "node:fs";
 import { raw } from "hono/html";
+import type { Child } from "hono/jsx";
 import type { JSX } from "hono/jsx/jsx-runtime";
 import { listRevisions, parseConstraints, parseEntryImages } from "../db/human-save.ts";
 import type { Constraints, HumanSaveRefusal, RevisionRow, TransitionRefusal } from "../db/human-save.ts";
 import {
   adjacentEntryIds,
   countEntries,
+  countEntriesByStatus,
   listEntries,
   listProjects,
   projectIdBySlug,
@@ -71,11 +73,12 @@ const STATUS_OPTIONS: readonly { value: string; label: string }[] = [
   ...STATUSES.map((status) => ({ value: status, label: STATUS_LABEL[status] })),
 ];
 
-type ProjectBatch = { id: string; entries: EntryRow[] };
-type ProjectGroup = { slug: string; batches: ProjectBatch[] };
+type ProjectGroup = { slug: string; entries: EntryRow[] };
 
 export type ListViewModel = {
   readonly total: number;
+  /** The whole store's counts per status; the four stat cards read these, never the filtered rows. */
+  readonly counts: Record<EntryStatus, number>;
   readonly shown: number;
   readonly groups: readonly ProjectGroup[];
   readonly projects: readonly { id: string; slug: string }[];
@@ -111,63 +114,19 @@ function allEntries(
 }
 
 /**
- * Groups the filtered rows by project (slug order) then batch; within a batch the rows keep the
- * list query's ascending id order. Within a project, batches split into two partitions: any batch
- * holding a draft or approved entry is actionable and leads, terminal-only batches (applied and
- * rejected) follow. Each partition sorts newest batch first, with a deterministic order for
- * batches minted in the same millisecond, so the same filter always renders the same page.
+ * Groups the filtered rows by project, projects in slug order. Within a project the rows keep
+ * the list query's ascending id order: ulids sort chronologically, so the oldest filing leads.
  */
 function groupRows(rows: readonly EntryRow[], slugOf: Map<string, string>): ProjectGroup[] {
   const byProject = new Map<string, EntryRow[]>();
   for (const row of rows) {
     byProject.set(row.project_id, [...(byProject.get(row.project_id) ?? []), row]);
   }
-  const projectIds = [...byProject.keys()].sort((a, b) => (slugOf.get(a) ?? a).localeCompare(slugOf.get(b) ?? b));
-  return projectIds.map((projectId) => {
-    const projectRows = byProject.get(projectId)!;
-    const byBatch = new Map<string, EntryRow[]>();
-    for (const row of projectRows) {
-      byBatch.set(row.batch_id, [...(byBatch.get(row.batch_id) ?? []), row]);
-    }
-    const batches = [...byBatch.keys()].map((batchId) => ({ id: batchId, entries: byBatch.get(batchId)! }));
-    const actionable = batches.filter(isActionableBatch).sort(newestBatchFirst);
-    const terminal = batches.filter((batch) => !isActionableBatch(batch)).sort(newestBatchFirst);
-    return { slug: slugOf.get(projectId) ?? projectId, batches: [...actionable, ...terminal] };
-  });
-}
-
-/** A batch is actionable when any of its entries still needs a human: draft or approved. */
-function isActionableBatch(batch: ProjectBatch): boolean {
-  return batch.entries.some((entry) => entry.status === "draft" || entry.status === "approved");
-}
-
-/** Code-unit descending comparison: ulids are fixed-length Crockford base32, so this equals time order. */
-function compareDesc(a: string, b: string): number {
-  return a < b ? 1 : a > b ? -1 : 0;
-}
-
-/** The newest `created_at` in a batch, walked: a batch can hold thousands of entries, and a spread would overflow the call stack. */
-function maxCreatedAt(batch: ProjectBatch): number {
-  let max = 0;
-  for (const entry of batch.entries) {
-    if (entry.created_at > max) max = entry.created_at;
-  }
-  return max;
-}
-
-/**
- * Newest batch first. Batch ulids share a millisecond timestamp prefix, so a descending id is
- * newest-first; batches minted in the same millisecond tie on that prefix, and the batch's
- * newest `created_at` breaks the tie before the id itself, so a same-ms burst still renders in
- * one fixed order.
- */
-function newestBatchFirst(a: ProjectBatch, b: ProjectBatch): number {
-  const timeCmp = compareDesc(a.id.slice(0, 10), b.id.slice(0, 10));
-  if (timeCmp !== 0) return timeCmp;
-  const aCreated = maxCreatedAt(a);
-  const bCreated = maxCreatedAt(b);
-  if (aCreated !== bCreated) return bCreated - aCreated;
-  return compareDesc(a.id, b.id);
+  const groups = [...byProject].map(([projectId, projectRows]) => ({
+    slug: slugOf.get(projectId) ?? projectId,
+    entries: projectRows,
+  }));
+  return groups.sort((a, b) => a.slug.localeCompare(b.slug));
 }
 
 function loadList(store: Store, params: ListParams): ListViewModel {
@@ -193,6 +152,7 @@ function loadList(store: Store, params: ListParams): ListViewModel {
   const slugOf = new Map(projects.map((project) => [project.id, project.slug]));
   return {
     total: countEntries(store),
+    counts: countEntriesByStatus(store),
     shown: rows.length,
     groups: groupRows(rows, slugOf),
     projects,
@@ -228,13 +188,8 @@ function hasOwnTitle(entry: EntryRow): boolean {
   return title !== undefined && title !== "";
 }
 
-/** The batch ulid shortened to head+tail; it names each batch's select-all and its summary row. */
-function shortUlid(id: string): string {
-  return `${id.slice(0, 6)}…${id.slice(-6)}`;
-}
-
 /** The section the current page belongs to, marking the matching nav link. */
-type NavSection = "entries" | "style-guide" | "none";
+type NavSection = "entries" | "style-guide";
 
 /** The icon sprite, pasted into every full page's body as its first child, read off the vendored file so the two can never drift. */
 const ICON_SPRITE = readFileSync(new URL("./static/icons.svg", import.meta.url), "utf8");
@@ -249,11 +204,37 @@ function ThemeToggle() {
   );
 }
 
-function Navbar({ signedIn, active }: { signedIn: boolean; active: NavSection }) {
+/**
+ * The queue's draft count. The htmx list fragment re-renders it out of band, so an action round
+ * that moves a draft cannot leave the sidebar stale.
+ */
+function DraftBadge({ count, oob = false }: { count: number; oob?: boolean }) {
+  return (
+    <span class="nav-badge" id="entries-badge" hx-swap-oob={oob ? "true" : undefined}>
+      {count}
+    </span>
+  );
+}
+
+/**
+ * The app shell every full page shares: the mobile topbar and overlay outside the grid, then the
+ * sidebar and the page column. Under 768px the same `.sidebar` element is the drawer, which is
+ * why there is no second navigation tree and why ui.js's drawer and rail controllers both act on
+ * this one node.
+ */
+function Shell({
+  signedIn,
+  active,
+  draftCount,
+  children,
+}: {
+  signedIn: boolean;
+  active: NavSection;
+  draftCount: number;
+  children: Child;
+}) {
   return (
     <>
-      {/* The mobile shell: topbar and drawer carry the nav under 768px, where the desktop
-          navbar hides (dashboard.css). ui.js's initDrawer wires the hamburger. */}
       <div class="mobile-topbar">
         <div class="logo-name">{NAME}</div>
         <button
@@ -268,47 +249,44 @@ function Navbar({ signedIn, active }: { signedIn: boolean; active: NavSection })
         </button>
       </div>
       <div class="sidebar-overlay" id="sidebar-overlay"></div>
-      <nav class="sidebar" id="sidebar" aria-label="Dashboard">
-        <div class="sidebar-nav">
-          <div class="nav-group">
-            <div class="nav-group-label">Dashboard</div>
-            <a
-              class={`nav-item${active === "entries" ? " active" : ""}`}
-              href="/"
-              aria-current={active === "entries" ? "true" : undefined}
+      <div class="layout">
+        <nav class="sidebar" id="sidebar" aria-label="Dashboard">
+          <div class="sidebar-logo">
+            <div><div class="logo-name">{NAME}</div></div>
+            <button
+              class="sidebar-collapse"
+              type="button"
+              aria-controls="sidebar"
+              aria-expanded="true"
+              aria-label="Collapse sidebar"
             >
-              <svg aria-hidden="true"><use href="#i-folder" /></svg>
-              <span>Entries</span>
-            </a>
-            <a
-              class={`nav-item${active === "style-guide" ? " active" : ""}`}
-              href="/style-guide"
-              aria-current={active === "style-guide" ? "true" : undefined}
-            >
-              <svg aria-hidden="true"><use href="#i-file" /></svg>
-              <span>Style guide</span>
-            </a>
+              <svg aria-hidden="true"><use href="#i-chevron-left" /></svg>
+            </button>
           </div>
-        </div>
-        <div class="toolbar toolbar-center drawer-foot">
-          <ThemeToggle />
-          {signedIn ? (
-            <form method="post" action="/logout">
-              <button class="btn btn-secondary btn-sm" type="submit">Sign out</button>
-            </form>
-          ) : null}
-        </div>
-      </nav>
-      <nav class="navbar">
-        <div class="navbar-inner">
-          <div class="navbar-brand">
-            <div class="logo-name">{NAME}</div>
+          <div class="sidebar-nav">
+            <div class="nav-group">
+              <div class="nav-group-label">Queue</div>
+              <a
+                class={`nav-item${active === "entries" ? " active" : ""}`}
+                href="/"
+                aria-current={active === "entries" ? "true" : undefined}
+              >
+                <span>Entries</span>
+                <DraftBadge count={draftCount} />
+              </a>
+            </div>
+            <div class="nav-group">
+              <div class="nav-group-label">Content</div>
+              <a
+                class={`nav-item${active === "style-guide" ? " active" : ""}`}
+                href="/style-guide"
+                aria-current={active === "style-guide" ? "true" : undefined}
+              >
+                <span>Style guide</span>
+              </a>
+            </div>
           </div>
-          <div class="navbar-nav" id="navbar-nav">
-            <a class={`navbar-link${active === "entries" ? " active" : ""}`} href="/">Entries</a>
-            <a class={`navbar-link${active === "style-guide" ? " active" : ""}`} href="/style-guide">Style guide</a>
-          </div>
-          <div class="navbar-actions">
+          <div class="sidebar-user">
             <ThemeToggle />
             {signedIn ? (
               <form method="post" action="/logout">
@@ -316,22 +294,42 @@ function Navbar({ signedIn, active }: { signedIn: boolean; active: NavSection })
               </form>
             ) : null}
           </div>
-        </div>
-      </nav>
+        </nav>
+        <main class="page">{children}</main>
+      </div>
     </>
   );
 }
 
-function PageHeader({ total }: { total: number }) {
+function PageHeader({ total, projects }: { total: number; projects: number }) {
   return (
     <header class="page-header">
       <div class="page-header-body">
         <h1 class="page-title">Entries</h1>
         <div class="page-meta">
           <span class="page-meta-item num">{total} {total === 1 ? "entry" : "entries"}</span>
+          <span class="page-meta-item num">{projects} {projects === 1 ? "project" : "projects"}</span>
         </div>
       </div>
     </header>
+  );
+}
+
+/**
+ * The four status totals off the store's one grouped read. In the htmx fragment it rides an
+ * out-of-band swap: the list region is the only main target, and a card left outside it would
+ * show the pre-action statuses until the next navigation.
+ */
+function StatsGrid({ counts, oob = false }: { counts: Record<EntryStatus, number>; oob?: boolean }) {
+  return (
+    <div class="stat-grid" id="page-stats" hx-swap-oob={oob ? "true" : undefined}>
+      {STATUSES.map((status) => (
+        <div class="stat-card" key={status}>
+          <div class="stat-label">{STATUS_LABEL[status]}</div>
+          <div class="stat-value num">{counts[status]}</div>
+        </div>
+      ))}
+    </div>
   );
 }
 
@@ -442,40 +440,55 @@ function FilterForm({ vm }: { vm: ListViewModel }) {
 }
 
 /**
- * What an action round settles into, rendered above the list region: a single refusal (one entry
- * could not move, why, and the fix) or the batch report (how many moved, each refusal named).
- * The route layer builds these from the store's outcomes; the view owns the shapes.
+ * What an action round settles into, rendered as the page's one banner: a single refusal (one
+ * entry could not move, why, and the fix) or the batch report (how many moved, each refusal
+ * named). The route layer builds these from the store's outcomes; the view owns the shapes.
  */
 export type ListNotice =
   | { readonly kind: "refusal"; readonly title: string; readonly message: string }
   | { readonly kind: "batch"; readonly approved: number; readonly total: number; readonly refused: readonly string[] };
 
-/** The settled rendering of a notice: a success panel when a batch fully moved, an alert otherwise. */
-function NoticeCallout({ notice }: { notice: ListNotice }) {
+/** The banner's one dismiss control; ui.js's initDismiss removes the banner it belongs to. */
+function BannerDismiss() {
+  return (
+    <button type="button" class="close" aria-label="Dismiss">
+      <svg aria-hidden="true"><use href="#i-x" /></svg>
+    </button>
+  );
+}
+
+/** An action round's settled outcome as the page's one banner: a success panel when a batch fully moved, an alert otherwise. */
+function NoticeBanner({ notice }: { notice: ListNotice }) {
   if (notice.kind === "refusal") {
-    return <DangerCallout title={notice.title} body={notice.message} />;
+    return (
+      <div class="banner banner-danger" role="alert">
+        <span class="banner-icon"><svg aria-hidden="true"><use href="#i-error" /></svg></span>
+        <div class="banner-body">
+          <div class="banner-title">{notice.title}</div>
+          <div class="banner-text">{notice.message}</div>
+        </div>
+        <BannerDismiss />
+      </div>
+    );
   }
   if (notice.refused.length === 0) {
     return (
-      <div class="callout callout-success" role="status">
-        <div class="callout-icon">
-          <svg aria-hidden="true"><use href="#i-success" /></svg>
-        </div>
-        <div class="callout-content">
-          <div class="callout-title">
+      <div class="banner banner-success" role="status">
+        <span class="banner-icon"><svg aria-hidden="true"><use href="#i-success" /></svg></span>
+        <div class="banner-body">
+          <div class="banner-title">
             Approved {notice.approved} {notice.approved === 1 ? "entry" : "entries"}
           </div>
         </div>
+        <BannerDismiss />
       </div>
     );
   }
   return (
-    <div class="callout callout-danger" role="alert">
-      <div class="callout-icon">
-        <svg aria-hidden="true"><use href="#i-error" /></svg>
-      </div>
-      <div class="callout-content">
-        <div class="callout-title">
+    <div class="banner banner-danger" role="alert">
+      <span class="banner-icon"><svg aria-hidden="true"><use href="#i-error" /></svg></span>
+      <div class="banner-body">
+        <div class="banner-title">
           Approved {notice.approved} of {notice.total} entries
         </div>
         <ul class="notice-list">
@@ -484,38 +497,42 @@ function NoticeCallout({ notice }: { notice: ListNotice }) {
           ))}
         </ul>
       </div>
+      <BannerDismiss />
     </div>
   );
 }
 
-/** The settled list region: success, empty, or partial, with an action round's notice on top. The loading and error states are client-side. */
-function ListRegion({ vm, notice }: { vm: ListViewModel; notice: ListNotice | undefined }) {
+/** The page's one banner slot; the htmx fragment replaces it out of band so a round can set or clear it. */
+function PageBanner({ notice, oob = false }: { notice: ListNotice | undefined; oob?: boolean }) {
+  return (
+    <div id="page-banner" hx-swap-oob={oob ? "true" : undefined}>
+      {notice !== undefined ? <NoticeBanner notice={notice} /> : null}
+    </div>
+  );
+}
+
+/** The settled list region: the partial count and the tables, or one of the three empty states. The loading and error states are client-side. */
+function ListRegion({ vm }: { vm: ListViewModel }) {
   if (vm.shown === 0) {
     // Zero entries at all is "no entries yet" even under a filter: nothing exists to filter, and
     // the empty state explains how entries get here. A store with entries but no matches is either
     // a filter miss or the default Active view over a store full of applied and rejected entries.
-    return (
-      <>
-        {notice !== undefined ? <NoticeCallout notice={notice} /> : null}
-        {vm.total === 0 ? (
-          <EmptyAll />
-        ) : vm.filtersActive ? (
-          <EmptyMatch
-            revealAllHref={
-              vm.hiddenByActiveView
-                ? `/?q=${encodeURIComponent(vm.q)}&project=${encodeURIComponent(vm.project)}&status=all`
-                : undefined
-            }
-          />
-        ) : (
-          <EmptyActive />
-        )}
-      </>
+    return vm.total === 0 ? (
+      <EmptyAll />
+    ) : vm.filtersActive ? (
+      <EmptyMatch
+        revealAllHref={
+          vm.hiddenByActiveView
+            ? `/?q=${encodeURIComponent(vm.q)}&project=${encodeURIComponent(vm.project)}&status=all`
+            : undefined
+        }
+      />
+    ) : (
+      <EmptyActive />
     );
   }
   return (
     <>
-      {notice !== undefined ? <NoticeCallout notice={notice} /> : null}
       {vm.filtersActive && vm.shown < vm.total ? <PartialHeader shown={vm.shown} total={vm.total} /> : null}
       <BatchForm vm={vm} />
     </>
@@ -577,7 +594,7 @@ function EmptyActive() {
 }
 
 /**
- * The batch approve form wrapping the whole list region: the checkboxes post as `id`, the hidden
+ * The batch approve form wrapping every project table: the checkboxes post as `id`, the hidden
  * inputs carry the active filters so an action round re-renders the region under the same filter
  * (htmx includes the closest form's inputs for the row buttons too), and the native action keeps
  * no-JS batch approve working. One form per page, never nested: the filters form lives outside the
@@ -601,94 +618,72 @@ function BatchForm({ vm }: { vm: ListViewModel }) {
         <button class="btn btn-fill btn-sm" type="submit" hx-disabled-elt="this">
           Approve selected
         </button>
-        <div class="grow"></div>
       </div>
       {vm.groups.map((group) => (
-        <ProjectGroupView key={group.slug} group={group} />
+        <ProjectTable key={group.slug} group={group} />
       ))}
     </form>
   );
 }
 
-function ProjectGroupView({ group }: { group: ProjectGroup }) {
-  const count = group.batches.reduce((n, batch) => n + batch.entries.length, 0);
+/**
+ * One project's entries as one dense table. The project is a heading, not a disclosure: batches
+ * stay a data concept behind the row selection and the one approve action. The select-all sits in
+ * the header and drives this table's drafts through ui.js's per-wrap state machine.
+ */
+function ProjectTable({ group }: { group: ProjectGroup }) {
+  const count = group.entries.length;
   return (
-    <section class="project-group">
-      {/* Every section and batch ships open; dashboard.js collapses the ones this viewer
-          collapsed before (localStorage) and re-applies the choice after every swap. Without
-          JS the native details stays open. */}
-      <details class="disclosure project-disclosure" data-collapse-key={`project:${group.slug}`} open>
-        <summary>
-          <svg aria-hidden="true"><use href="#i-chevron-right" /></svg>
-          <h2 class="project-name">{group.slug}</h2>
-          <span class="tag tag-data num">
-            {count} {count === 1 ? "entry" : "entries"}
-          </span>
-        </summary>
-        <div class="disclosure-body">
-          {group.batches.map((batch) => (
-            <BatchView key={batch.id} batch={batch} />
-          ))}
-        </div>
-      </details>
+    <section class="project-section">
+      <div class="section-head project-head">
+        <h2 class="section-title project-name">{group.slug}</h2>
+        <span class="tag tag-data num">
+          {count} {count === 1 ? "entry" : "entries"}
+        </span>
+      </div>
+      <div class="table-wrap table-dense">
+        <table>
+          <colgroup>
+            <col class="col-select" />
+            <col />
+            <col class="col-status" />
+            <col class="col-file" />
+            <col class="col-filed" />
+            <col class="col-actions" />
+          </colgroup>
+          <thead>
+            <tr>
+              {/* The select-all lives in the checkbox column: ui.js's initTables owns the
+                  checked and indeterminate state machine for the wrap. No `name`, so it never
+                  submits as an entry id; only the draft checkboxes post as `id`. */}
+              <th class="cell-select" scope="col">
+                <span class="sr-only">Select</span>
+                <label class="checkbox-label">
+                  <input type="checkbox" data-select-all aria-label={`Select all drafts in ${group.slug}`} />
+                </label>
+              </th>
+              <th scope="col">Title</th>
+              <th scope="col">Status</th>
+              <th scope="col">File</th>
+              <th scope="col">Filed</th>
+              <th scope="col">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {group.entries.map((entry) => (
+              <EntryRowView key={entry.id} entry={entry} />
+            ))}
+          </tbody>
+        </table>
+      </div>
     </section>
   );
 }
 
-function BatchView({ batch }: { batch: ProjectBatch }) {
-  // A batch names its filer in the summary only when every entry agrees on one non-null
-  // value; a disagreement leaves the summary filer-less and each row names its own inline.
-  const filedBy = batch.entries.map((entry) => entry.filed_by);
-  const allAgree = filedBy.every((filer) => filer === filedBy[0]);
-  const singleFiler = allAgree && filedBy[0] !== null ? filedBy[0] : null;
-  const mixedFilers = !allAgree && filedBy.some((filer) => filer !== null);
-  return (
-    <div class="batch">
-      <details class="disclosure batch-disclosure" data-collapse-key={`batch:${batch.id}`} open>
-        {/* The ulid chip names the summary for assistive tech; the filer rides beside it. */}
-        <summary>
-          <svg aria-hidden="true"><use href="#i-chevron-right" /></svg>
-          <span class="tag tag-data">{shortUlid(batch.id)}</span>
-          {singleFiler !== null ? <span>{singleFiler}</span> : null}
-        </summary>
-        <div class="disclosure-body">
-          <div class="table-wrap">
-            <table>
-              <colgroup>
-                <col class="col-select" />
-                <col />
-                <col class="col-status" />
-                <col class="col-file" />
-                <col class="col-actions" />
-              </colgroup>
-              <thead>
-                <tr>
-                  {/* The select-all lives in the checkbox column: ui.js's initTables owns the
-                      checked and indeterminate state machine for the wrap. No `name`, so it never
-                      submits as an entry id; only the draft checkboxes post as `id`. */}
-                  <th class="cell-select" scope="col">
-                    <span class="sr-only">Select</span>
-                    <label class="checkbox-label">
-                      <input type="checkbox" data-select-all aria-label={`Select all drafts in batch ${shortUlid(batch.id)}`} />
-                    </label>
-                  </th>
-                  <th scope="col">Title</th>
-                  <th scope="col">Status</th>
-                  <th scope="col">File</th>
-                  <th scope="col">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {batch.entries.map((entry) => (
-                  <EntryRowView key={entry.id} entry={entry} filerInline={mixedFilers} />
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </details>
-    </div>
-  );
+/** The filed time, absolute and short: UTC date plus minutes, so the stamp reads the same wherever the server runs. */
+function filedStamp(createdAt: number): { iso: string; short: string } {
+  const iso = new Date(createdAt).toISOString();
+  return { iso, short: `${iso.slice(0, 10)} ${iso.slice(11, 16)}` };
 }
 
 /**
@@ -699,10 +694,11 @@ function BatchView({ batch }: { batch: ProjectBatch }) {
  * disabled, so a double-click's second click lands on the disabled slot rather than a shifted
  * action. Approve and reject target the list region and include the batch form's hidden filters,
  * so an action round re-renders the region under the same filter; the editor link is always
- * present. When the batch holds mixed filers, the row also names its own filer beside the title.
+ * present.
  */
-function EntryRowView({ entry, filerInline }: { entry: EntryRow; filerInline: boolean }) {
+function EntryRowView({ entry }: { entry: EntryRow }) {
   const title = entryTitle(entry);
+  const filed = filedStamp(entry.created_at);
   const approve = entry.status === "draft";
   const reject = entry.status === "draft" || entry.status === "approved";
   return (
@@ -717,7 +713,6 @@ function EntryRowView({ entry, filerInline }: { entry: EntryRow; filerInline: bo
       <td>
         <div class="entry-head">
           <span class="entry-title truncate">{title}</span>
-          {filerInline && entry.filed_by !== null ? <span class="entry-filer"> · {entry.filed_by}</span> : null}
         </div>
         {/* A titled entry displays the title in place of the anchor text, so the anchor the entry
             changes would otherwise reach no one but the editor. */}
@@ -730,6 +725,9 @@ function EntryRowView({ entry, filerInline }: { entry: EntryRow; filerInline: bo
         </span>
       </td>
       <td class="cell-file truncate">{entry.file}</td>
+      <td class="cell-time">
+        <time class="num" datetime={filed.iso}>{filed.short}</time>
+      </td>
       <td class="cell-actions">
         {approve ? (
           <button
@@ -820,7 +818,7 @@ function PageModules() {
   );
 }
 
-/** The full page for a plain navigation; the mount wraps it in the doctype. `signedIn` is whether the nav offers sign-out. */
+/** The full page for a plain navigation; the mount wraps it in the doctype. `signedIn` is whether the sidebar offers sign-out. */
 export function dashboardPage(
   store: Store,
   params: ListParams,
@@ -833,20 +831,28 @@ export function dashboardPage(
       <PageHead title={`Entries · ${NAME}`} />
       <body>
         <IconSprite />
-        <Navbar signedIn={signedIn} active="entries" />
-        <main class="page">
-          <PageHeader total={vm.total} />
-          <FilterForm vm={vm} />
-          <div id="entries">
-            <div id="entries-loading" class="htmx-indicator" role="status">
-              <span class="spinner" aria-hidden="true"></span>
-              Loading entries
+        <Shell signedIn={signedIn} active="entries" draftCount={vm.counts.draft}>
+          <PageHeader total={vm.total} projects={vm.projects.length} />
+          <PageBanner notice={notice} />
+          <StatsGrid counts={vm.counts} />
+          <section>
+            {/* The eyebrow alone names the section: the page title already reads "Entries",
+                and a second one of the same word stacks two display lines. */}
+            <div class="section-head">
+              <div class="label">Queue</div>
             </div>
-            <div id="entries-list">
-              <ListRegion vm={vm} notice={notice} />
+            <FilterForm vm={vm} />
+            <div id="entries">
+              <div id="entries-loading" class="htmx-indicator" role="status">
+                <span class="spinner" aria-hidden="true"></span>
+                Loading entries
+              </div>
+              <div id="entries-list">
+                <ListRegion vm={vm} />
+              </div>
             </div>
-          </div>
-        </main>
+          </section>
+        </Shell>
         <div class="toast-stack" id="toast-stack"></div>
         <PageModules />
       </body>
@@ -904,9 +910,21 @@ export function loginPage(next: string | undefined, error: string | undefined = 
   );
 }
 
-/** The list region only, for htmx requests; the loading strip and the toast stack stay in the page. */
+/**
+ * The list region only, for htmx requests. The stat cards, the sidebar badge and the banner sit
+ * outside the main swap target, so they ride out-of-band swaps instead of going stale after an
+ * action round.
+ */
 export function entriesFragment(store: Store, params: ListParams, notice: ListNotice | undefined = undefined): JSX.Element {
-  return <ListRegion vm={loadList(store, params)} notice={notice} />;
+  const vm = loadList(store, params);
+  return (
+    <>
+      <DraftBadge count={vm.counts.draft} oob />
+      <PageBanner notice={notice} oob />
+      <StatsGrid counts={vm.counts} oob />
+      <ListRegion vm={vm} />
+    </>
+  );
 }
 
 // ---- Entry editor ----
@@ -918,6 +936,8 @@ export type EditorViewModel = {
   /** The entry immediately before/after in the list's ascending-id walk, or null at the boundary. */
   readonly prevId: string | null;
   readonly nextId: string | null;
+  /** The sidebar's queue badge, read once with the editor's own query. */
+  readonly draftCount: number;
 };
 
 /**
@@ -941,7 +961,14 @@ export function loadEditor(store: Store, id: string): EditorViewModel | null {
   const entry = getEntry(store, id);
   if (entry === undefined) return null;
   const { prevId, nextId } = adjacentEntryIds(store, id);
-  return { entry, revisions: listRevisions(store, id), constraints: parseConstraints(entry.constraints), prevId, nextId };
+  return {
+    entry,
+    revisions: listRevisions(store, id),
+    constraints: parseConstraints(entry.constraints),
+    prevId,
+    nextId,
+    draftCount: countEntriesByStatus(store).draft,
+  };
 }
 
 /** The tolerant parse for `entries.context`, mirroring `parseConstraints`: foreign rows may hold malformed JSON, and unparseable means no context rows, never a 500. */
@@ -1517,15 +1544,14 @@ function EditorNavButton({ side, targetId }: { side: "prev" | "next"; targetId: 
   );
 }
 
-/** The full editor page; the mount wraps it in the doctype. `signedIn` is whether the nav offers sign-out. */
+/** The full editor page; the mount wraps it in the doctype. `signedIn` is whether the sidebar offers sign-out. */
 export function editorPage(vm: EditorViewModel, state: EditorState | undefined = undefined, signedIn = false): JSX.Element {
   return (
     <html lang="en" data-theme="dark">
       <PageHead title={`Edit entry · ${NAME}`} />
       <body>
         <IconSprite />
-        <Navbar signedIn={signedIn} active="entries" />
-        <main class="page">
+        <Shell signedIn={signedIn} active="entries" draftCount={vm.draftCount}>
           <header class="page-header">
             <div class="page-header-body">
               <div class="label">Entry review</div>
@@ -1538,7 +1564,7 @@ export function editorPage(vm: EditorViewModel, state: EditorState | undefined =
           {/* The one live region: announcements on constraint-state flips only, so a screen reader
               is not flooded with a per-keystroke value. Lives outside the swap region. */}
           <span id="editor-live" class="sr-only" aria-live="polite"></span>
-        </main>
+        </Shell>
         <div class="toast-stack" id="toast-stack"></div>
         <PageModules />
       </body>
@@ -1546,14 +1572,24 @@ export function editorPage(vm: EditorViewModel, state: EditorState | undefined =
   );
 }
 
-/** The editor region only, for htmx transition responses; the page shell, diff, context, and constraints stay put. */
+/** The editor region only, for htmx transition responses; the page shell, diff, context, and constraints stay put. The badge rides out of band because approving here moves the queue count. */
 export function editorFragment(vm: EditorViewModel, state: EditorState | undefined = undefined): JSX.Element {
-  return <EditorRegion vm={vm} state={state} />;
+  return (
+    <>
+      <DraftBadge count={vm.draftCount} oob />
+      <EditorRegion vm={vm} state={state} />
+    </>
+  );
 }
 
-/** The whole editor view (diff + region + rail), for htmx save responses: a save changes the diff's after-side, so the swap must re-render it. */
+/** The whole editor view (diff + region + rail), for htmx save responses: a save changes the diff's after-side and can approve the entry, so the swap re-renders it and moves the queue badge with it. */
 export function editorViewFragment(vm: EditorViewModel, state: EditorState | undefined = undefined): JSX.Element {
-  return <EditorView vm={vm} state={state} />;
+  return (
+    <>
+      <DraftBadge count={vm.draftCount} oob />
+      <EditorView vm={vm} state={state} />
+    </>
+  );
 }
 
 /** The viewport-owning error page for an unknown entry id or route, with the way onward the page-not-found pattern demands. */
@@ -1608,6 +1644,8 @@ export type StyleGuideViewModel = {
   readonly hasRow: boolean;
   /** The stored section, or the empty defaults when there is no row yet. */
   readonly section: StyleGuideInput;
+  /** The sidebar's queue badge, read with the page's own store access. */
+  readonly draftCount: number;
 };
 
 /** What the last save round settled into, rendered by the swap: the saved notice, the unknown-project notice, or the refusal with its message. The submitted form is kept so a refusal re-renders what the user typed. */
@@ -1631,6 +1669,7 @@ export function loadStyleGuide(store: Store, projectQuery: string | undefined): 
     unknown,
     hasRow: section !== null,
     section: section ?? { markdown: "", bannedWords: [], glossary: {} },
+    draftCount: countEntriesByStatus(store).draft,
   };
 }
 
@@ -1790,7 +1829,7 @@ function StyleGuideRegion({ vm, state }: { vm: StyleGuideViewModel; state: Style
   );
 }
 
-/** The full style guide page; the mount wraps it in the doctype. `signedIn` is whether the nav offers sign-out. */
+/** The full style guide page; the mount wraps it in the doctype. `signedIn` is whether the sidebar offers sign-out. */
 export function styleGuidePage(
   vm: StyleGuideViewModel,
   state: StyleGuideEditorState | undefined = undefined,
@@ -1801,8 +1840,7 @@ export function styleGuidePage(
       <PageHead title={`Style guide · ${NAME}`} />
       <body>
         <IconSprite />
-        <Navbar signedIn={signedIn} active="style-guide" />
-        <main class="page">
+        <Shell signedIn={signedIn} active="style-guide" draftCount={vm.draftCount}>
           <header class="page-header">
             <div class="page-header-body">
               <div class="label">Voice</div>
@@ -1812,7 +1850,7 @@ export function styleGuidePage(
           </header>
           <StyleGuideProjects vm={vm} />
           <StyleGuideRegion vm={vm} state={state} />
-        </main>
+        </Shell>
         <div class="toast-stack" id="toast-stack"></div>
         <PageModules />
       </body>

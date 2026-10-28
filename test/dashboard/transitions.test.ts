@@ -163,6 +163,9 @@ describe("list transitions", () => {
     // The approved row leaves the draft filter; the fragment re-renders the region under it,
     // keeps the filter alive for the next action, and shows the partial count.
     expect(html).toContain("Showing 1 of 2 entries");
+    // The shell's badge and cards ride out-of-band swaps, so the round moves them with the rows.
+    expect(html).toContain('<span class="nav-badge" id="entries-badge" hx-swap-oob="true">1</span>');
+    expect(html).toContain('<div class="stat-card"><div class="stat-label">Approved</div><div class="stat-value num">1</div></div>');
     // hono self-closes the void input; the attribute pair is the load-bearing part.
     expect(html).toContain('name="status" value="draft"');
     expect(html).not.toContain("file-0.md");
@@ -229,6 +232,12 @@ describe("batch approve", () => {
     expect(html).toContain('role="status"');
     expect(html).toContain("Approved 2 entries");
     expect(html).not.toContain('role="alert"');
+    // The page's stat cards, badge and banner are outside the main swap target and move out of
+    // band: two drafts became two approved, the queue badge empties, the banner carries the report.
+    expect(html).toContain('<div class="stat-card"><div class="stat-label">Draft</div><div class="stat-value num">0</div></div>');
+    expect(html).toContain('<div class="stat-card"><div class="stat-label">Approved</div><div class="stat-value num">2</div></div>');
+    expect(html).toContain('<span class="nav-badge" id="entries-badge" hx-swap-oob="true">0</span>');
+    expect(html).toContain('<div id="page-banner" hx-swap-oob="true"><div class="banner banner-success" role="status">');
     expect(statusOf(env.store, ids[0]!)).toBe("approved");
     expect(statusOf(env.store, ids[1]!)).toBe("approved");
     env.close();
