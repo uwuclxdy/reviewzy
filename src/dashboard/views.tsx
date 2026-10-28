@@ -1077,7 +1077,7 @@ function EditorRegion({ vm, state }: { vm: EditorViewModel; state: EditorState |
           </span>
         </div>
         <div class="card-content">
-          <textarea id="editor-text" class="input" name="text" rows={10} aria-label="Entry text" hx-preserve="true">
+          <textarea id="editor-text" class="input" name="text" rows={2} aria-label="Entry text" hx-preserve="true">
             {text}
           </textarea>
           <div class="editor-actions">

@@ -107,9 +107,19 @@ import { initDismiss, initTables, initViewportWidth, showToast } from "./ui.js";
   // The constraint panel lives outside the htmx swap region, so the char count and the placeholder
   // checklist track the textarea as the user types. This is a convenience preview only: the server
   // store layer owns the refusal, and the panel re-syncs on any swap.
+  // The box follows its content: a two-line entry renders a small field, and only a genuinely long
+  // one scrolls, capped at most of the viewport so the actions below never leave the screen.
+  function autosizeEditor(textarea) {
+    const cap = Math.round(window.innerHeight * 0.6);
+    textarea.style.height = "auto";
+    textarea.style.height = `${Math.min(textarea.scrollHeight + 2, cap)}px`;
+    textarea.style.overflowY = textarea.scrollHeight + 2 > cap ? "auto" : "hidden";
+  }
+
   function refreshEditorMetrics() {
     const textarea = document.getElementById("editor-text");
     if (!textarea) return;
+    autosizeEditor(textarea);
     const announcements = [];
 
     const charCount = document.getElementById("char-count");
@@ -193,4 +203,7 @@ import { initDismiss, initTables, initViewportWidth, showToast } from "./ui.js";
   // The list fragment replaces the page banner out of band; a banner the swap brought in needs
   // its dismiss control wired, since ui.js's one sweep ran at boot.
   document.addEventListener("htmx:afterSwap", initDismiss);
+
+  // First paint: the editor's box takes its content's height before the viewer touches it.
+  refreshEditorMetrics();
 })();
