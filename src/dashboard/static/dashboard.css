@@ -173,55 +173,104 @@
   word-break: break-word;
 }
 .diff-line { display: block; }
-
-/* ---- Entry editor: one full-track workspace ----
-   The workspace takes the page column's full width; a cap beside the sidebar shell leaves a dead
-   strip once the track outgrows it. The page is the query container, so the pair's collapse
-   follows the track width, not the viewport. Each pane sizes to its own content and scrolls past
-   a share of the viewport; one support card spans the workspace below the pair. */
-.editor-page { container-type: inline-size; }
-.editor-title { font-size: var(--t-7); }
-/* The title steps down with the page column, not the viewport: the sidebar's collapse moves the
-   track width on its own, and a 34px title wraps to three lines on the narrow column. */
-@container (max-width: 800px) {
-  .editor-title { font-size: var(--t-6); }
+/* A rewrite that alternates many changed blocks renders two rows: the file text with its removals,
+   then the proposal with its additions. The rule between them keeps each sentence whole. */
+.diff-rows .diff-proposed {
+  margin-top: var(--space-2);
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--line-soft);
 }
+
+/* ---- Entry editor: one designed workspace ----
+   The shell track runs wider than a comparison can read, so the workspace, its header and its
+   support card take --page-w and centre in the track: uncapped at 1920 the pair measured 794px a
+   side and the support table 1604px. The page is the query container, so the pair's collapse
+   follows the track width, not the viewport. The pair's two cards share one height and each pane
+   scrolls inside it; one support card spans the workspace below. */
+.editor-page { container-type: inline-size; max-width: var(--page-w); width: 100%; margin-inline: auto; }
+/* The entry title reads one line on the 1920 and 1440 columns and two on a 1024 one; at --t-7 the
+   long machine title wrapped mid-hyphen even on the widest column. */
+.editor-title { font-size: var(--t-6); }
 .editor-grid {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: var(--space-4);
-  align-items: start;
+  align-items: stretch;
 }
-#current-text { grid-column: 1; }
-#editor-region { grid-column: 2; min-width: 0; }
+#current-text { grid-column: 1; display: flex; flex-direction: column; }
+#editor-region { grid-column: 2; min-width: 0; display: flex; flex-direction: column; }
 /* A terminal entry has no change card: the settled pane takes the full row. */
 #editor-region.editor-region-wide { grid-column: 1 / -1; }
 .editor-pane { max-height: 60vh; overflow: auto; }
-#editor-text { height: clamp(200px, 32vh, 360px); }
-/* One support card spans the workspace; its sections stack with a hairline between them. */
+#editor-text { height: clamp(200px, 24vh, 300px); flex: 1 1 auto; }
+/* Both cards fill the pair's one height. A short diff then sits in a pane sized to the proposal
+   instead of beside a page-toned hole, and the diff well takes the slack as a scroller. */
+#current-text > .card-content { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; }
+/* An auto basis lets a long anchor size the pair: the row takes the taller of the two contents, so
+   the snippet is never clipped by the proposal's height. A shorter diff grows to fill the row, and
+   the pane keeps its 60vh cap as the scroller for anything longer. */
+#current-text > .card-content > .diff-code { flex: 1 1 auto; min-height: 0; }
+#editor-region > .card { display: flex; flex-direction: column; flex: 1 1 auto; }
+#editor-region > .card > .card-content { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; }
+/* One support card spans the workspace: four stacked sections cost a full-width band each and a
+   ~1000px stack. At the workspace width it is a two-up grid, so Details' values keep a readable
+   measure and the card ends before the fold; DOM order stays Details, Notes, Images, Revision. */
 .editor-support { grid-column: 1 / -1; min-width: 0; }
-.editor-support-card .card-content { padding: var(--space-2); }
+.editor-support-card .card-content {
+  padding: var(--space-2);
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  column-gap: var(--space-5);
+  row-gap: var(--space-2);
+  align-items: stretch;
+}
+/* A cell takes its row's height, and the notes field grows into that slack: the space beside a
+   long Details section becomes a taller notes box instead of a band under its save button. The
+   growth passes through the details content wrapper, which is the flex item Chrome renders. */
+.editor-support-card .support-section { display: flex; flex-direction: column; }
+.editor-support-card .support-section[open]::details-content { display: flex; flex-direction: column; flex: 1 1 auto; }
+.editor-support-card .support-section > .disclosure-body { display: flex; flex-direction: column; flex: 1 1 auto; }
+.support-section #notes-form { display: flex; flex-direction: column; flex: 1 1 auto; }
+.support-section #notes-form .field { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; }
+.support-section #editor-notes { flex: 1 1 auto; height: auto; min-height: 120px; max-height: none; }
 /* The section labels head their sections, so they take the next type step; the nested "More"
    disclosure keeps the shipped summary size. */
 .editor-support-card .support-section > summary { font-size: var(--t-4); }
-.support-section + .support-section {
+/* A hairline opens each grid row after the first. In the two-up grid that is sections 3 and 4. */
+.support-section:nth-of-type(n + 3) {
   border-top: 1px solid var(--line-soft);
-  margin-top: var(--space-2);
   padding-top: var(--space-2);
 }
+/* Under 900px of page column a two-up cell squeezes Details' values and the agent's notes to
+   ~40 characters, so Details and Notes take the full row and Images pairs with Revision history.
+   The hairlines move to the rows that layout opens. */
+@container (max-width: 900px) {
+  .editor-support-card .support-section:first-of-type,
+  .editor-support-card .support-section:nth-of-type(2) { grid-column: 1 / -1; }
+  .support-section:nth-of-type(n + 2) {
+    border-top: 1px solid var(--line-soft);
+    padding-top: var(--space-2);
+  }
+}
 /* The shipped empty state's block padding is card-scale; one line of it inside a section leaves
-   a tall blank band. */
-.support-section .empty-state { padding-block: var(--space-4); }
+   a tall blank band. It also centres its one line across the full card, which reads as a hole;
+   inside a section it lines up with the section's rows instead. */
+.support-section .empty-state {
+  align-items: flex-start;
+  text-align: left;
+  padding-block: var(--space-2);
+}
 #editor-notice:empty { display: none; }
 #editor-notice { margin-bottom: var(--space-4); }
-/* The pair collapses when the page column, not the viewport, narrows past 1000px: the sidebar's
-   collapse moves the track width on its own. The explicit desktop columns reset, or the placements
-   open an implicit second column and the page stacks into a sliver; the proposal leads on the
-   narrow track. */
-@container (max-width: 1000px) {
+/* The pair keeps its compare down to a 640px page column (about a 956px window with the expanded
+   sidebar), so a 1024 laptop still reads as an editor; below that it stacks. The explicit desktop
+   columns reset, or the placements open an implicit second column and the page stacks into a
+   sliver; the proposal leads on the narrow track. The support card follows the same breakpoint. */
+@container (max-width: 640px) {
   .editor-grid { grid-template-columns: minmax(0, 1fr); }
   #current-text { grid-column: 1; }
   #editor-region { grid-column: 1; order: -1; }
+  .editor-support-card .card-content { grid-template-columns: minmax(0, 1fr); }
 }
 
 /* ---- Textareas: no manual resize ----

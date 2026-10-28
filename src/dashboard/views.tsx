@@ -19,6 +19,7 @@ import type { StyleGuideForm, StyleGuideFormRefusal, StyleGuideInput } from "../
 import type { Store } from "../db/store.ts";
 import { parseRepoLink, REPO_ICON } from "./repo-link.ts";
 import { diffWords } from "./word-diff.ts";
+import type { WordDiffToken } from "./word-diff.ts";
 import { NAME } from "../version.ts";
 
 /**
@@ -1194,14 +1195,53 @@ function EditorHeader({ vm }: { vm: EditorViewModel }) {
   );
 }
 
+/** The changed blocks of a word diff: adjacent removed and added tokens are one block. */
+function changedRuns(diff: readonly WordDiffToken[]): number {
+  let runs = 0;
+  let inRun = false;
+  for (const token of diff) {
+    if (token.kind === "same") {
+      inRun = false;
+    } else if (!inRun) {
+      runs++;
+      inRun = true;
+    }
+  }
+  return runs;
+}
+
+/**
+ * A rewrite is a mosaic when both sides changed and the marks alternate across four or more
+ * blocks: on one line every other word then flips colour and the sentence stops reading. A single
+ * edit or a one-sided change stays on the unified line.
+ */
+function isMosaic(diff: readonly WordDiffToken[]): boolean {
+  const removed = diff.some((token) => token.kind === "removed");
+  const added = diff.some((token) => token.kind === "added");
+  return removed && added && changedRuns(diff) >= 4;
+}
+
+/** One side of a mosaic: the anchor without the additions, or the proposal without the removals, each a whole sentence. */
+function diffSide(diff: readonly WordDiffToken[], side: "anchor" | "proposal"): Child[] {
+  const dropped = side === "anchor" ? "added" : "removed";
+  const mark = side === "anchor" ? "diff-remove" : "diff-add";
+  return diff
+    .filter((token) => token.kind !== dropped)
+    .map((token, index) =>
+      token.kind === "same" ? token.text : <span class={mark} key={index}>{token.text}</span>,
+    );
+}
+
 /**
  * The change card: the anchored snippet with the anchor line marked, diffed against the compare
- * text when one is given. The anchor line renders the unified stream, so removed and added words
- * both mark in place while the kept words read once. A null or empty compare renders the anchor
- * plain. The diff route re-renders this card against the textarea's live value.
+ * text when one is given. A small edit renders the unified stream, so removed and added words mark
+ * in place while the kept words read once; a heavy rewrite renders the file text and the proposal
+ * as two rows, each whole. A null or empty compare renders the anchor plain. The diff route
+ * re-renders this card against the textarea's live value.
  */
 export function currentTextCard(entry: EntryRow, compareText: string | null): JSX.Element {
   const diff = compareText === null || compareText === "" ? null : diffWords(entry.anchor_text, compareText);
+  const mosaic = diff !== null && isMosaic(diff);
   return (
     <div class="card current-text-card" id="current-text">
       <div class="card-header">
@@ -1211,20 +1251,23 @@ export function currentTextCard(entry: EntryRow, compareText: string | null): JS
         </div>
       </div>
       <div class="card-content">
-        <pre class="diff-code editor-pane">
+        <pre class={mosaic ? "diff-code editor-pane diff-rows" : "diff-code editor-pane"}>
           <span class="diff-line">{entry.anchor_before}</span>
           <span class="diff-line diff-anchor annot-mark">
             {diff === null
               ? entry.anchor_text
-              : diff.map((token, index) =>
-                  token.kind === "same" ? (
-                    token.text
-                  ) : (
-                    <span class={token.kind === "removed" ? "diff-remove" : "diff-add"} key={index}>{token.text}</span>
-                  ),
-                )}
+              : mosaic
+                ? diffSide(diff, "anchor")
+                : diff.map((token, index) =>
+                    token.kind === "same" ? (
+                      token.text
+                    ) : (
+                      <span class={token.kind === "removed" ? "diff-remove" : "diff-add"} key={index}>{token.text}</span>
+                    ),
+                  )}
           </span>
           <span class="diff-line">{entry.anchor_after}</span>
+          {mosaic && diff !== null ? <span class="diff-line diff-proposed">{diffSide(diff, "proposal")}</span> : null}
         </pre>
       </div>
     </div>
@@ -1670,8 +1713,8 @@ export function editorPage(vm: EditorViewModel, state: EditorState | undefined =
         <a class="skip-link" href="#main">Skip to content</a>
         <IconSprite />
         <Shell signedIn={signedIn} active="entries" draftCount={vm.draftCount}>
-          {/* The workspace takes the page column's full track; a cap beside the sidebar shell
-              leaves a dead strip once the track outgrows it. */}
+          {/* The workspace, header and support card share the same designed column, so the
+              comparison and its rows keep a readable measure inside the wider shell track. */}
           <div class="editor-page">
             <EditorHeader vm={vm} />
             <EditorView vm={vm} state={state} />
