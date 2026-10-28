@@ -11,16 +11,14 @@
    66px rail. */
 .layout { display: grid; grid-template-columns: auto minmax(0, 1fr); min-height: 100vh; }
 
-:root { --page-w: 1400px; }
+/* The page column takes the main track's width: the design drops the cap beside a sidebar,
+   because a capped column leaves a dead strip beside the content once the track outgrows
+   --page-w (268px on each side at 1920). min-width keeps the grid item from growing to its
+   widest table's min-content width, which would widen the document at 390. */
+.layout > .page { min-width: 0; }
 
-/* A named deviation from the sidebar shell's no-cap rule: the content sits in a centred,
-   capped column, so a wide viewport holds slack on both sides instead of running
-   full-bleed to the main track's edge. min-width keeps the grid item from growing to
-   its widest table's min-content width, which would widen the document at 390. */
-.layout > .page { max-width: var(--page-w); margin-inline: auto; min-width: 0; }
-
-/* .page carries inline padding only; the block rhythm is the page's own. */
-.page { padding-top: var(--space-10); padding-bottom: var(--space-10); }
+/* One spacing ladder: the page opens at --space-8 and closes at --space-16. */
+.page { padding-block: var(--space-8) var(--space-16); }
 
 /* The rail's footer holds one control: the theme toggle keeps the slot, and
    sign-out returns with the expanded column. */
@@ -28,18 +26,27 @@
   .sidebar.rail .sidebar-user form { display: none; }
 }
 
-/* ---- List page rhythm: header, banner, stats, then the queue section ---- */
+/* ---- List page rhythm: header, banner, tabs, then the queue section ---- */
+.page-header { margin-bottom: var(--space-8); }
+
 /* The banner is the component's card form here, not the bleed form: it sits on
    the page column under the header. */
-#page-banner > .banner { margin-bottom: var(--space-10); }
+#page-banner > .banner { margin-bottom: var(--space-4); }
 
-.stat-grid {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: var(--space-4);
-  margin-bottom: var(--space-16);
+/* The status strip is a row of submit buttons inside the filters form; the count
+   line rides the toolbar's end edge and the filter-bar's own block margin closes
+   the pair. Five tabs with counts never fit a 390px column, so the strip scrolls
+   in its own box the way the navbar's link band does; the row keeps its hairline
+   across the scrolled content. */
+.status-scroll { margin-bottom: var(--space-4); overflow-x: auto; }
+.status-scroll .tabs,
+.style-guide-projects .tabs { width: max-content; min-width: 100%; }
+.list-meta {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
 }
-@media (max-width: 768px) { .stat-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 
 /* ---- Entries region ---- */
 /* The loading strip is hidden until htmx marks the request in flight (hx-indicator adds the
@@ -51,8 +58,6 @@
    double-click would otherwise fire. */
 .htmx-request { pointer-events: none; }
 
-.partial-header { margin-bottom: var(--space-4); }
-
 /* ---- Bulk approve ----
    The pinned batch action is the shipped section-sticky bar: transparent in flow so the sky
    shows through, toned and hairlined only while it is stuck. Only its spacing is the page's. */
@@ -61,47 +66,88 @@
 /* ---- Project sections: one heading and one table each ----
    Batches stay a data concept behind the row selection and the one approve
    action; nothing on the page discloses or groups by them. */
-.project-section { margin-bottom: var(--space-10); }
-.project-head { display: flex; align-items: baseline; flex-wrap: wrap; gap: var(--space-3); }
+.project-section { margin-bottom: var(--space-8); }
+.project-head {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-1);
+  margin-bottom: var(--space-3);
+}
 .project-name {
-  font: 500 var(--t-5)/1.2 var(--font-mono);
+  font: 500 var(--t-5)/1.2 var(--font-sans);
   letter-spacing: -0.01em;
   color: var(--text);
   margin: 0;
   min-width: 0;
   overflow-wrap: anywhere;
 }
+/* The project's count line: the drafts and entries of the rows shown in this group. */
+.project-meta {
+  margin-top: 0;
+  font-size: var(--t-2);
+  max-width: none;
+}
 
 /* ---- Entry table cells ----
-   The table lays out with a colgroup so the title column takes the remainder and the row never
-   overflows; select, status, file, filed, and actions are the fixed columns. The status pill has
-   its own column, so the title truncates at one consistent point and the pill stays tight.
+   The table lays out with a fixed colgroup so the entry column takes the remainder and a long
+   title or file path truncates instead of widening the table; select, status, filed and actions
+   are the fixed columns. The table never compresses below 560px: the fixed columns sum to 422
+   and the entry column needs room to read, so a narrower wrap scrolls instead of collapsing it.
    Truncation itself is the shipped .truncate utility. */
-.col-select { width: 48px; }
-.col-status { width: 106px; }
-.col-file { width: 200px; }
+#entries-list table { table-layout: fixed; min-width: 560px; }
+.col-select { width: 44px; }
+.col-status { width: 108px; }
 .col-filed { width: 150px; }
 .col-actions { width: 120px; }
 .entry-head {
   display: flex;
-  align-items: center;
-  gap: var(--space-2);
+  flex-direction: column;
+  gap: var(--space-1);
   min-width: 0;
 }
-.entry-title { font: 400 var(--t-3)/1.4 var(--font-sans); color: var(--text); }
-.cell-file {
-  font-family: var(--font-mono);
+/* The title is the row's link into the editor; the hover underline is the affordance. */
+.entry-link {
+  display: block;
+  font: 400 var(--t-3)/1.4 var(--font-sans);
+  color: var(--text);
+  text-decoration: none;
+}
+.entry-link:hover { text-decoration: underline; }
+.entry-file {
+  display: block;
   font-size: var(--t-2);
   color: var(--text-4);
 }
-.cell-time {
-  font-family: var(--font-mono);
+.cell-filed {
   font-size: var(--t-2);
   color: var(--text-4);
   white-space: nowrap;
 }
 .cell-actions { white-space: nowrap; display: inline-flex; align-items: center; gap: var(--space-1); }
 .table-wrap tbody td.cell-actions { padding-left: var(--space-1); padding-right: var(--space-1); }
+/* The row's three icon actions sit at the small control step, so the 120px column holds them
+   without a 4px spill; the coarse floor is restated at the override's specificity, or a touch
+   row's tap targets would shrink with them. */
+.cell-actions .btn-icon { width: var(--ctl-sm); min-width: var(--ctl-sm); height: var(--ctl-sm); min-height: var(--ctl-sm); }
+@media (pointer: coarse) {
+  .cell-actions .btn-icon { width: var(--ctl-lg); min-width: var(--ctl-lg); height: var(--ctl-lg); min-height: var(--ctl-lg); }
+}
+/* The semantic icon actions: the shipped .btn-icon paints the label colour, these give the
+   approve and reject glyphs their status colours in every state a disabled slot sits in. */
+.action-approve, .action-approve:hover { color: var(--success); }
+.action-reject, .action-reject:hover { color: var(--danger); }
+
+/* Under 900px the filed stamp (metadata, not a decision) leaves the row so the rest of the
+   table keeps its columns inside the wrap instead of scrolling wider. The column's width is
+   zeroed and its cells are dropped (Chromium ignores `visibility: collapse` on a col), and the
+   table's floor steps down with the column it lost. The wrap stays the named scroller for what
+   remains. */
+@media (max-width: 900px) {
+  #entries-list table { min-width: 440px; }
+  #entries-list col.col-filed { width: 0; }
+  #entries-list .cell-filed { display: none; }
+}
 
 /* ---- Notices ----
    The refusal list rides inside the page banner's body, in the banner text's voice. */
@@ -118,11 +164,9 @@
 /* ---- Empty-state actions: this page's filter-miss state holds two ways onward ---- */
 .empty-actions { display: flex; gap: var(--space-2); justify-content: center; }
 
-/* ---- Diff view: the anchored snippet vs the entry's text, mono on the well ----
+/* ---- Current text: the anchored snippet as code on the well ----
    The shipped pre owns the surface; the diff wraps instead of scrolling, which is the one
    deviation this view adds. The anchor's annotation bar is the shipped .annot-mark. */
-.diff-grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-4); margin-bottom: var(--space-8); }
-@media (max-width: 900px) { .diff-grid { grid-template-columns: 1fr; } }
 .diff-code {
   margin: 0;
   white-space: pre-wrap;
@@ -130,74 +174,85 @@
 }
 .diff-line { display: block; }
 
-/* ---- Entry editor ---- */
+/* ---- Entry editor: two columns, one swap node ----
+   The context column leads the DOM so the desktop layout and the focus order agree; under
+   900px the grid stacks with the proposal first, where the editor is the thing the narrow
+   screen is for. */
 .editor-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--space-8); align-items: start; }
-.editor-main { min-width: 0; }
-/* The main column's cards sit inside the swap region, not directly under .editor-main, so the
-   gap rides the cards themselves: without it two card edges meet on one seam. */
-.editor-main .card + .card { margin-top: var(--space-6); }
+.editor-col { display: flex; flex-direction: column; gap: var(--space-4); min-width: 0; }
+/* Stacked, the two columns dissolve (`display: contents`) so the cards order themselves: the
+   proposal first, then the text it replaces, its details, the authoring supports, and the
+   history last. Keeping the column boxes would bury the current text under the notes and images
+   the proposal column carries. The DOM keeps the desktop order (context first), so the stacked
+   keyboard walk reads the current text before the proposal even though the proposal paints
+   first; both reads stay coherent, and swapping the DOM order at this width would lose the
+   desktop focus match. */
+@media (max-width: 900px) {
+  .editor-grid { grid-template-columns: 1fr; gap: var(--space-4); }
+  .editor-col { display: contents; }
+  #editor-region { order: -6; }
+  .current-text-card { order: -5; }
+  .details-card { order: -4; }
+  .notes-card { order: -3; }
+  .images-card { order: -2; }
+  .history-card { order: -1; }
+}
 /* A card holding an empty state keeps the component's page-level block padding out of it. */
 .card-content > .empty-state { padding-block: var(--space-6); }
-.editor-rail { display: flex; flex-direction: column; gap: var(--space-6); position: sticky; top: var(--pin-top); }
-@media (max-width: 900px) {
-  .editor-grid { grid-template-columns: 1fr; }
-  .editor-rail { position: static; }
-}
-/* The editor's title card header: the title falls back to the anchor text, which can be one long
-   unbroken string, so it wraps inside the card instead of overflowing or shoving the status pill. */
-.editor-title { min-width: 0; overflow-wrap: anywhere; }
-/* The entry text ships verbatim, often carrying markdown backticks and significant whitespace;
-   mono gives every glyph, space included, one full cell so both stay countable while editing. */
-#editor-text { font-family: var(--font-mono); }
+/* The region stacks its callout and its card; the column's own gap spaces the region from
+   the notes and images below it. */
+#editor-region { display: flex; flex-direction: column; gap: var(--space-4); min-width: 0; }
 
-#editor-region > .callout { margin-bottom: var(--space-4); }
-#editor-region > .btn { margin-top: var(--space-4); }
+/* ---- Textareas: no manual resize, the autosizer owns the height ----
+   The shipped .input pins a control height and the shipped textarea rule adds a resize
+   handle; both fight the autosizer, so the page's textareas opt out of both. The per-field
+   min-heights are the boxes' resting sizes; the autosizer grows them to their content,
+   capped at 60% of the viewport. */
+main.page textarea.input { height: auto; resize: none; }
+#editor-text { font-family: var(--font-mono); min-height: 140px; }
+#editor-notes { min-height: 90px; }
+#style-guide-markdown { min-height: 200px; }
+#style-guide-glossary { min-height: 140px; }
+
+/* The live metrics row under the proposal's textarea: length, placeholders, tone. */
+.constraint-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-4);
+  margin-top: var(--space-3);
+  font-size: var(--t-2);
+  color: var(--text-3);
+}
+.placeholder-list { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: var(--space-3); }
+.placeholder-item { display: flex; align-items: center; gap: var(--space-2); }
+.placeholder-state { font-size: var(--t-2); color: var(--text-3); min-width: 52px; }
+.placeholder-state.is-present { color: var(--success); }
+.char-count.over { color: var(--danger); }
+
 .editor-actions { margin-top: var(--space-4); display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; }
-/* The in-flight indicators for an approve/reject from the editor and a style-guide save: htmx
+/* The in-flight indicators for a reject from the editor and a style-guide save: htmx
    fades the span in via .htmx-request, and display:none until then keeps the laid-out span from
    widening the actions row past the viewport on a narrow screen. */
 .editor-actions .htmx-indicator { display: none; }
 .editor-actions .htmx-indicator.htmx-request { display: inline-flex; align-items: center; gap: var(--space-2); font-size: var(--t-2); color: var(--text-3); }
 
-/* ---- Editor prev/next rails ----
-   One full-height fixed strip per side, so the previous and next entries are a single click away
-   while reading. Its width is the page's own inline padding, so it sits in that gutter and never
-   covers the column; where the column is capped the surrounding slack keeps it clear anyway.
-   Hidden below 900px, where the sidebar's drawer and the stacked editor own the narrow viewport. */
-.editor-nav-btn {
-  position: fixed;
-  top: var(--pin-top);
-  bottom: 0;
-  width: var(--space-8);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--text-3);
-  text-decoration: none;
-  z-index: 5;
-  transition: background var(--dur-tint) var(--ease), color var(--dur-tint) var(--ease);
-}
-.editor-nav-prev { left: 252px; }
-.sidebar.rail ~ .page .editor-nav-prev { left: 66px; }
-.editor-nav-next { right: 0; }
-.editor-nav-btn:hover { background: var(--surface-2); color: var(--text); }
-.editor-nav-btn.is-disabled { color: var(--text-disabled); pointer-events: none; }
-.editor-nav-btn svg { width: 15px; height: 15px; }
-@media (max-width: 900px) { .editor-nav { display: none; } }
+/* ---- Header prev/next ----
+   The neighbour pair lives in the page header's toolbar as secondary buttons; a boundary
+   keeps the slot with a disabled button so the pair never shifts. The meta row under the
+   title truncates the file path instead of letting a long one widen the page. */
+.page-meta { min-width: 0; }
+.page-meta-item { min-width: 0; }
+.page-file { min-width: 0; max-width: 100%; }
 
-/* ---- Notes and constraints ----
+/* ---- Notes ----
    The notes card: the agent's row is the info-table readout; the human's textarea and its
    save button sit below it. */
 .notes-field { margin-top: var(--space-2); }
 .notes-actions { margin-top: var(--space-2); display: flex; justify-content: flex-end; }
-.placeholder-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-2); }
-.placeholder-item { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; }
-.placeholder-state { font-size: var(--t-2); color: var(--text-3); min-width: 52px; }
-.placeholder-state.is-present { color: var(--success); }
-.char-count.over { color: var(--danger); }
 
-/* The context card's secondary block: the provenance rows (hash, filer, stale note) collapsed
-   behind a disclosure, so the anchor and the agent-supplied context rows lead the card. */
+/* The details card's secondary block: the provenance rows (hash, filer, stale note) collapsed
+   behind a disclosure, so the agent-supplied context rows lead the card. */
 .context-secondary { margin-top: var(--space-3); }
 .context-secondary .info-table { margin-top: var(--space-2); }
 
@@ -219,11 +274,19 @@
 .login-actions { display: flex; justify-content: flex-end; }
 
 /* ---- Style guide editor: the section tabs, then the one card ---- */
-.style-guide-projects { margin-bottom: var(--space-8); }
+/* The project strip can hold every project's tab, so it scrolls in its own box like the status
+   strip does; the document never widens for it. */
+.style-guide-projects { margin-bottom: var(--space-4); overflow-x: auto; }
 /* The document default underlines every link on hover; the tab costume is a button's, so the
    reset rides the anchor here. */
 .style-guide-projects a.tab,
 .style-guide-projects a.tab:hover { text-decoration: none; }
-#style-guide-region > .callout { margin-bottom: var(--space-4); }
+/* The settled notices sit on the same measure as the card below them; a full-width callout
+   over a half-width form read as two unrelated blocks. */
+#style-guide-region > .callout { max-width: var(--page-narrow); margin-bottom: var(--space-4); }
 #style-guide-region > .btn { margin-top: var(--space-4); }
+/* The fields stack in one column on the narrow measure, so the guide's long inputs never
+   stretch the whole page column. */
+.style-guide-card { max-width: var(--page-narrow); }
+.style-guide-fields { display: flex; flex-direction: column; gap: var(--space-4); }
 .style-guide-card .editor-actions { margin-top: 0; }

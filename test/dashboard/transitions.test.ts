@@ -105,7 +105,7 @@ describe("list transitions", () => {
     // The approve slot stays occupied by a disabled button, so a double-click's second click
     // cannot land on the Reject button that would otherwise shift into the slot; the row keeps
     // its reject action and loses the checkbox.
-    expect(html).toContain('<button type="button" class="btn btn-icon" style="color: var(--success)" aria-label="Approve docs/setup.md" disabled="">');
+    expect(html).toContain('<button type="button" class="btn btn-icon action-approve" aria-label="Approve docs/setup.md" disabled="">');
     expect(html).toContain(`hx-post="/entries/${id}/reject"`);
     expect(html).not.toContain(`hx-post="/entries/${id}/approve"`);
     expect(html).not.toContain(`value="${id}"`);
@@ -161,11 +161,11 @@ describe("list transitions", () => {
     const html = await res.text();
 
     // The approved row leaves the draft filter; the fragment re-renders the region under it,
-    // keeps the filter alive for the next action, and shows the partial count.
-    expect(html).toContain("Showing 1 of 2 entries");
-    // The shell's badge and cards ride out-of-band swaps, so the round moves them with the rows.
+    // keeps the filter alive for the next action, and shows the subset count.
+    expect(html).toContain('<span class="pagination-count num">1 of 2 entries</span>');
+    // The shell's badge and tabs ride out-of-band swaps, so the round moves them with the rows.
     expect(html).toContain('<span class="nav-badge" id="entries-badge" hx-swap-oob="true">1</span>');
-    expect(html).toContain('<div class="stat-card"><div class="stat-label">Approved</div><div class="stat-value num">1</div></div>');
+    expect(html).toContain('<button class="tab" type="submit" name="status" value="approved"><span>Approved</span><span class="tab-badge num">1</span></button>');
     // hono self-closes the void input; the attribute pair is the load-bearing part.
     expect(html).toContain('name="status" value="draft"');
     expect(html).not.toContain("file-0.md");
@@ -185,13 +185,14 @@ describe("list transitions", () => {
     expect(html).toContain('hx-target="#entries-list"');
     expect(html).toContain('>Approve selected</button>');
     // Every repeat-activation guard rides the exact button it disables: the batch submit and both
-    // row actions (a page-level presence check would let one button lose its guard silently).
+    // row actions (a page-level presence check would let one button lose its guard silently). The
+    // batch submit ships enabled so the no-JS form can fire it; dashboard.js disables it at paint.
     expect(html).toContain('<button class="btn btn-fill btn-sm" type="submit" hx-disabled-elt="this">');
     expect(html).toContain(
-      `<button type="button" class="btn btn-icon" style="color: var(--success)" aria-label="Approve file-0.md" hx-post="/entries/${ids[0]!}/approve" hx-target="#entries-list" hx-swap="innerHTML" hx-indicator="#entries-loading" hx-disabled-elt="this">`,
+      `<button type="button" class="btn btn-icon action-approve" aria-label="Approve file-0.md" hx-post="/entries/${ids[0]!}/approve" hx-target="#entries-list" hx-swap="innerHTML" hx-indicator="#entries-loading" hx-disabled-elt="this">`,
     );
     expect(html).toContain(
-      `<button type="button" class="btn btn-icon" style="color: var(--danger)" aria-label="Reject file-0.md" hx-post="/entries/${ids[0]!}/reject" hx-target="#entries-list" hx-swap="innerHTML" hx-indicator="#entries-loading" hx-disabled-elt="this">`,
+      `<button type="button" class="btn btn-icon action-reject" aria-label="Reject file-0.md" hx-post="/entries/${ids[0]!}/reject" hx-target="#entries-list" hx-swap="innerHTML" hx-indicator="#entries-loading" hx-disabled-elt="this">`,
     );
     expect(html).toContain('name="q" value=""');
     expect(html).toContain('name="status" value=""');
@@ -232,12 +233,12 @@ describe("batch approve", () => {
     expect(html).toContain('role="status"');
     expect(html).toContain("Approved 2 entries");
     expect(html).not.toContain('role="alert"');
-    // The page's stat cards, badge and banner are outside the main swap target and move out of
+    // The page's tabs, badge and banner are outside the main swap target and move out of
     // band: two drafts became two approved, the queue badge empties, the banner carries the report.
-    expect(html).toContain('<div class="stat-card"><div class="stat-label">Draft</div><div class="stat-value num">0</div></div>');
-    expect(html).toContain('<div class="stat-card"><div class="stat-label">Approved</div><div class="stat-value num">2</div></div>');
+    expect(html).toContain('<button class="tab" type="submit" name="status" value="draft"><span>Draft</span><span class="tab-badge num">0</span></button>');
+    expect(html).toContain('<button class="tab" type="submit" name="status" value="approved"><span>Approved</span><span class="tab-badge num">2</span></button>');
     expect(html).toContain('<span class="nav-badge" id="entries-badge" hx-swap-oob="true">0</span>');
-    expect(html).toContain('<div id="page-banner" hx-swap-oob="true"><div class="banner banner-success" role="status">');
+    expect(html).toContain('<div id="page-banner" hx-swap-oob="true"><div class="banner banner-success" role="status" tabindex="-1">');
     expect(statusOf(env.store, ids[0]!)).toBe("approved");
     expect(statusOf(env.store, ids[1]!)).toBe("approved");
     env.close();
@@ -274,7 +275,7 @@ describe("batch approve", () => {
   });
 });
 
-describe("the diff view", () => {
+describe("the current text card", () => {
   test("renders the anchored snippet and the proposed text, both escaped", async () => {
     const { env, id } = envWithDraft({
       anchorBefore: "<script>before</script>",
@@ -284,8 +285,8 @@ describe("the diff view", () => {
     });
     const html = await (await env.get(`/entries/${id}`)).text();
 
-    expect(html).toContain('<div class="card-title">Before</div>');
-    expect(html).toContain('<div class="card-title">After</div>');
+    expect(html).toContain('<div class="card-title">Current text</div>');
+    expect(html).toContain('<div class="card-title">Proposed text</div>');
     expect(html).toContain("&lt;script&gt;before&lt;/script&gt;");
     expect(html).toContain("&lt;script&gt;anchor&lt;/script&gt;");
     expect(html).toContain("&lt;script&gt;after&lt;/script&gt;");
@@ -298,47 +299,48 @@ describe("the diff view", () => {
     env.close();
   });
 
-  test("shows the human text as the after side once approved", async () => {
+  test("shows the human text as the proposal once approved", async () => {
     const { env, id } = envWithDraft();
     env.store.db.run("UPDATE entries SET status = 'approved', human_text = 'the human text', agent_draft = NULL WHERE id = ?", [id]);
     const html = await (await env.get(`/entries/${id}`)).text();
 
-    expect(html).toContain('<div class="card-title">After</div>');
+    expect(html).toContain('<div class="card-title">Proposed text</div>');
     expect(html).toContain("the human text");
     expect(html).toContain("diff-anchor");
     env.close();
   });
 
-  test("omits the diff when there is no text to show", async () => {
+  test("renders the snippet without comparison marks when there is no text to show", async () => {
     const { env, id } = envWithDraft();
     env.store.db.run("UPDATE entries SET agent_draft = NULL, human_text = NULL WHERE id = ?", [id]);
     const html = await (await env.get(`/entries/${id}`)).text();
 
-    expect(html).not.toContain('<div class="card-title">Before</div>');
-    expect(html).not.toContain("diff-anchor");
+    expect(html).toContain('<div class="card-title">Current text</div>');
+    expect(html).toContain("Run this before anything else.");
+    expect(html).not.toContain("diff-remove");
     env.close();
   });
 });
 
 describe("editor transitions", () => {
-  test("the editor page wires approve, reject, and the loading indicator", async () => {
+  test("the editor page wires save, reject, and the loading indicator", async () => {
     const { env, id } = envWithDraft();
     const html = await (await env.get(`/entries/${id}`)).text();
 
-    expect(html).toContain(`hx-post="/entries/${id}/approve"`);
+    expect(html).toContain(`hx-post="/entries/${id}/save"`);
     expect(html).toContain(`hx-post="/entries/${id}/reject"`);
-    expect(html).toContain('hx-target="#editor-region"');
-    expect(html).toContain(">Approve draft</button>");
+    expect(html).toContain('hx-target="#editor-view"');
+    expect(html).toContain(">Save and approve</button>");
     expect(html).toContain(">Reject</button>");
     expect(html).toContain('id="editor-action-loading"');
     expect(html).toContain("Updating entry");
     // In-flight double-clicks and keyboard repeats are dropped by the disabled attribute on the
     // exact button that fires, not just somewhere on the page.
     expect(html).toContain(
-      `<button type="button" class="btn btn-secondary" hx-post="/entries/${id}/approve" hx-target="#editor-region" hx-swap="outerHTML" hx-indicator="#editor-action-loading" hx-disabled-elt="this">`,
+      '<button class="btn btn-fill" type="submit" hx-disabled-elt="this">Save and approve</button>',
     );
     expect(html).toContain(
-      `<button type="button" class="btn btn-danger" hx-post="/entries/${id}/reject" hx-target="#editor-region" hx-swap="outerHTML" hx-indicator="#editor-action-loading" hx-disabled-elt="this">`,
+      `<button type="button" class="btn btn-danger" hx-post="/entries/${id}/reject" hx-target="#editor-view" hx-swap="outerHTML" hx-indicator="#editor-action-loading" hx-disabled-elt="this">`,
     );
     env.close();
   });
@@ -354,9 +356,8 @@ describe("editor transitions", () => {
     expect(html).not.toContain('role="alert"');
     expect(statusOf(env.store, id)).toBe("approved");
     expect(humanTextOf(env.store, id)).toBe("Fix the wording of the setup section.");
-    // Same slot-occupancy guard as the list row: the disabled placeholder blocks a stray
-    // double-click from reaching the Reject button in the swapped region.
-    expect(html).toContain("<button type=\"button\" class=\"btn btn-secondary\" disabled=\"\">");
+    // The swapped region is the approved proposal: one primary save, no approve button.
+    expect(html).toContain('<button class="btn btn-fill" type="submit" hx-disabled-elt="this">Save text</button>');
     expect(html).toContain(`hx-post="/entries/${id}/reject"`);
     expect(html).not.toContain(`hx-post="/entries/${id}/approve"`);
     env.close();
@@ -390,14 +391,17 @@ describe("editor transitions", () => {
     env.close();
   });
 
-  test("an applied entry's editor page offers no transitions", async () => {
+  test("an applied entry's editor page renders the text read-only", async () => {
     const { env, id } = envWithDraft();
     env.store.db.run("UPDATE entries SET status = 'applied' WHERE id = ?", [id]);
     const html = await (await env.get(`/entries/${id}`)).text();
 
-    expect(html).not.toContain(">Approve draft</button>");
+    expect(html).not.toContain(">Save and approve</button>");
+    expect(html).not.toContain(">Save text</button>");
     expect(html).not.toContain(">Reject</button>");
-    expect(html).toContain(">Save text</button>");
+    expect(html).not.toContain('id="editor-text"');
+    expect(html).not.toContain('id="editor-form"');
+    expect(html).toContain("returns to approved and can be edited");
     env.close();
   });
 });

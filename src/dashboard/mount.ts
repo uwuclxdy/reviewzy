@@ -10,7 +10,6 @@ import type { StyleGuideForm } from "../db/style-guide.ts";
 import type { Store } from "../db/store.ts";
 import {
   dashboardPage,
-  editorFragment,
   editorPage,
   editorViewFragment,
   editorViewGoneFragment,
@@ -490,5 +489,5 @@ function transitionEditorReply(
     if (outcome.ok) return c.redirect(`/entries/${id}`, 303);
     return c.html(html`<!doctype html>${editorPage(vm, state, signedIn)}`);
   }
-  return c.html(editorFragment(vm, state));
+  return c.html(editorViewFragment(vm, state));
 }

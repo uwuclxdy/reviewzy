@@ -37,7 +37,7 @@ const PAGE_SIZE = 200;
 
 const STATUSES: readonly EntryStatus[] = ["draft", "approved", "applied", "rejected"];
 
-/** The default Active view: the two statuses that still need a human. */
+/** The default Open view: the two statuses that still need a human. */
 const ACTIVE_STATUSES: readonly EntryStatus[] = ["draft", "approved"];
 
 function isEntryStatus(value: string): value is EntryStatus {
@@ -66,18 +66,11 @@ const STATUS_DOT: Record<EntryStatus, string> = {
   rejected: "timeline-dot-danger",
 };
 
-/** The status dropdown's options: the value the form submits and the label the trigger shows. */
-const STATUS_OPTIONS: readonly { value: string; label: string }[] = [
-  { value: "", label: "Active" },
-  { value: "all", label: "All statuses" },
-  ...STATUSES.map((status) => ({ value: status, label: STATUS_LABEL[status] })),
-];
-
 type ProjectGroup = { slug: string; entries: EntryRow[] };
 
 export type ListViewModel = {
   readonly total: number;
-  /** The whole store's counts per status; the four stat cards read these, never the filtered rows. */
+  /** The whole store's counts per status; the status tabs read these, never the filtered rows. */
   readonly counts: Record<EntryStatus, number>;
   readonly shown: number;
   readonly groups: readonly ProjectGroup[];
@@ -87,7 +80,7 @@ export type ListViewModel = {
   readonly status: string;
   readonly project: string;
   readonly filtersActive: boolean;
-  /** Whether the default Active view is what hides every match: a filter found rows, but all of them are applied or rejected. */
+  /** Whether the default Open view is what hides every match: a filter found rows, but all of them are applied or rejected. */
   readonly hiddenByActiveView: boolean;
 };
 
@@ -135,8 +128,8 @@ function loadList(store: Store, params: ListParams): ListViewModel {
   const statusRaw = params.status;
   const statusActive = statusRaw !== undefined && statusRaw !== "";
   // `all` is the explicit "every status" filter value; the default (no status param, or an empty
-  // one) is the Active view of draft + approved only, which is not a filter and never renders the
-  // partial header. Both query every status; the Active view narrows the walked rows afterward.
+  // one) is the Open view of draft + approved only, which is not a filter and never renders the
+  // partial header. Both query every status; the Open view narrows the walked rows afterward.
   const allStatuses = statusActive && statusRaw === "all";
   const status = statusActive && !allStatuses && isEntryStatus(statusRaw) ? statusRaw : undefined;
   const projectRaw = params.project;
@@ -191,13 +184,13 @@ function hasOwnTitle(entry: EntryRow): boolean {
 /** The section the current page belongs to, marking the matching nav link. */
 type NavSection = "entries" | "style-guide";
 
-/** The icon sprite, pasted into every full page's body as its first child, read off the vendored file so the two can never drift. */
+/** The icon sprite, pasted into every full page's body, read off the vendored file so the two can never drift. */
 const ICON_SPRITE = readFileSync(new URL("./static/icons.svg", import.meta.url), "utf8");
 
 /** The theme toggle, once per shell: ui.js's initTheme wires it and owns the pressed state. */
 function ThemeToggle() {
   return (
-    <button class="btn btn-icon" data-theme-toggle aria-pressed="false" aria-label="Switch to light theme">
+    <button class="btn btn-icon btn-sm" data-theme-toggle aria-pressed="false" aria-label="Switch to light theme">
       <svg class="icon-sun" aria-hidden="true"><use href="#i-sun" /></svg>
       <svg class="icon-moon" aria-hidden="true"><use href="#i-moon" /></svg>
     </button>
@@ -295,41 +288,103 @@ function Shell({
             ) : null}
           </div>
         </nav>
-        <main class="page">{children}</main>
+        <main class="page" id="main">{children}</main>
       </div>
     </>
   );
 }
 
-function PageHeader({ total, projects }: { total: number; projects: number }) {
+/**
+ * The queue's header meta: the actionable count, the store total, and the project count. The
+ * htmx list fragment re-renders it out of band, so an action round moves the numbers with it.
+ */
+function PageMeta({
+  draftCount,
+  total,
+  projects,
+  oob = false,
+}: {
+  draftCount: number;
+  total: number;
+  projects: number;
+  oob?: boolean;
+}) {
   return (
-    <header class="page-header">
-      <div class="page-header-body">
-        <h1 class="page-title">Entries</h1>
-        <div class="page-meta">
-          <span class="page-meta-item num">{total} {total === 1 ? "entry" : "entries"}</span>
-          <span class="page-meta-item num">{projects} {projects === 1 ? "project" : "projects"}</span>
-        </div>
-      </div>
-    </header>
+    <div class="page-meta" id="page-meta" hx-swap-oob={oob ? "true" : undefined}>
+      <span class="page-meta-item">
+        <span class="num">{draftCount}</span> {draftCount === 1 ? "draft waiting" : "drafts waiting"}
+      </span>
+      <span class="page-meta-item">
+        <span class="num">{total}</span> {total === 1 ? "entry" : "entries"}
+      </span>
+      <span class="page-meta-item">
+        <span class="num">{projects}</span> {projects === 1 ? "project" : "projects"}
+      </span>
+    </div>
   );
 }
 
 /**
- * The four status totals off the store's one grouped read. In the htmx fragment it rides an
- * out-of-band swap: the list region is the only main target, and a card left outside it would
- * show the pre-action statuses until the next navigation.
+ * The one status control: an underline tab strip of submit buttons inside the filters form, so a
+ * click submits the form with its `status` value with or without JS. The Open tab is the default
+ * view (draft + approved) and carries no filter value; the badge counts come off the store's one
+ * grouped read, never the filtered rows. In the htmx fragment the strip rides an out-of-band swap,
+ * since the list region is the only main target.
  */
-function StatsGrid({ counts, oob = false }: { counts: Record<EntryStatus, number>; oob?: boolean }) {
+function StatusTabs({ counts, status, oob = false }: { counts: Record<EntryStatus, number>; status: string; oob?: boolean }) {
+  const open = counts.draft + counts.approved;
   return (
-    <div class="stat-grid" id="page-stats" hx-swap-oob={oob ? "true" : undefined}>
-      {STATUSES.map((status) => (
-        <div class="stat-card" key={status}>
-          <div class="stat-label">{STATUS_LABEL[status]}</div>
-          <div class="stat-value num">{counts[status]}</div>
-        </div>
-      ))}
+    <div class="tabs-wrap status-tabs" id="status-tabs" hx-swap-oob={oob ? "true" : undefined}>
+      <div class="tabs" role="group" aria-label="Status">
+        <button
+          class={`tab${status === "" ? " active" : ""}`}
+          type="submit"
+          name="status"
+          value=""
+          aria-current={status === "" ? "true" : undefined}
+        >
+          <span>Open</span><span class="tab-badge num">{open}</span>
+        </button>
+        {STATUSES.map((s) => (
+          <button
+            class={`tab${status === s ? " active" : ""}`}
+            type="submit"
+            name="status"
+            value={s}
+            aria-current={status === s ? "true" : undefined}
+          >
+            <span>{STATUS_LABEL[s]}</span><span class="tab-badge num">{counts[s]}</span>
+          </button>
+        ))}
+      </div>
     </div>
+  );
+}
+
+/**
+ * The toolbar's count line: the visible rows over the store total, right-aligned on the filter
+ * row, plus the way back to the default view while a filter is active. The htmx fragment
+ * re-renders it out of band with every action round.
+ */
+function ListMeta({ vm, oob = false }: { vm: ListViewModel; oob?: boolean }) {
+  return (
+    <div id="list-meta" class="list-meta" hx-swap-oob={oob ? "true" : undefined}>
+      <span class="pagination-count num">
+        {vm.shown} of {vm.total} {vm.total === 1 ? "entry" : "entries"}
+      </span>
+      {vm.filtersActive ? <a class="btn btn-secondary btn-sm" href="/">Clear filters</a> : null}
+    </div>
+  );
+}
+
+function PageHeader({ vm }: { vm: ListViewModel }) {
+  return (
+    <header class="page-header">
+      <div class="page-header-body">
+        <h1 class="page-title">Entries</h1>
+        <PageMeta draftCount={vm.counts.draft} total={vm.total} projects={vm.projects.length} />
+      </div>
+    </header>
   );
 }
 
@@ -386,6 +441,11 @@ function FilterSelect({
   );
 }
 
+/**
+ * The queue's controls: the status tab strip above the search and project row, and the count line
+ * on the row's end edge. The tabs submit the same form, so one GET request carries whatever the
+ * clicker set.
+ */
 function FilterForm({ vm }: { vm: ListViewModel }) {
   const projectOptions = [
     { value: "", label: "All projects" },
@@ -400,41 +460,56 @@ function FilterForm({ vm }: { vm: ListViewModel }) {
       hx-target="#entries-list"
       hx-swap="innerHTML"
       hx-indicator="#entries-loading"
-      class="filter-bar"
     >
-      <div class="input-wrap has-icon filter-search">
-        <div class="input-icon">
-          <svg aria-hidden="true"><use href="#i-search" /></svg>
-        </div>
-        <label class="sr-only" for="q">Search</label>
-        <input
-          class="input"
-          id="q"
-          name="q"
-          type="search"
-          placeholder="Search file, anchor, or text"
-          value={vm.q}
-        />
+      {/* The form's first submit button is the default for an implicit submit (Enter in the
+          search field without JS): it carries the current status, so Enter never resets the
+          filter to Open. Visually hidden and out of the tab order; dashboard.js drops the name
+          once the widget path owns the status, so only the hidden field ever submits. */}
+      <button class="sr-only" type="submit" name="status" value={vm.status} tabindex={-1} aria-hidden="true">
+        Apply filters
+      </button>
+      {/* The strip's own attributes are the markup contract, so the named scroller that carries
+          the five tabs on a narrow screen is this wrapper: it keeps the scroll position when an
+          action round swaps the strip inside it. */}
+      <div class="status-scroll" data-scroll-fade>
+        <StatusTabs counts={vm.counts} status={vm.status} />
       </div>
-      <FilterSelect id="filter-status" label="Status" field="status" current={vm.status} options={STATUS_OPTIONS} />
-      <FilterSelect id="filter-project" label="Project" field="project" current={vm.project} options={projectOptions} />
-      {/* The no-JS submit path: native selects carrying the names the hidden inputs hold, so the
-          filters still work with scripting off. With JS on, this block is not in the DOM. */}
-      <noscript>
-        <label class="sr-only" for="status-native">Status</label>
-        <select class="input" id="status-native" name="status">
-          {STATUS_OPTIONS.map((option) => (
-            <option value={option.value} selected={option.value === vm.status}>{option.label}</option>
-          ))}
-        </select>
-        <label class="sr-only" for="project-native">Project</label>
-        <select class="input" id="project-native" name="project">
-          {projectOptions.map((option) => (
-            <option value={option.value} selected={option.value === vm.project}>{option.label}</option>
-          ))}
-        </select>
-        <button class="btn btn-primary" type="submit">Apply filters</button>
-      </noscript>
+      {/* The selected status the other fields submit under: the tab buttons carry it on a click,
+          and dashboard.js mirrors it here so a search or project change cannot silently drop back
+          to the Open view. Ships disabled so a no-JS submit reads the clicked tab, never a stale
+          hidden value. */}
+      <input type="hidden" name="status" value={vm.status} data-filter-field="status" disabled />
+      <div class="filter-bar">
+        <div class="input-wrap has-icon filter-search">
+          <div class="input-icon">
+            <svg aria-hidden="true"><use href="#i-search" /></svg>
+          </div>
+          <label class="sr-only" for="q">Search</label>
+          <input
+            class="input"
+            id="q"
+            name="q"
+            type="search"
+            placeholder="Search file, anchor, or text"
+            value={vm.q}
+          />
+        </div>
+        <FilterSelect id="filter-project" label="Project" field="project" current={vm.project} options={projectOptions} />
+        {/* The no-JS submit path: a native select carrying the name the hidden input holds, so the
+            filters still work with scripting off. With JS on, this block is not in the DOM. */}
+        <noscript>
+          <label class="sr-only" for="project-native">Project</label>
+          <select class="input" id="project-native" name="project">
+            {projectOptions.map((option) => (
+              <option value={option.value} selected={option.value === vm.project}>{option.label}</option>
+            ))}
+          </select>
+          {/* The explicit submit carries the current status too, since the hidden field above
+              ships disabled without JS. */}
+          <button class="btn btn-primary" type="submit" name="status" value={vm.status}>Apply filters</button>
+        </noscript>
+        <ListMeta vm={vm} />
+      </div>
     </form>
   );
 }
@@ -461,7 +536,7 @@ function BannerDismiss() {
 function NoticeBanner({ notice }: { notice: ListNotice }) {
   if (notice.kind === "refusal") {
     return (
-      <div class="banner banner-danger" role="alert">
+      <div class="banner banner-danger" role="alert" tabindex={-1}>
         <span class="banner-icon"><svg aria-hidden="true"><use href="#i-error" /></svg></span>
         <div class="banner-body">
           <div class="banner-title">{notice.title}</div>
@@ -473,7 +548,7 @@ function NoticeBanner({ notice }: { notice: ListNotice }) {
   }
   if (notice.refused.length === 0) {
     return (
-      <div class="banner banner-success" role="status">
+      <div class="banner banner-success" role="status" tabindex={-1}>
         <span class="banner-icon"><svg aria-hidden="true"><use href="#i-success" /></svg></span>
         <div class="banner-body">
           <div class="banner-title">
@@ -485,7 +560,7 @@ function NoticeBanner({ notice }: { notice: ListNotice }) {
     );
   }
   return (
-    <div class="banner banner-danger" role="alert">
+    <div class="banner banner-danger" role="alert" tabindex={-1}>
       <span class="banner-icon"><svg aria-hidden="true"><use href="#i-error" /></svg></span>
       <div class="banner-body">
         <div class="banner-title">
@@ -511,12 +586,12 @@ function PageBanner({ notice, oob = false }: { notice: ListNotice | undefined; o
   );
 }
 
-/** The settled list region: the partial count and the tables, or one of the three empty states. The loading and error states are client-side. */
+/** The settled list region: the tables, or one of the three empty states. The loading and error states are client-side. */
 function ListRegion({ vm }: { vm: ListViewModel }) {
   if (vm.shown === 0) {
     // Zero entries at all is "no entries yet" even under a filter: nothing exists to filter, and
     // the empty state explains how entries get here. A store with entries but no matches is either
-    // a filter miss or the default Active view over a store full of applied and rejected entries.
+    // a filter miss or the default Open view over a store full of applied and rejected entries.
     return vm.total === 0 ? (
       <EmptyAll />
     ) : vm.filtersActive ? (
@@ -531,22 +606,7 @@ function ListRegion({ vm }: { vm: ListViewModel }) {
       <EmptyActive />
     );
   }
-  return (
-    <>
-      {vm.filtersActive && vm.shown < vm.total ? <PartialHeader shown={vm.shown} total={vm.total} /> : null}
-      <BatchForm vm={vm} />
-    </>
-  );
-}
-
-function PartialHeader({ shown, total }: { shown: number; total: number }) {
-  return (
-    <div class="toolbar partial-header">
-      <span class="pagination-count">Showing {shown} of {total} entries</span>
-      <div class="grow"></div>
-      <a href="/" class="btn btn-secondary btn-sm">Clear filters</a>
-    </div>
-  );
+  return <BatchForm vm={vm} />;
 }
 
 function EmptyAll() {
@@ -560,9 +620,9 @@ function EmptyAll() {
 }
 
 /**
- * The filter-miss state, with a way onward. When the default Active view is what hides the
+ * The filter-miss state, with a way onward. When the default Open view is what hides the
  * matches (a search that only hits applied or rejected rows), the way onward is the all-statuses
- * view under the same filters — clearing the filters alone would land back on the Active view
+ * view under the same filters — clearing the filters alone would land back on the Open view
  * and still show nothing.
  */
 function EmptyMatch({ revealAllHref }: { revealAllHref: string | undefined }) {
@@ -582,7 +642,7 @@ function EmptyMatch({ revealAllHref }: { revealAllHref: string | undefined }) {
   );
 }
 
-/** The default Active view over a store whose entries are all applied or rejected: nothing to do, no filters to clear. */
+/** The default Open view over a store whose entries are all applied or rejected: nothing to do, no filters to clear. */
 function EmptyActive() {
   return (
     <div class="empty-state">
@@ -598,7 +658,8 @@ function EmptyActive() {
  * inputs carry the active filters so an action round re-renders the region under the same filter
  * (htmx includes the closest form's inputs for the row buttons too), and the native action keeps
  * no-JS batch approve working. One form per page, never nested: the filters form lives outside the
- * swap region.
+ * swap region. The submit ships ENABLED so the no-JS path can fire it (an empty selection answers
+ * its refusal); dashboard.js disables it at first paint and enables it on a checked box.
  */
 function BatchForm({ vm }: { vm: ListViewModel }) {
   return (
@@ -633,13 +694,16 @@ function BatchForm({ vm }: { vm: ListViewModel }) {
  */
 function ProjectTable({ group }: { group: ProjectGroup }) {
   const count = group.entries.length;
+  const drafts = group.entries.filter((entry) => entry.status === "draft").length;
+  const draftWord = drafts === 1 ? "draft" : "drafts";
+  const entryWord = count === 1 ? "entry" : "entries";
   return (
     <section class="project-section">
       <div class="section-head project-head">
         <h2 class="section-title project-name">{group.slug}</h2>
-        <span class="tag tag-data num">
-          {count} {count === 1 ? "entry" : "entries"}
-        </span>
+        <p class="section-lede project-meta">
+          {drafts > 0 ? `${drafts} ${draftWord} · ${count} ${entryWord}` : `${count} ${entryWord}`}
+        </p>
       </div>
       <div class="table-wrap table-dense">
         <table>
@@ -647,7 +711,6 @@ function ProjectTable({ group }: { group: ProjectGroup }) {
             <col class="col-select" />
             <col />
             <col class="col-status" />
-            <col class="col-file" />
             <col class="col-filed" />
             <col class="col-actions" />
           </colgroup>
@@ -662,10 +725,9 @@ function ProjectTable({ group }: { group: ProjectGroup }) {
                   <input type="checkbox" data-select-all aria-label={`Select all drafts in ${group.slug}`} />
                 </label>
               </th>
-              <th scope="col">Title</th>
+              <th scope="col">Entry</th>
               <th scope="col">Status</th>
-              <th scope="col">File</th>
-              <th scope="col">Filed</th>
+              <th class="cell-filed" scope="col">Filed</th>
               <th scope="col">Actions</th>
             </tr>
           </thead>
@@ -687,14 +749,14 @@ function filedStamp(createdAt: number): { iso: string; short: string } {
 }
 
 /**
- * One row. The checkbox names the entry for the batch form (and `data-name` hands it to the
- * selection controller); it exists only on drafts, because an approve on any other status always
- * refuses and a checkbox that can only refuse is noise (races are still reported per entry). The
- * status chip sits in its own column; the three icon action slots always render, inapplicable ones
- * disabled, so a double-click's second click lands on the disabled slot rather than a shifted
- * action. Approve and reject target the list region and include the batch form's hidden filters,
- * so an action round re-renders the region under the same filter; the editor link is always
- * present.
+ * One row. The Entry cell leads with the title as a link over the file path; the checkbox names
+ * the entry for the batch form (and `data-name` hands it to the selection controller); it exists
+ * only on drafts, because an approve on any other status always refuses and a checkbox that can
+ * only refuse is noise (races are still reported per entry). The status chip sits in its own
+ * column; the three icon action slots always render, inapplicable ones disabled, so a
+ * double-click's second click lands on the disabled slot rather than a shifted action. Approve
+ * and reject target the list region and include the batch form's hidden filters, so an action
+ * round re-renders the region under the same filter; the editor link is always present.
  */
 function EntryRowView({ entry }: { entry: EntryRow }) {
   const title = entryTitle(entry);
@@ -712,7 +774,8 @@ function EntryRowView({ entry }: { entry: EntryRow }) {
       </td>
       <td>
         <div class="entry-head">
-          <span class="entry-title truncate">{title}</span>
+          <a class="entry-link truncate" href={`/entries/${entry.id}`}>{title}</a>
+          <span class="entry-file truncate">{entry.file}</span>
         </div>
         {/* A titled entry displays the title in place of the anchor text, so the anchor the entry
             changes would otherwise reach no one but the editor. */}
@@ -724,16 +787,14 @@ function EntryRowView({ entry }: { entry: EntryRow }) {
           {STATUS_LABEL[entry.status]}
         </span>
       </td>
-      <td class="cell-file truncate">{entry.file}</td>
-      <td class="cell-time">
+      <td class="cell-filed">
         <time class="num" datetime={filed.iso}>{filed.short}</time>
       </td>
       <td class="cell-actions">
         {approve ? (
           <button
             type="button"
-            class="btn btn-icon"
-            style="color: var(--success)"
+            class="btn btn-icon action-approve"
             aria-label={`Approve ${entry.file}`}
             hx-post={`/entries/${entry.id}/approve`}
             hx-target="#entries-list"
@@ -746,15 +807,14 @@ function EntryRowView({ entry }: { entry: EntryRow }) {
         ) : (
           // The approve slot stays occupied on every non-draft row: a double-click's second click
           // lands on the disabled button (pointer-events none) rather than the next slot.
-          <button type="button" class="btn btn-icon" style="color: var(--success)" aria-label={`Approve ${entry.file}`} disabled>
+          <button type="button" class="btn btn-icon action-approve" aria-label={`Approve ${entry.file}`} disabled>
             <svg aria-hidden="true"><use href="#i-check" /></svg>
           </button>
         )}
         {reject ? (
           <button
             type="button"
-            class="btn btn-icon"
-            style="color: var(--danger)"
+            class="btn btn-icon action-reject"
             aria-label={`Reject ${entry.file}`}
             hx-post={`/entries/${entry.id}/reject`}
             hx-target="#entries-list"
@@ -766,7 +826,7 @@ function EntryRowView({ entry }: { entry: EntryRow }) {
           </button>
         ) : (
           // The reject slot stays occupied on applied and rejected rows for the same guard.
-          <button type="button" class="btn btn-icon" style="color: var(--danger)" aria-label={`Reject ${entry.file}`} disabled>
+          <button type="button" class="btn btn-icon action-reject" aria-label={`Reject ${entry.file}`} disabled>
             <svg aria-hidden="true"><use href="#i-x" /></svg>
           </button>
         )}
@@ -803,7 +863,7 @@ function PageHead({ title }: { title: string }) {
   );
 }
 
-/** The sprite as the body's first child; cursor.js creates its own canvas and nothing else may enter that slot. */
+/** The sprite in the body; cursor.js creates its own canvas and nothing else may enter that slot. */
 function IconSprite() {
   return <>{raw(ICON_SPRITE)}</>;
 }
@@ -830,11 +890,14 @@ export function dashboardPage(
     <html lang="en" data-theme="dark">
       <PageHead title={`Entries · ${NAME}`} />
       <body>
+        <a class="skip-link" href="#main">Skip to content</a>
         <IconSprite />
         <Shell signedIn={signedIn} active="entries" draftCount={vm.counts.draft}>
-          <PageHeader total={vm.total} projects={vm.projects.length} />
+          <PageHeader vm={vm} />
           <PageBanner notice={notice} />
-          <StatsGrid counts={vm.counts} />
+          {/* The persistent announcement slot for an action round: the banner may arrive already
+              populated through an out-of-band swap, which a live region does not reliably read. */}
+          <span id="list-live" class="sr-only" aria-live="polite"></span>
           <section>
             {/* The eyebrow alone names the section: the page title already reads "Entries",
                 and a second one of the same word stacks two display lines. */}
@@ -911,9 +974,9 @@ export function loginPage(next: string | undefined, error: string | undefined = 
 }
 
 /**
- * The list region only, for htmx requests. The stat cards, the sidebar badge and the banner sit
- * outside the main swap target, so they ride out-of-band swaps instead of going stale after an
- * action round.
+ * The list region only, for htmx requests. The tabs, the header meta, the count line, the sidebar
+ * badge and the banner sit outside the main swap target, so they ride out-of-band swaps instead of
+ * going stale after an action round.
  */
 export function entriesFragment(store: Store, params: ListParams, notice: ListNotice | undefined = undefined): JSX.Element {
   const vm = loadList(store, params);
@@ -921,7 +984,9 @@ export function entriesFragment(store: Store, params: ListParams, notice: ListNo
     <>
       <DraftBadge count={vm.counts.draft} oob />
       <PageBanner notice={notice} oob />
-      <StatsGrid counts={vm.counts} oob />
+      <StatusTabs counts={vm.counts} status={vm.status} oob />
+      <ListMeta vm={vm} oob />
+      <PageMeta draftCount={vm.counts.draft} total={vm.total} projects={vm.projects.length} oob />
       <ListRegion vm={vm} />
     </>
   );
@@ -931,6 +996,8 @@ export function entriesFragment(store: Store, params: ListParams, notice: ListNo
 
 export type EditorViewModel = {
   readonly entry: EntryRow;
+  /** The entry's project slug, so the header's breadcrumb reads the name the queue groups by. */
+  readonly projectSlug: string;
   readonly revisions: readonly RevisionRow[];
   readonly constraints: Constraints;
   /** The entry immediately before/after in the list's ascending-id walk, or null at the boundary. */
@@ -961,8 +1028,10 @@ export function loadEditor(store: Store, id: string): EditorViewModel | null {
   const entry = getEntry(store, id);
   if (entry === undefined) return null;
   const { prevId, nextId } = adjacentEntryIds(store, id);
+  const projects = listProjects(store);
   return {
     entry,
+    projectSlug: projects.find((project) => project.id === entry.project_id)?.slug ?? entry.project_id,
     revisions: listRevisions(store, id),
     constraints: parseConstraints(entry.constraints),
     prevId,
@@ -987,12 +1056,17 @@ function parseContext(json: string): Record<string, unknown> {
  * The user-facing refusal messages, in the dashboard's own voice: name what failed, then the fix.
  * The store's refusal carries the values; only this function turns them into prose.
  */
+/** A placeholder token as the copy shows it: one pair of braces around the bare name, even when the filed token already carries its own. */
+function bracedPlaceholder(placeholder: string): string {
+  return `{${placeholder.replace(/^\{+|\}+$/g, "")}}`;
+}
+
 export function formatSaveRefusal(refusal: Exclude<HumanSaveRefusal, { kind: "unknown" }>): string {
   switch (refusal.kind) {
     case "max_len":
       return `This text is ${refusal.length} characters; the length limit is ${refusal.maxLen}. Shorten it to ${refusal.maxLen} characters or fewer.`;
     case "placeholder":
-      return `The text is missing the placeholder {${refusal.placeholder}}. Add {${refusal.placeholder}} to the text and save again.`;
+      return `The text is missing the placeholder ${bracedPlaceholder(refusal.placeholder)}. Add ${bracedPlaceholder(refusal.placeholder)} to the text and save again.`;
     case "empty":
       return "Nothing to save. Enter text, or reject the entry.";
     case "status":
@@ -1043,94 +1117,177 @@ function DangerCallout({ title, body }: { title: string; body?: string }) {
   );
 }
 
-/**
- * The editor region, swapped wholesale by a save or a transition (form + status tag + history +
- * any refusal). The textarea carries `hx-preserve`, so a swap keeps the user's focus and typing
- * while the server-rendered value stays what the last save left: the submitted text on a refusal.
- * The `view` marker tells the approve and reject routes which region to answer with: this region,
- * or the list's. The buttons carry htmx only; the save button keeps the native submit.
- */
-function EditorRegion({ vm, state }: { vm: EditorViewModel; state: EditorState | undefined }) {
-  const text = state?.submittedText ?? vm.entry.human_text ?? vm.entry.agent_draft ?? "";
-  const approve = vm.entry.status === "draft";
-  const reject = vm.entry.status === "draft" || vm.entry.status === "approved";
+function InfoCallout({ title, body }: { title: string; body?: string }) {
   return (
-    <div id="editor-region">
-      {state?.refusal !== undefined ? (
-        <DangerCallout title={state.refusal.title} body={state.refusal.body} />
-      ) : null}
-      <form
-        id="editor-form"
-        class="card"
-        method="post"
-        action={`/entries/${vm.entry.id}/save`}
-        hx-post={`/entries/${vm.entry.id}/save`}
-        hx-target="#editor-view"
-        hx-swap="outerHTML"
-      >
-        <input type="hidden" name="view" value="editor" />
-        <div class="card-header">
-          <div class="card-title editor-title">{entryTitle(vm.entry)}</div>
-          <span class={`tag ${STATUS_TAG[vm.entry.status]}`}>
-            <span class="tag-dot"></span>
-            {STATUS_LABEL[vm.entry.status]}
+    <div class="callout callout-info">
+      <div class="callout-icon">
+        <svg aria-hidden="true"><use href="#i-info" /></svg>
+      </div>
+      <div class="callout-content">
+        <div class="callout-title">{title}</div>
+        {body !== undefined ? <div class="callout-body">{body}</div> : null}
+      </div>
+    </div>
+  );
+}
+
+/** The entry's status tag, in the page header; transitions re-render it out of band. */
+function EntryStatusTag({ status, oob = false }: { status: EntryStatus; oob?: boolean }) {
+  return (
+    <span id="entry-status" hx-swap-oob={oob ? "true" : undefined}>
+      <span class={`tag ${STATUS_TAG[status]}`}>
+        <span class="tag-dot"></span>
+        {STATUS_LABEL[status]}
+      </span>
+    </span>
+  );
+}
+
+/** One header nav control: a secondary button linking to the neighbour, or an inert placeholder at the boundary. */
+function EditorNavButton({ side, targetId }: { side: "prev" | "next"; targetId: string | null }) {
+  const label = side === "prev" ? "Previous entry" : "Next entry";
+  const icon = (
+    <svg aria-hidden="true"><use href={side === "prev" ? "#i-chevron-left" : "#i-chevron-right"} /></svg>
+  );
+  if (targetId === null) {
+    return (
+      <button class="btn btn-secondary" type="button" disabled aria-label={label}>
+        {icon}
+      </button>
+    );
+  }
+  return (
+    <a class="btn btn-secondary" href={`/entries/${targetId}`} aria-label={label}>
+      {icon}
+    </a>
+  );
+}
+
+/**
+ * The editor's page header: the breadcrumb on its own line, then the entry title with the status
+ * tag, repo link, file and filed time under it, and the previous/next pair in the actions cell.
+ */
+function EditorHeader({ vm }: { vm: EditorViewModel }) {
+  const entry = vm.entry;
+  const filed = filedStamp(entry.created_at);
+  return (
+    <header class="page-header">
+      <nav class="breadcrumb" aria-label="Breadcrumb">
+        <a class="breadcrumb-item" href="/">Entries</a>
+        <span class="breadcrumb-sep" aria-hidden="true"></span>
+        <span class="breadcrumb-item current">{vm.projectSlug}</span>
+      </nav>
+      <div class="page-header-body">
+        <h1 class="page-title editor-title">{entryTitle(entry)}</h1>
+        <div class="page-meta">
+          <EntryStatusTag status={entry.status} />
+          <span class="page-meta-item"><RepoValue repo={entry.repo} /></span>
+          <span class="page-meta-item"><span class="page-file truncate">{entry.file}</span></span>
+          <span class="page-meta-item">filed <time class="num" datetime={filed.iso}>{filed.short}</time></span>
+        </div>
+      </div>
+      <div class="toolbar">
+        <EditorNavButton side="prev" targetId={vm.prevId} />
+        <EditorNavButton side="next" targetId={vm.nextId} />
+      </div>
+    </header>
+  );
+}
+
+/**
+ * The anchored snippet as it reads in the file: the surrounding lines with the anchor between
+ * them, the anchor marked as the annotation. When the entry has text to compare, words the anchor
+ * has and the proposal does not carry the removed mark; the proposal side is the editor's own
+ * textarea, so nothing here renders a second copy of it.
+ */
+function CurrentTextCard({ entry }: { entry: EntryRow }) {
+  const after = entry.human_text ?? entry.agent_draft;
+  const diff = after === null ? null : diffWords(entry.anchor_text, after);
+  return (
+    <div class="card current-text-card">
+      <div class="card-header">
+        <div class="card-title">Current text</div>
+      </div>
+      <div class="card-content">
+        <pre class="diff-code">
+          <span class="diff-line">{entry.anchor_before}</span>
+          <span class="diff-line diff-anchor annot-mark">
+            {diff === null
+              ? entry.anchor_text
+              : diff.before.map((token, index) =>
+                  token.kind === "removed" ? (
+                    <span class="diff-remove" key={index}>{token.text}</span>
+                  ) : (
+                    token.text
+                  ),
+                )}
           </span>
-        </div>
-        <div class="card-content">
-          <textarea id="editor-text" class="input" name="text" rows={2} aria-label="Entry text" hx-preserve="true">
-            {text}
-          </textarea>
-          <div class="editor-actions">
-            <button class="btn btn-fill" type="submit">Save text</button>
-            {approve ? (
-              <button
-                type="button"
-                class="btn btn-secondary"
-                hx-post={`/entries/${vm.entry.id}/approve`}
-                hx-target="#editor-region"
-                hx-swap="outerHTML"
-                hx-indicator="#editor-action-loading"
-                hx-disabled-elt="this"
-              >
-                Approve draft
-              </button>
-            ) : vm.entry.status === "approved" ? (
-              // Same slot-occupancy guard as the list row: the second click of a double-click on
-              // the just-approving button would otherwise land on the Reject button that shifts
-              // into this slot in the swapped region.
-              <button type="button" class="btn btn-secondary" disabled>
-                Approve draft
-              </button>
-            ) : null}
-            {reject ? (
-              <button
-                type="button"
-                class="btn btn-danger"
-                hx-post={`/entries/${vm.entry.id}/reject`}
-                hx-target="#editor-region"
-                hx-swap="outerHTML"
-                hx-indicator="#editor-action-loading"
-                hx-disabled-elt="this"
-              >
-                Reject
-              </button>
-            ) : null}
-            <span id="editor-action-loading" class="htmx-indicator" role="status">
-              <span class="spinner" aria-hidden="true"></span>
-              Updating entry
-            </span>
+          <span class="diff-line">{entry.anchor_after}</span>
+        </pre>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * The entry's agent-supplied context rows plus the provenance (hash, filer, stale note) collapsed
+ * behind the disclosure. The anchor, repo, file and filed time all live in the page header, so no
+ * row here repeats them.
+ */
+function DetailsCard({ entry }: { entry: EntryRow }) {
+  const context = parseContext(entry.context);
+  const rows = Object.entries(context);
+  return (
+    <div class="card details-card">
+      <div class="card-header">
+        <div class="card-title">Details</div>
+      </div>
+      <div class="card-content">
+        {rows.length > 0 ? (
+          <table class="info-table">
+            {rows.map(([key, value]) => (
+              <tr key={key}>
+                <td>{key}</td>
+                <td>{typeof value === "string" ? value : JSON.stringify(value)}</td>
+              </tr>
+            ))}
+          </table>
+        ) : null}
+        <details class="disclosure context-secondary">
+          <summary>
+            <svg aria-hidden="true"><use href="#i-chevron-right" /></svg>
+            <span>More</span>
+          </summary>
+          <div class="disclosure-body">
+            <table class="info-table">
+              <tr>
+                <td>File hash</td>
+                <td>{entry.file_hash}</td>
+              </tr>
+              {entry.filed_by !== null ? (
+                <tr>
+                  <td>Filed by</td>
+                  <td>{entry.filed_by}</td>
+                </tr>
+              ) : null}
+              {entry.stale_note !== null ? (
+                <tr>
+                  <td>Stale note</td>
+                  <td>{entry.stale_note}</td>
+                </tr>
+              ) : null}
+            </table>
           </div>
-        </div>
-      </form>
-      <RevisionHistory revisions={vm.revisions} />
+        </details>
+      </div>
     </div>
   );
 }
 
 /** The audit log of saved revisions: the shipped timeline, one dot per entry. */
-function RevisionHistory({ revisions }: { revisions: readonly RevisionRow[] }) {
+function RevisionHistory({ revisions, editable }: { revisions: readonly RevisionRow[]; editable: boolean }) {
   return (
-    <div class="card">
+    <div class="card history-card">
       <div class="card-header">
         <div class="card-title">Revision history</div>
       </div>
@@ -1150,9 +1307,12 @@ function RevisionHistory({ revisions }: { revisions: readonly RevisionRow[] }) {
                     <time class="timeline-time" datetime={new Date(revision.created_at).toISOString()}>
                       {new Date(revision.created_at).toLocaleString()}
                     </time>
-                    <button class="btn btn-secondary btn-sm" type="button" data-use-revision>
-                      Use
-                    </button>
+                    {/* A terminal entry has no textarea to load into; the button would be dead. */}
+                    {editable ? (
+                      <button class="btn btn-secondary btn-sm" type="button" data-use-revision>
+                        Use
+                      </button>
+                    ) : null}
                   </div>
                   <div class="timeline-body clamp-2">{revision.human_text}</div>
                 </div>
@@ -1165,58 +1325,148 @@ function RevisionHistory({ revisions }: { revisions: readonly RevisionRow[] }) {
   );
 }
 
-/** The constraint panel as the system's key-value readout: live count and placeholder checklist stay wired. */
-function ConstraintsCard({ constraints, text }: { constraints: Constraints; text: string }) {
+/**
+ * The live metrics under the textarea: the length against the cap, each required placeholder's
+ * present/missing state, and the requested tone. Dashboard.js re-syncs these as the user types.
+ */
+function ConstraintRow({ constraints, text }: { constraints: Constraints; text: string }) {
   const maxLen = constraints.maxLen;
   const placeholders = constraints.placeholders;
   const tone = constraints.tone;
   const hasAny = maxLen !== undefined || placeholders.length > 0 || tone !== undefined;
   if (!hasAny) return null;
   return (
-    <div class="card">
+    <div class="constraint-row">
+      {maxLen !== undefined ? (
+        <span id="char-count" class="num char-count" data-max-len={maxLen}>
+          {text.length} / {maxLen}
+        </span>
+      ) : null}
+      {placeholders.length > 0 ? (
+        <ul class="placeholder-list">
+          {placeholders.map((placeholder) => {
+            const present = text.includes(placeholder);
+            return (
+              <li class="placeholder-item" data-placeholder={placeholder} key={placeholder}>
+                <span class={`placeholder-state${present ? " is-present" : ""}`}>
+                  {present ? "Present" : "Missing"}
+                </span>
+                <span class="tag tag-data">{bracedPlaceholder(placeholder)}</span>
+              </li>
+            );
+          })}
+        </ul>
+      ) : null}
+      {tone !== undefined ? <span class="constraint-tone">Tone: {tone}</span> : null}
+    </div>
+  );
+}
+
+/**
+ * The proposal card for a draft or an approved entry: the textarea prefilled with what agents will
+ * read, the constraints under it, and the one primary action. Saving a draft's text approves it,
+ * so the primary reads "Save and approve" there; the old separate approve button silently discarded
+ * edits and is gone. The textarea carries `hx-preserve`, so a swap keeps the user's focus and
+ * typing while the server-rendered value stays what the last save left: the submitted text on a
+ * refusal. The save button keeps the native submit; the reject button is an htmx transition.
+ */
+function ProposalForm({ vm, state }: { vm: EditorViewModel; state: EditorState | undefined }) {
+  const entry = vm.entry;
+  const text = state?.submittedText ?? entry.human_text ?? entry.agent_draft ?? "";
+  const draft = entry.status === "draft";
+  const reject = entry.status === "draft" || entry.status === "approved";
+  return (
+    <form
+      id="editor-form"
+      class="card"
+      method="post"
+      action={`/entries/${entry.id}/save`}
+      hx-post={`/entries/${entry.id}/save`}
+      hx-target="#editor-view"
+      hx-swap="outerHTML"
+      hx-indicator="#editor-action-loading"
+    >
+      <input type="hidden" name="view" value="editor" />
       <div class="card-header">
-        <div class="card-title">Constraints</div>
+        <div>
+          <div class="card-title">Proposed text</div>
+          <div class="card-subtitle">
+            {draft
+              ? "Saving the text approves the entry and releases it to agents."
+              : "Saving updates the text agents will apply."}
+          </div>
+        </div>
       </div>
       <div class="card-content">
-        <table class="info-table">
-          {maxLen !== undefined ? (
-            <tr key="max-len">
-              <td>Length</td>
-              <td>
-                <span id="char-count" class="num char-count" data-max-len={maxLen}>
-                  {text.length} / {maxLen}
-                </span>
-              </td>
-            </tr>
+        <textarea id="editor-text" class="input" name="text" rows={2} aria-label="Entry text" hx-preserve="true" data-autosize>
+          {text}
+        </textarea>
+        <ConstraintRow constraints={vm.constraints} text={text} />
+        <div class="editor-actions">
+          <button class="btn btn-fill" type="submit" hx-disabled-elt="this">
+            {draft ? "Save and approve" : "Save text"}
+          </button>
+          {reject ? (
+            <button
+              type="button"
+              class="btn btn-danger"
+              hx-post={`/entries/${entry.id}/reject`}
+              hx-target="#editor-view"
+              hx-swap="outerHTML"
+              hx-indicator="#editor-action-loading"
+              hx-disabled-elt="this"
+            >
+              Reject
+            </button>
           ) : null}
-          {placeholders.length > 0 ? (
-            <tr key="placeholders">
-              <td>Placeholders</td>
-              <td>
-                <ul class="placeholder-list">
-                  {placeholders.map((placeholder) => {
-                    const present = text.includes(placeholder);
-                    return (
-                      <li class="placeholder-item" data-placeholder={placeholder} key={placeholder}>
-                        <span class={`placeholder-state${present ? " is-present" : ""}`}>
-                          {present ? "Present" : "Missing"}
-                        </span>
-                        <span class="tag tag-data">{"{" + placeholder + "}"}</span>
-                      </li>
-                    );
-                  })}
-                </ul>
-              </td>
-            </tr>
-          ) : null}
-          {tone !== undefined ? (
-            <tr key="tone">
-              <td>Tone</td>
-              <td>{tone}</td>
-            </tr>
-          ) : null}
-        </table>
+          <span id="editor-action-loading" class="htmx-indicator" role="status">
+            <span class="spinner" aria-hidden="true"></span>
+            Updating entry
+          </span>
+        </div>
       </div>
+    </form>
+  );
+}
+
+/** The read-only proposal for a terminal entry: the settled text plus the state and the way out. */
+function TerminalTextCard({ entry }: { entry: EntryRow }) {
+  const applied = entry.status === "applied";
+  return (
+    <>
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">Proposed text</div>
+        </div>
+        <div class="card-content">
+          <pre class="diff-code">{entry.human_text ?? ""}</pre>
+        </div>
+      </div>
+      <InfoCallout
+        title="Read only"
+        body={
+          applied
+            ? "This entry is already applied, so its text can't be changed here. If the anchor goes stale, the entry returns to approved and can be edited."
+            : "This entry was rejected, so its text can't be changed. A rejected entry stays rejected; file a new entry if the passage still needs changing."
+        }
+      />
+    </>
+  );
+}
+
+/**
+ * The editor region, swapped wholesale by a save or a transition (proposal card + any refusal).
+ * A terminal entry renders its text read-only with the state and the way out; notes stay editable
+ * beside it.
+ */
+function EditorRegion({ vm, state }: { vm: EditorViewModel; state: EditorState | undefined }) {
+  const terminal = vm.entry.status === "applied" || vm.entry.status === "rejected";
+  return (
+    <div id="editor-region" tabindex={-1}>
+      {state?.refusal !== undefined ? (
+        <DangerCallout title={state.refusal.title} body={state.refusal.body} />
+      ) : null}
+      {terminal ? <TerminalTextCard entry={vm.entry} /> : <ProposalForm vm={vm} state={state} />}
     </div>
   );
 }
@@ -1230,7 +1480,7 @@ function ConstraintsCard({ constraints, text }: { constraints: Constraints; text
  */
 function NotesCard({ vm }: { vm: EditorViewModel }) {
   return (
-    <div class="card">
+    <div class="card notes-card">
       <div class="card-header">
         <div class="card-title">Notes</div>
       </div>
@@ -1258,6 +1508,7 @@ function NotesCard({ vm }: { vm: EditorViewModel }) {
               rows={4}
               aria-label="Your notes"
               hx-preserve="true"
+              data-autosize
             >
               {vm.entry.human_notes ?? ""}
             </textarea>
@@ -1277,16 +1528,15 @@ function isRenderableImage(item: string): boolean {
 }
 
 /**
- * The images attached to an entry, one card in the rail: each valid item as a real `img` (sized by
- * css), an invalid one as a "not shown" note, a remove form per image, and the one-file upload as
- * the system dropzone. A card of its own, not a strip in the context card: upload and remove need a
- * stable home, and the context card stays lean for what the human authors against. Both forms
- * target the whole editor view like the save form, so a change re-renders the card in place.
+ * The images attached to an entry, one card: each valid item as a real `img` (sized by css), an
+ * invalid one as a "not shown" note, a remove form per image, and the one-file upload as the
+ * system dropzone. Both forms target the whole editor view like the save form, so a change
+ * re-renders the card in place.
  */
 function ImagesCard({ entry }: { entry: EntryRow }) {
   const images = parseEntryImages(entry.images);
   return (
-    <div class="card">
+    <div class="card images-card">
       <div class="card-header">
         <div class="card-title">Images</div>
       </div>
@@ -1373,174 +1623,30 @@ function RepoValue({ repo }: { repo: string }) {
 }
 
 /**
- * The entry's context JSON plus its anchor metadata, as an info-table readout. The anchor and the
- * agent-supplied context rows lead — they are what the human authors against — then repo and file;
- * the provenance rows (hash, filer, stale note) are secondary and sit collapsed behind a summary.
- */
-function ContextCard({ entry }: { entry: EntryRow }) {
-  const context = parseContext(entry.context);
-  return (
-    <div class="card">
-      <div class="card-header">
-        <div class="card-title">Context</div>
-      </div>
-      <div class="card-content">
-        <table class="info-table">
-          <tr>
-            <td>Anchor</td>
-            <td>{entry.anchor_text}</td>
-          </tr>
-          {Object.entries(context).map(([key, value]) => (
-            <tr key={key}>
-              <td>{key}</td>
-              <td>{typeof value === "string" ? value : JSON.stringify(value)}</td>
-            </tr>
-          ))}
-          <tr>
-            <td>Repo</td>
-            <td><RepoValue repo={entry.repo} /></td>
-          </tr>
-          <tr>
-            <td>File</td>
-            <td>{entry.file}</td>
-          </tr>
-        </table>
-        <details class="disclosure context-secondary">
-          <summary>
-            <svg aria-hidden="true"><use href="#i-chevron-right" /></svg>
-            <span>More</span>
-          </summary>
-          <div class="disclosure-body">
-            <table class="info-table">
-              <tr>
-                <td>File hash</td>
-                <td>{entry.file_hash}</td>
-              </tr>
-              {entry.filed_by !== null ? (
-                <tr>
-                  <td>Filed by</td>
-                  <td>{entry.filed_by}</td>
-                </tr>
-              ) : null}
-              {entry.stale_note !== null ? (
-                <tr>
-                  <td>Stale note</td>
-                  <td>{entry.stale_note}</td>
-                </tr>
-              ) : null}
-            </table>
-          </div>
-        </details>
-      </div>
-    </div>
-  );
-}
-
-/**
- * The before-and-after of the entry's text, above the editor: what the anchored region reads now
- * (the anchor marked as the annotation) and what the entry's text will replace it with. Both sides
- * escape through JSX; the text is the stored bytes, shown as-is. The word-level marks come from
- * the server-side walk: words only the anchor has render red in the before card, words only the proposal
- * has render green in the after card, everything shared stays plain, so an identical pair renders
- * no marks at all.
- */
-function DiffView({ entry }: { entry: EntryRow }) {
-  const after = entry.human_text ?? entry.agent_draft;
-  // No text at all means nothing to compare: a filed entry whose agent never drafted, or an
-  // approved entry whose text was never set.
-  if (after === null) return null;
-  const diff = diffWords(entry.anchor_text, after);
-  return (
-    <div class="diff-grid">
-      <div class="card">
-        <div class="card-header">
-          <div class="card-title">Before</div>
-        </div>
-        <pre class="diff-code">
-          <span class="diff-line">{entry.anchor_before}</span>
-          <span class="diff-line diff-anchor annot-mark">
-            {diff.before.map((token, index) =>
-              token.kind === "removed" ? (
-                <span class="diff-remove" key={index}>{token.text}</span>
-              ) : (
-                token.text
-              ),
-            )}
-          </span>
-          <span class="diff-line">{entry.anchor_after}</span>
-        </pre>
-      </div>
-      <div class="card">
-        <div class="card-header">
-          <div class="card-title">After</div>
-        </div>
-        <pre class="diff-code">
-          {diff.after.map((token, index) =>
-            token.kind === "added" ? (
-              <span class="diff-add" key={index}>{token.text}</span>
-            ) : (
-              token.text
-            ),
-          )}
-        </pre>
-      </div>
-    </div>
-  );
-}
-
-/**
- * The editor view: the diff above the editor grid, one swap node. A save changes the diff's
- * after-side, so the save form targets this wrapper and its response re-renders the whole view;
- * the transitions target only the region inside (they never change what the diff shows).
+ * The editor view: two equal columns, the current text and its details on the left and the
+ * proposal with the notes and images on the right, one swap node. A save changes what the
+ * current-text marks compare against, so the save form targets this wrapper and its response
+ * re-renders the whole view; the transitions target only the region inside. The context column
+ * leads the DOM so the focus order matches the desktop layout; under 900px the cards reorder
+ * themselves so the proposal is first on the stacked column.
  */
 function EditorView({ vm, state }: { vm: EditorViewModel; state: EditorState | undefined }) {
-  const text = state?.submittedText ?? vm.entry.human_text ?? vm.entry.agent_draft ?? "";
+  const terminal = vm.entry.status === "applied" || vm.entry.status === "rejected";
   return (
     <div id="editor-view">
-      <DiffView entry={vm.entry} />
       <div class="editor-grid">
-        <div class="editor-main">
-          <EditorRegion vm={vm} state={state} />
+        <div class="editor-col editor-col-context">
+          <CurrentTextCard entry={vm.entry} />
+          <DetailsCard entry={vm.entry} />
+          <RevisionHistory revisions={vm.revisions} editable={!terminal} />
         </div>
-        <aside class="editor-rail">
-          <ContextCard entry={vm.entry} />
-          <ConstraintsCard constraints={vm.constraints} text={text} />
+        <div class="editor-col editor-col-proposal">
+          <EditorRegion vm={vm} state={state} />
           <NotesCard vm={vm} />
           <ImagesCard entry={vm.entry} />
-        </aside>
+        </div>
       </div>
     </div>
-  );
-}
-
-/** The editor's full-height prev/next rails: one fixed strip per side, a link when a neighbour exists. */
-function EditorNav({ prevId, nextId }: { prevId: string | null; nextId: string | null }) {
-  return (
-    <nav class="editor-nav" aria-label="Entry navigation">
-      <EditorNavButton side="prev" targetId={prevId} />
-      <EditorNavButton side="next" targetId={nextId} />
-    </nav>
-  );
-}
-
-/** One rail: a chevron on a full-height strip, or an inert placeholder at the boundary. */
-function EditorNavButton({ side, targetId }: { side: "prev" | "next"; targetId: string | null }) {
-  const label = side === "prev" ? "Previous entry" : "Next entry";
-  const cls = `editor-nav-btn editor-nav-${side}`;
-  const icon = (
-    <svg aria-hidden="true"><use href={side === "prev" ? "#i-chevron-left" : "#i-chevron-right"} /></svg>
-  );
-  if (targetId === null) {
-    return (
-      <span class={`${cls} is-disabled`} aria-hidden="true">
-        {icon}
-      </span>
-    );
-  }
-  return (
-    <a class={cls} href={`/entries/${targetId}`} aria-label={label}>
-      {icon}
-    </a>
   );
 }
 
@@ -1550,17 +1656,11 @@ export function editorPage(vm: EditorViewModel, state: EditorState | undefined =
     <html lang="en" data-theme="dark">
       <PageHead title={`Edit entry · ${NAME}`} />
       <body>
+        <a class="skip-link" href="#main">Skip to content</a>
         <IconSprite />
         <Shell signedIn={signedIn} active="entries" draftCount={vm.draftCount}>
-          <header class="page-header">
-            <div class="page-header-body">
-              <div class="label">Entry review</div>
-              <h1 class="page-title">Edit entry</h1>
-              <p class="section-lede">Saving the text approves the entry and releases it to agents.</p>
-            </div>
-          </header>
+          <EditorHeader vm={vm} />
           <EditorView vm={vm} state={state} />
-          <EditorNav prevId={vm.prevId} nextId={vm.nextId} />
           {/* The one live region: announcements on constraint-state flips only, so a screen reader
               is not flooded with a per-keystroke value. Lives outside the swap region. */}
           <span id="editor-live" class="sr-only" aria-live="polite"></span>
@@ -1572,21 +1672,12 @@ export function editorPage(vm: EditorViewModel, state: EditorState | undefined =
   );
 }
 
-/** The editor region only, for htmx transition responses; the page shell, diff, context, and constraints stay put. The badge rides out of band because approving here moves the queue count. */
-export function editorFragment(vm: EditorViewModel, state: EditorState | undefined = undefined): JSX.Element {
-  return (
-    <>
-      <DraftBadge count={vm.draftCount} oob />
-      <EditorRegion vm={vm} state={state} />
-    </>
-  );
-}
-
-/** The whole editor view (diff + region + rail), for htmx save responses: a save changes the diff's after-side and can approve the entry, so the swap re-renders it and moves the queue badge with it. */
+/** The whole editor view (columns + region), for htmx save and transition responses: either can move the status, so the swap re-renders the history card's editable state and the header tag with it. */
 export function editorViewFragment(vm: EditorViewModel, state: EditorState | undefined = undefined): JSX.Element {
   return (
     <>
       <DraftBadge count={vm.draftCount} oob />
+      <EntryStatusTag status={vm.entry.status} oob />
       <EditorView vm={vm} state={state} />
     </>
   );
@@ -1619,7 +1710,7 @@ export function notFoundPage(_signedIn = false): JSX.Element {
 /** The htmx fragment for a save on an id that vanished mid-session: htmx will not swap a 4xx, so this is a 200 with the way onward in the editor region itself. */
 export function entryGoneFragment(): JSX.Element {
   return (
-    <div id="editor-region">
+    <div id="editor-region" tabindex={-1}>
       <DangerCallout title="This entry no longer exists" body="Return to the list to find it." />
       <a href="/" class="btn btn-secondary">Back to entries</a>
     </div>
@@ -1696,25 +1787,11 @@ function sectionToForm(section: StyleGuideInput): StyleGuideForm {
   };
 }
 
-function InfoCallout({ title, body }: { title: string; body?: string }) {
-  return (
-    <div class="callout callout-info">
-      <div class="callout-icon">
-        <svg aria-hidden="true"><use href="#i-info" /></svg>
-      </div>
-      <div class="callout-content">
-        <div class="callout-title">{title}</div>
-        {body !== undefined ? <div class="callout-body">{body}</div> : null}
-      </div>
-    </div>
-  );
-}
-
 /** The project selector: the global section plus every known project, as underline tabs with the current one marked. A link list is the whole mechanism; the section never auto-creates a project. ui.js builds the sliding ink. */
 function StyleGuideProjects({ vm }: { vm: StyleGuideViewModel }) {
   const activeSlug = vm.unknown ? null : vm.projectSlug;
   return (
-    <nav class="tabs-wrap style-guide-projects" aria-label="Style guide sections">
+    <nav class="tabs-wrap style-guide-projects" data-scroll-fade aria-label="Style guide sections">
       <div class="tabs">
         <ProjectSectionLink href="/style-guide" label="Global" active={activeSlug === null} />
         {vm.projects.map((project) => (
@@ -1778,53 +1855,54 @@ function StyleGuideRegion({ vm, state }: { vm: StyleGuideViewModel; state: Style
           body="Your save creates it."
         />
       ) : null}
-      <form
-        id="style-guide-form"
-        class="card style-guide-card"
-        method="post"
-        action="/style-guide/save"
-        hx-post="/style-guide/save"
-        hx-target="#style-guide-region"
-        hx-swap="outerHTML"
-        hx-indicator="#style-guide-loading"
-      >
-        <input type="hidden" name="project" value={vm.projectSlug ?? ""} />
-        <div class="card-header">
-          <div class="card-title">{vm.projectSlug === null ? "Global guide" : `${vm.projectSlug} guide`}</div>
-        </div>
-        <div class="card-content form-grid">
-          <div class="field">
-            <label class="field-label" for="style-guide-markdown">Markdown</label>
-            <textarea class="input" id="style-guide-markdown" name="markdown" rows={10} aria-label="Guide markdown">
-              {formValues.markdown}
-            </textarea>
-            {vm.hasRow && vm.section.markdown === "" ? <p class="field-hint">No markdown yet.</p> : null}
+      <div class="card style-guide-card">
+        <form
+          id="style-guide-form"
+          method="post"
+          action="/style-guide/save"
+          hx-post="/style-guide/save"
+          hx-target="#style-guide-region"
+          hx-swap="outerHTML"
+          hx-indicator="#style-guide-loading"
+        >
+          <input type="hidden" name="project" value={vm.projectSlug ?? ""} />
+          <div class="card-header">
+            <div class="card-title">{vm.projectSlug === null ? "Global guide" : `${vm.projectSlug} guide`}</div>
           </div>
-          <div class="field">
-            <label class="field-label" for="style-guide-banned">Banned words</label>
-            <input class="input" id="style-guide-banned" name="banned_words" type="text" value={formValues.bannedWordsCsv} />
-            <p class="field-hint">Comma-separated. Extra whitespace and duplicates are dropped.</p>
-            {vm.hasRow && vm.section.bannedWords.length === 0 ? <p class="field-hint">No banned words yet.</p> : null}
+          <div class="card-content style-guide-fields">
+            <div class="field">
+              <label class="field-label" for="style-guide-markdown">Markdown</label>
+              <textarea class="input" id="style-guide-markdown" name="markdown" rows={10} aria-label="Guide markdown" data-autosize data-scroll-fade>
+                {formValues.markdown}
+              </textarea>
+              {vm.hasRow && vm.section.markdown === "" ? <p class="field-hint">No markdown yet.</p> : null}
+            </div>
+            <div class="field">
+              <label class="field-label" for="style-guide-banned">Banned words</label>
+              <input class="input" id="style-guide-banned" name="banned_words" type="text" value={formValues.bannedWordsCsv} />
+              <p class="field-hint">Comma-separated. Extra whitespace and duplicates are dropped.</p>
+              {vm.hasRow && vm.section.bannedWords.length === 0 ? <p class="field-hint">No banned words yet.</p> : null}
+            </div>
+            <div class="field">
+              <label class="field-label" for="style-guide-glossary">Glossary</label>
+              <textarea class="input" id="style-guide-glossary" name="glossary" rows={6} aria-label="Glossary entries" data-autosize data-scroll-fade>
+                {formValues.glossaryText}
+              </textarea>
+              <p class="field-hint">One key: value pair per line. A line without a colon is refused.</p>
+              {vm.hasRow && Object.keys(vm.section.glossary).length === 0 ? (
+                <p class="field-hint">No glossary entries yet.</p>
+              ) : null}
+            </div>
+            <div class="editor-actions">
+              <button class="btn btn-fill" type="submit" hx-disabled-elt="this">Save guide</button>
+              <span id="style-guide-loading" class="htmx-indicator" role="status">
+                <span class="spinner" aria-hidden="true"></span>
+                Saving guide
+              </span>
+            </div>
           </div>
-          <div class="field">
-            <label class="field-label" for="style-guide-glossary">Glossary</label>
-            <textarea class="input" id="style-guide-glossary" name="glossary" rows={6} aria-label="Glossary entries">
-              {formValues.glossaryText}
-            </textarea>
-            <p class="field-hint">One key: value pair per line. A line without a colon is refused.</p>
-            {vm.hasRow && Object.keys(vm.section.glossary).length === 0 ? (
-              <p class="field-hint">No glossary entries yet.</p>
-            ) : null}
-          </div>
-          <div class="editor-actions">
-            <button class="btn btn-fill" type="submit" hx-disabled-elt="this">Save guide</button>
-            <span id="style-guide-loading" class="htmx-indicator" role="status">
-              <span class="spinner" aria-hidden="true"></span>
-              Saving guide
-            </span>
-          </div>
-        </div>
-      </form>
+        </form>
+      </div>
     </div>
   );
 }
@@ -1839,6 +1917,7 @@ export function styleGuidePage(
     <html lang="en" data-theme="dark">
       <PageHead title={`Style guide · ${NAME}`} />
       <body>
+        <a class="skip-link" href="#main">Skip to content</a>
         <IconSprite />
         <Shell signedIn={signedIn} active="style-guide" draftCount={vm.draftCount}>
           <header class="page-header">

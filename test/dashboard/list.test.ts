@@ -143,10 +143,15 @@ function shortUlid(id: string): string {
   return `${id.slice(0, 6)}…${id.slice(-6)}`;
 }
 
-/** The `.cell-actions` region for an entry, from its `<td>` to the row's close. */
+/** The `.cell-actions` region for an entry, from its `<td>` to the row's close. The row carries
+    two links to the editor (the title and the edit icon), so the edit link's own position anchors
+    the region. */
 function entryActions(html: string, id: string): string {
-  const mark = html.indexOf(`href="/entries/${id}"`);
-  expect(mark, `entry ${id} action cell rendered`).toBeGreaterThan(-1);
+  const href = `href="/entries/${id}"`;
+  const titleMark = html.indexOf(href);
+  expect(titleMark, `entry ${id} title link rendered`).toBeGreaterThan(-1);
+  const mark = html.indexOf(href, titleMark + 1);
+  expect(mark, `entry ${id} edit link rendered`).toBeGreaterThan(-1);
   const start = html.lastIndexOf('<td class="cell-actions">', mark);
   const end = html.indexOf("</td>", mark);
   return html.slice(start, end);
@@ -183,12 +188,12 @@ describe("dashboard entry list", () => {
 
     // Page header: title, then the store's entry and project counts, with no eyebrow or lede.
     expect(html).toContain("<h1 class=\"page-title\">Entries</h1>");
-    expect(html).toContain('<span class="page-meta-item num">6 entries</span>');
-    expect(html).toContain('<span class="page-meta-item num">2 projects</span>');
+    expect(html).toContain('<span class="page-meta-item"><span class="num">6</span> entries</span>');
+    expect(html).toContain('<span class="page-meta-item"><span class="num">2</span> projects</span>');
 
-    // The reference rhythm: the banner slot, the four status cards, then the queue section.
+    // The reference rhythm: the banner slot, the status tab strip, then the queue section.
     expect(html).toContain('<div id="page-banner">');
-    expect(html).toContain('<div class="stat-grid" id="page-stats">');
+    expect(html).toContain('<div class="tabs-wrap status-tabs" id="status-tabs">');
     expect(html).toContain('<div class="section-head"><div class="label">Queue</div></div>');
     // One display title on the page: the section names itself with its eyebrow alone.
     expect(html).not.toContain('<h2 class="section-title">Entries</h2>');
@@ -211,14 +216,20 @@ describe("dashboard entry list", () => {
     expect(html).toContain('class="filter-bar"');
     expect(html).toContain('class="input select-trigger"');
     expect(html).toContain('class="select-menu"');
-    expect(html).toContain('name="status" value="" data-filter-field="status" disabled=""');
+    // The status control is the tab strip of submit buttons inside this form, never a second
+    // dropdown beside it; the project filter keeps its hidden input.
+    expect(html).toContain('<button class="tab active" type="submit" name="status" value="" aria-current="true">');
     expect(html).toContain('name="project" value="" data-filter-field="project" disabled=""');
     expect(html).toContain('name="q"');
-    // The no-JS submit path keeps native selects carrying the same names as the hidden inputs.
+    // The no-JS submit path keeps a native select carrying the project filter's name; the status
+    // tabs submit natively, so no redundant native select ships for them.
     expect(html).toContain('<noscript>');
-    expect(html).toContain('<select class="input" id="status-native" name="status">');
+    expect(html).not.toContain('id="status-native"');
+    // The form's default submit button carries the current status for an implicit no-JS submit,
+    // and dashboard.js drops every submit button's name once the hidden field owns the status.
+    expect(html).toContain('<button class="sr-only" type="submit" name="status" value="" tabindex="-1" aria-hidden="true">');
     expect(html).toContain('<select class="input" id="project-native" name="project">');
-    expect(html).toContain('class="btn btn-primary" type="submit">Apply filters</button>');
+    expect(html).toContain('class="btn btn-primary" type="submit" name="status" value="">Apply filters</button>');
     // The filter form carries no visible field labels; the bar's own affordances name it.
     expect(html).toContain('<label class="sr-only" for="q">Search</label>');
 
@@ -247,12 +258,12 @@ describe("dashboard entry list", () => {
     // `status=all` so the full fixture renders: the default Active view hides the terminal rows.
     const html = await (await env.get("/?status=all")).text();
 
-    // Projects in slug order; each project header carries its entry count.
+    // Projects in slug order; each project header carries the drafts and entries of its shown rows.
     expect(html.indexOf('<h2 class="section-title project-name">alpha</h2>')).toBeLessThan(
       html.indexOf('<h2 class="section-title project-name">zeta</h2>'),
     );
-    expect(html).toContain(">5 entries</span>");
-    expect(html).toContain(">1 entry</span>");
+    expect(html).toContain("2 drafts · 5 entries");
+    expect(html).toContain("1 draft · 1 entry");
 
     // One table per project, both dense: two tables, never one per batch.
     expect(html.match(/<div class="table-wrap table-dense">/g) ?? []).toHaveLength(2);
@@ -269,13 +280,13 @@ describe("dashboard entry list", () => {
     expect(zetaSlice).toContain("Frequently asked");
     expect(zetaSlice).not.toContain("Run bun install");
 
-    // The rows carry the four statuses and the file column; a row's title leads and truncates.
+    // The rows carry the four statuses and the entry cell leads with the title link over its file.
     expect(html).toContain('<span class="tag tag-warning"><span class="tag-dot"></span>Draft</span>');
     expect(html).toContain('<span class="tag tag-success"><span class="tag-dot"></span>Approved</span>');
     expect(html).toContain('<span class="tag tag-info"><span class="tag-dot"></span>Applied</span>');
     expect(html).toContain('<span class="tag tag-danger"><span class="tag-dot"></span>Rejected</span>');
-    expect(html).toContain('<span class="entry-title truncate">Run bun install</span>');
-    expect(html).toContain('<td class="cell-file truncate">docs/setup.md</td>');
+    expect(html).toContain(`<a class="entry-link truncate" href="/entries/${batchA.results[0]!.id}">Run bun install</a>`);
+    expect(html).toContain('<span class="entry-file truncate">docs/setup.md</span>');
 
     // The flattened chrome stays gone: no disclosures, no batch ulids, no filers in the list.
     expect(html.match(/data-collapse-key/g) ?? []).toHaveLength(0);
@@ -286,25 +297,25 @@ describe("dashboard entry list", () => {
     expect(html).not.toContain("probe-agent");
   });
 
-  test("the four stat cards read the whole store, not the filtered rows", async () => {
+  test("the status tabs read the whole store, not the filtered rows", async () => {
     // The fixture ends at 3 drafts, 1 approved, 1 applied, 1 rejected: the statuses were moved
     // through the store above, so these are hand-counted literals, not a re-derivation.
     const html = await (await env.get("/?status=all")).text();
-    for (const [label, value] of [
-      ["Draft", 3],
-      ["Approved", 1],
-      ["Applied", 1],
-      ["Rejected", 1],
+    for (const [value, label, count] of [
+      ["draft", "Draft", 3],
+      ["approved", "Approved", 1],
+      ["applied", "Applied", 1],
+      ["rejected", "Rejected", 1],
     ] as const) {
       expect(html).toContain(
-        `<div class="stat-card"><div class="stat-label">${label}</div><div class="stat-value num">${value}</div></div>`,
+        `<button class="tab" type="submit" name="status" value="${value}"><span>${label}</span><span class="tab-badge num">${count}</span></button>`,
       );
     }
 
-    // A filter matching one row leaves the cards on the store's totals.
+    // A filter matching one row leaves the tabs on the store's totals.
     const filtered = await (await env.get("/?q=wording")).text();
     expect(filtered).toContain("Run bun install");
-    expect(filtered).toContain('<div class="stat-card"><div class="stat-label">Draft</div><div class="stat-value num">3</div></div>');
+    expect(filtered).toContain('<button class="tab" type="submit" name="status" value="draft"><span>Draft</span><span class="tab-badge num">3</span></button>');
     expect(filtered).not.toContain("The cache lives at");
   });
 
@@ -327,15 +338,15 @@ describe("dashboard entry list", () => {
       const html = await (await stamped.get("/")).text();
       expect(html).toContain(">Filed</th>");
       expect(html).toContain(
-        '<td class="cell-time"><time class="num" datetime="1970-01-01T00:00:00.000Z">1970-01-01 00:00</time></td>',
+        '<td class="cell-filed"><time class="num" datetime="1970-01-01T00:00:00.000Z">1970-01-01 00:00</time></td>',
       );
     } finally {
       stamped.close();
     }
   });
 
-  test("adds a per-project select-all and keeps the approve button static and enabled without JS", async () => {
-    // `status=all` so both projects render; the default Active view hides the terminal rows.
+  test("adds a per-project select-all and ships the approve button disabled until a box is checked", async () => {
+    // `status=all` so both projects render; the default Open view hides the terminal rows.
     const html = await (await env.get("/?status=all")).text();
 
     // One select-all per project table (2), labelled by the project, and it never carries `name`,
@@ -349,12 +360,12 @@ describe("dashboard entry list", () => {
     // applied and rejected rows in alpha carry none.
     expect(html.match(/type="checkbox" name="id"/g) ?? []).toHaveLength(3);
 
-    // The no-JS approve button keeps its static label and no `disabled` attribute; the live count
-    // and the disabled state are applied by dashboard.js, and the fill marks the screen's one
-    // main action.
+    // The approve button ships ENABLED so the no-JS form can fire it (an empty selection answers
+    // the route's refusal); dashboard.js disables it at first paint and re-syncs it on selection.
     expect(html).toContain(
       'class="btn btn-fill btn-sm" type="submit" hx-disabled-elt="this">Approve selected</button>',
     );
+    expect(html).not.toContain('hx-disabled-elt="this" disabled="">Approve selected</button>');
   });
 
   test("renders three icon action slots per status", async () => {
@@ -419,9 +430,9 @@ describe("dashboard entry list", () => {
     const html = await (await env.get("/?status=rejected")).text();
     expect(html).toContain("shields badge");
     expect(html).not.toContain("Run bun install");
-    expect(html).toContain("Showing 1 of 6 entries");
-    // The select reflects the active filter.
-    expect(html).toContain('<option value="rejected" selected="">Rejected</option>');
+    expect(html).toContain('<span class="pagination-count num">1 of 6 entries</span>');
+    // The tab strip marks the active filter.
+    expect(html).toContain('<button class="tab active" type="submit" name="status" value="rejected" aria-current="true">');
   });
 
   test("the default view shows only active entries and reads as the success state", async () => {
@@ -434,10 +445,13 @@ describe("dashboard entry list", () => {
     expect(html).toContain("Frequently asked");
     expect(html).not.toContain("AGPL-3.0");
     expect(html).not.toContain("shields badge");
-    // The default is not a filter: no partial header, and the select leads with Active.
+    // The default is not a filter: no partial header, and the Open tab leads.
     expect(html).not.toContain("Showing ");
-    expect(html).toContain('<option value="" selected="">Active</option>');
-    expect(html).toContain('<option value="all">All statuses</option>');
+    expect(html).toContain('<button class="tab active" type="submit" name="status" value="" aria-current="true">');
+    // The all-statuses view stays reachable through its URL value, showing the terminal rows the
+    // Open view hides.
+    const all = await (await env.get("/?status=all")).text();
+    expect(all).toContain("AGPL-3.0");
 
     // An explicit empty status param is the default too. The positive leg pins that it is the
     // default, not an unknown-status no-match: the draft row still renders.
@@ -447,12 +461,13 @@ describe("dashboard entry list", () => {
     expect(empty).not.toContain("Showing ");
   });
 
-  test("status=all shows every status and the select reflects it", async () => {
+  test("status=all shows every status and leaves no tab current", async () => {
     const html = await (await env.get("/?status=all")).text();
 
     expect(html).toContain("AGPL-3.0");
     expect(html).toContain("shields badge");
-    expect(html).toContain('<option value="all" selected="">All statuses</option>');
+    // `all` is a URL value the tabs never offer, so no tab marks itself current under it.
+    expect(html).not.toContain('class="tab active"');
     // An explicit all-statuses filter matches the whole store, so no partial header either.
     expect(html).not.toContain("Showing ");
   });
@@ -469,28 +484,28 @@ describe("dashboard entry list", () => {
     const html = await (await env.get("/?q=setup&status=draft&project=alpha")).text();
     expect(html).toContain("Run bun install");
     expect(html).not.toContain("The cache lives at");
-    expect(html).toContain("Showing 1 of 6 entries");
+    expect(html).toContain('<span class="pagination-count num">1 of 6 entries</span>');
   });
 
-  test("shows the partial header only for a strict subset", async () => {
+  test("the count line reads the strict subset, and the full set under a filter that matches everything", async () => {
     // q=docs matches 4 of the 6 entries.
     const partial = await (await env.get("/?q=docs")).text();
-    expect(partial).toContain("Showing 4 of 6 entries");
+    expect(partial).toContain('<span class="pagination-count num">4 of 6 entries</span>');
     expect(partial).toContain("Clear filters");
     expect(partial).toContain("Run bun install");
     expect(partial).not.toContain("AGPL-3.0");
     expect(partial).toContain('value="docs"');
 
-    // A filter matching everything is the success state, not partial. `status=all` makes the
-    // comparison explicit: the default Active view would legitimately hide the terminal rows.
+    // A filter matching everything is the full count, not a subset. `status=all` makes the
+    // comparison explicit: the default Open view would legitimately hide the terminal rows.
     const full = await (await env.get("/?q=the&status=all")).text();
-    expect(full).not.toContain("Showing ");
+    expect(full).toContain('<span class="pagination-count num">6 of 6 entries</span>');
     expect(full).toContain("AGPL-3.0");
     expect(full).toContain("Frequently asked");
 
-    // No filters is the success state too.
+    // No filters is the full count of the Open view too.
     const plain = await (await env.get("/")).text();
-    expect(plain).not.toContain("Showing ");
+    expect(plain).toContain('<span class="pagination-count num">4 of 6 entries</span>');
   });
 
   test("a filter that cannot match shows the no-match state with a way back", async () => {
@@ -498,7 +513,7 @@ describe("dashboard entry list", () => {
       const html = await (await env.get(query)).text();
       expect(html).toContain("No entries match");
       expect(html).toContain('<a href="/" class="btn btn-secondary btn-sm">Clear filters</a>');
-      expect(html).not.toContain("entry-title");
+      expect(html).not.toContain("entry-head");
     }
     // The search box keeps what was typed.
     expect(await (await env.get("/?q=zzz")).text()).toContain('value="zzz"');
@@ -510,7 +525,7 @@ describe("dashboard entry list", () => {
       const html = await (await fresh.get("/")).text();
       expect(html).toContain("No entries yet");
       expect(html).toContain("mcp endpoint");
-      expect(html).not.toContain("entry-title");
+      expect(html).not.toContain("entry-head");
       // Zero entries at all reads as "no entries yet" even under a filter: nothing exists to filter.
       const filtered = await (await fresh.get("/?q=zzz&status=draft")).text();
       expect(filtered).toContain("No entries yet");
@@ -528,12 +543,12 @@ describe("dashboard entry list", () => {
       done.store.db.run("UPDATE entries SET status = 'applied' WHERE id = ?", [batch.results[0]!.id]);
       const html = await (await done.get("/")).text();
       expect(html).toContain("Nothing to review");
-      expect(html).not.toContain("entry-title");
+      expect(html).not.toContain("entry-head");
       // No filters are active, so the filter-miss escape hatch does not show either.
       expect(html).not.toContain("Clear filters");
       // The explicit all-statuses view still shows the row.
       const all = await (await done.get("/?status=all")).text();
-      expect(all).toContain('class="entry-title truncate">a</span>');
+      expect(all).toContain(`class="entry-link truncate" href="/entries/${batch.results[0]!.id}">a</a>`);
       // A search matching only terminal rows names the hiding view and offers the way onward
       // (hono JSX escapes the href's ampersands).
       const searched = await (await done.get("/?q=a")).text();
@@ -554,31 +569,32 @@ describe("dashboard entry list", () => {
     expect(res.status).toBe(200);
     const html = await res.text();
     expect(html).toContain("Run bun install");
-    expect(html).toContain("Showing 1 of 6 entries");
+    expect(html).toContain('<span class="pagination-count num">1 of 6 entries</span>');
     // A fragment is the list region plus the out-of-band shell pieces, never the page shell.
     expect(html).not.toContain("<!doctype html>");
     expect(html).not.toContain('id="filters"');
     expect(html).not.toContain('class="sidebar"');
     expect(html).not.toContain("<main");
-    // The stat cards, the badge, and the banner sit outside the main swap target, so the
-    // fragment replaces them out of band rather than leaving them stale.
+    // The tabs, the header meta, the badge, and the banner sit outside the main swap target, so
+    // the fragment replaces them out of band rather than leaving them stale.
     expect(html).toContain('<span class="nav-badge" id="entries-badge" hx-swap-oob="true">3</span>');
     expect(html).toContain('<div id="page-banner" hx-swap-oob="true"></div>');
-    expect(html).toContain('<div class="stat-grid" id="page-stats" hx-swap-oob="true">');
-    expect(html).toContain('<div class="stat-card"><div class="stat-label">Draft</div><div class="stat-value num">3</div></div>');
+    expect(html).toContain('<div class="tabs-wrap status-tabs" id="status-tabs" hx-swap-oob="true">');
+    expect(html).toContain('<button class="tab" type="submit" name="status" value="draft"><span>Draft</span><span class="tab-badge num">3</span></button>');
   });
 
   test("a titled row keeps its anchor text reachable, and never as a title attribute", async () => {
     const titled = serveApp();
     try {
-      fileEntries(titled.store, "alpha", "probe-agent", [
+      const batch = fileEntries(titled.store, "alpha", "probe-agent", [
         draft({ file: "docs/a.md", title: "Setup wording", anchorText: "Run bun install", anchorHash: "ht", fileHash: "ft" }),
         draft({ file: "docs/b.md", anchorText: "Plain anchor", anchorHash: "hu", fileHash: "fu" }),
       ]);
       const html = await (await titled.get("/?status=draft")).text();
 
-      // The titled row displays the title alone, so its anchor rides an sr-only span in the cell.
-      expect(html).toContain('<span class="entry-title truncate">Setup wording</span>');
+      // The titled row displays the title alone as its link, so its anchor rides an sr-only span
+      // in the cell.
+      expect(html).toContain(`<a class="entry-link truncate" href="/entries/${batch.results[0]!.id}">Setup wording</a>`);
       expect(html).toContain('<span class="sr-only">Run bun install</span>');
       // A row whose title IS the anchor does not repeat it.
       expect(html).not.toContain('<span class="sr-only">Plain anchor</span>');
@@ -600,7 +616,9 @@ describe("dashboard entry list", () => {
     expect(js).toContain("wireRetry");
     expect(js).toContain('button.textContent = "Retry"');
     // The failure announces through the shipped toast, the system's own transient surface.
-    expect(js).toContain('import { initDismiss, initTables, initViewportWidth, showToast } from "./ui.js";');
+    expect(js).toContain('import { initDismiss, initScrollFade, initTables, initTabs, initViewportWidth, showToast } from "./ui.js";');
+    // The enhanced filter path owns the status through the hidden field alone.
+    expect(js).toContain('removeAttribute("name")');
     expect(js).toContain('showToast("danger"');
     expect(js).toContain("htmx:responseError");
     expect(js).toContain("htmx:sendError");
@@ -754,7 +772,7 @@ describe("dashboard entry list", () => {
 
       // A filter matching exactly one page reports the walk's full count, not the page's.
       const filtered = await (await big.get("/?q=common")).text();
-      expect(filtered).toContain("Showing 200 of 201 entries");
+      expect(filtered).toContain('<span class="pagination-count num">200 of 201 entries</span>');
       expect(filtered).not.toContain("The 201st entry");
     } finally {
       big.close();

@@ -1,9 +1,10 @@
 // reviewzy dashboard behaviors. Loads as a module after htmx.min.js.
 // The sidebar's rail and drawer, the selects, the tabs, the theme toggle, the toasts and the
-// table header label boxes come from ui.js; initTables is re-run after every htmx swap so a
-// freshly rendered table head gets its boxes and its selection state machine, and initDismiss
-// re-wires a banner the swap replaced out of band.
-import { initDismiss, initTables, initViewportWidth, showToast } from "./ui.js";
+// table header label boxes come from ui.js; initTables, initTabs and initDismiss are re-run
+// after every htmx swap so a freshly rendered table head gets its boxes and its selection state
+// machine, the OOB tab strip gets its ink, and a banner the swap replaced out of band gets its
+// dismiss control back.
+import { initDismiss, initScrollFade, initTables, initTabs, initViewportWidth, showToast } from "./ui.js";
 
 (() => {
   "use strict";
@@ -62,6 +63,28 @@ import { initDismiss, initTables, initViewportWidth, showToast } from "./ui.js";
     raiseErrorToast("The guide could not be saved", "The save request failed. Try it again.", () => submitForm(document.getElementById("style-guide-form")));
   });
 
+  // The editor's and the list's own failures (save, reject, notes, images, row and batch actions):
+  // htmx swaps nothing on an error, so without a toast the click reads as ignored. Retry re-fires
+  // the control that failed; the title names which surface failed.
+  for (const type of ["htmx:responseError", "htmx:sendError"]) {
+    document.addEventListener(type, (event) => {
+      const el = event.target instanceof Element ? event.target : null;
+      if (!el) return;
+      const inEditor = el.closest("#editor-view") !== null;
+      const inList = el.closest("#batch-form") !== null;
+      if (!inEditor && !inList) return;
+      const form = el.closest("form");
+      raiseErrorToast(
+        inEditor ? "The change was not saved" : "The action did not finish",
+        "The request failed. Try it again.",
+        () => {
+          if (el instanceof HTMLButtonElement) el.click();
+          else if (form) submitForm(form);
+        },
+      );
+    });
+  }
+
   // --- Filter auto-submit ---
   // Changing a select or typing in the search fires the filter request itself. requestSubmit()
   // reaches htmx's submit listener on the form; the debounce collapses a burst of keystrokes
@@ -84,6 +107,14 @@ import { initDismiss, initTables, initViewportWidth, showToast } from "./ui.js";
     field.disabled = false;
   }
 
+  // With the widget path live, the hidden status field is the only status the form sends. A submit
+  // button's own name would ride along otherwise, and on a submit with no submitter (requestSubmit,
+  // or a native fallback when htmx did not load) the form's default button adds `status=""` ahead
+  // of the hidden value, which hono reads first. No-JS keeps the names for its native path.
+  for (const button of document.querySelectorAll('#filters button[type="submit"]')) {
+    button.removeAttribute("name");
+  }
+
   // ui.js's select controller commits the picked option onto the root before the change event;
   // the option's own data-value holds what the form submits.
   for (const root of document.querySelectorAll('#filters .select[data-filter]')) {
@@ -101,25 +132,172 @@ import { initDismiss, initTables, initViewportWidth, showToast } from "./ui.js";
   if (filtersForm) {
     const searchInput = document.getElementById("q");
     searchInput?.addEventListener("input", scheduleSearchSubmit);
+    // Enter in the search field would submit through the first tab button (Open) and silently
+    // drop the chosen status; the debounced path already carries it from the hidden field, so
+    // Enter takes that path too.
+    searchInput?.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter") return;
+      // An IME confirms a composition with Enter; that key belongs to the composition.
+      if (event.isComposing || event.keyCode === 229) return;
+      event.preventDefault();
+      clearTimeout(searchTimer);
+      submitFilters();
+    });
+  }
+
+  // A status tab submits the form itself: the button carries the new value, the hidden field
+  // mirrors it so every other submit path (the search debounce, the project select) keeps it, and
+  // the enhanced path prevents the native submit whose name would duplicate it. Without JS the
+  // buttons keep their names and the native path carries the status.
+  let restoreStatusTabFocus = false;
+  document.addEventListener("click", (event) => {
+    const target = event.target instanceof Element ? event.target : null;
+    const tab = target ? target.closest("#filters .tab") : null;
+    if (!tab) return;
+    event.preventDefault();
+    const hidden = document.querySelector('#filters input[data-filter-field="status"]');
+    if (hidden) hidden.value = tab.value;
+    restoreStatusTabFocus = true;
+    submitFilters();
+  });
+
+  // --- Swap focus and announcements ---
+  // An htmx swap replaces the node the user acted on, so focus falls to <body>; the tab strip's
+  // out-of-band replacement does the same on the page's primary control. Put focus back where
+  // the keyboard user left it, and announce the outcome through a persistent live region (an
+  // out-of-band banner arrives already populated, which a live region does not reliably read).
+  let editorFocusAfterSwap = null;
+  let listActionFocus = false;
+  let listActionRowHref = null;
+  document.addEventListener("htmx:beforeRequest", (event) => {
+    const el = event.target instanceof Element ? event.target : null;
+    if (!el) return;
+    // A row action or the batch submit is replaced by the list swap; the row the user acted on
+    // (or the outcome banner) is where their focus belongs afterwards.
+    if (el.closest("#batch-form")) {
+      listActionFocus = true;
+      listActionRowHref = el.closest("tr")?.querySelector('a[href^="/entries/"]')?.getAttribute("href") ?? null;
+    }
+    if (!el.closest("#editor-view")) return;
+    if (el.id === "editor-form") editorFocusAfterSwap = "save";
+    else if (el.id === "notes-form") editorFocusAfterSwap = "notes";
+    else if (el.closest("#image-upload") !== null || el.closest('form[action*="/images"]') !== null) editorFocusAfterSwap = "image";
+    else editorFocusAfterSwap = "transition";
+  });
+
+  function announceListOutcome() {
+    const live = document.getElementById("list-live");
+    if (!live) return;
+    const banner = document.querySelector("#page-banner .banner");
+    const meta = document.querySelector("#list-meta .pagination-count");
+    const message = [banner?.textContent?.trim(), meta?.textContent?.trim()].filter(Boolean).join(". ");
+    if (message !== "" && message !== live.textContent) live.textContent = message;
+  }
+
+  function announceEditorOutcome(action) {
+    const live = document.getElementById("editor-live");
+    if (!live) return;
+    // Only a refusal speaks to the outcome; the read-only state callout is a standing fact.
+    const refusal = document.querySelector("#editor-region .callout-danger");
+    if (refusal) {
+      const title = refusal.querySelector(".callout-title")?.textContent?.trim();
+      const body = refusal.querySelector(".callout-body")?.textContent?.trim();
+      live.textContent = [title, body].filter(Boolean).join(". ");
+      return;
+    }
+    if (action === "notes") {
+      live.textContent = "Notes saved.";
+      return;
+    }
+    if (action === "image") {
+      live.textContent = "Image updated.";
+      return;
+    }
+    const status = document.querySelector("#entry-status .tag")?.textContent?.trim();
+    if (status) live.textContent = `Entry is now ${status}.`;
+  }
+
+  // Keep the current tab inside its scroller on a deep link or after an out-of-band swap.
+  function revealActiveTab() {
+    for (const wrap of document.querySelectorAll(".status-scroll, .style-guide-projects")) {
+      const active = wrap.querySelector(".tab.active");
+      if (!active) continue;
+      const box = wrap.getBoundingClientRect();
+      const tab = active.getBoundingClientRect();
+      if (tab.left < box.left || tab.right > box.right) {
+        wrap.scrollLeft += tab.left - box.left - (box.width - tab.width) / 2;
+      }
+    }
+  }
+
+  document.addEventListener("htmx:afterSwap", () => {
+    if (restoreStatusTabFocus) {
+      restoreStatusTabFocus = false;
+      const active = document.querySelector("#status-tabs .tab.active") ?? document.querySelector("#status-tabs .tab");
+      active?.focus();
+    }
+    if (listActionFocus) {
+      listActionFocus = false;
+      const rowLink = listActionRowHref === null ? null : document.querySelector(`#entries-list a[href="${listActionRowHref}"]`);
+      listActionRowHref = null;
+      const banner = document.querySelector("#page-banner .banner");
+      const firstLink = document.querySelector("#entries-list .entry-link");
+      (rowLink ?? banner ?? firstLink)?.focus();
+    }
+    if (editorFocusAfterSwap !== null) {
+      const refused = document.querySelector("#editor-region .callout-danger") !== null;
+      const target =
+        editorFocusAfterSwap === "save"
+          ? refused
+            ? // A refusal names a fix in the text the user must edit; the caret goes back there.
+              document.querySelector("#editor-text")
+            : document.querySelector('#editor-form button[type="submit"]')
+          : editorFocusAfterSwap === "notes"
+            ? document.querySelector('#notes-form button[type="submit"]')
+            : editorFocusAfterSwap === "image"
+              ? document.querySelector("#image-upload button")
+              : document.querySelector("#editor-region");
+      target?.focus();
+      const action = editorFocusAfterSwap;
+      editorFocusAfterSwap = null;
+      announceEditorOutcome(action);
+    }
+    announceListOutcome();
+    revealActiveTab();
+  });
+
+  // A failed round swaps nothing, so a focus flag set for it must not steer the next, unrelated
+  // swap's focus.
+  for (const type of ["htmx:responseError", "htmx:sendError"]) {
+    document.addEventListener(type, () => {
+      restoreStatusTabFocus = false;
+      listActionFocus = false;
+      listActionRowHref = null;
+      editorFocusAfterSwap = null;
+    });
+  }
+
+  // --- Textareas ---
+  // Every data-autosize field grows to its content, capped at 60% of the viewport so the actions
+  // below a long text never leave the screen; only a genuinely long box scrolls. The page's CSS
+  // sets the resting min-height per field and the autosizer's inline height rides over it.
+  function autosizeTextareas() {
+    const cap = Math.round(window.innerHeight * 0.6);
+    for (const textarea of document.querySelectorAll("textarea[data-autosize]")) {
+      textarea.style.height = "auto";
+      textarea.style.height = `${Math.min(textarea.scrollHeight + 2, cap)}px`;
+      textarea.style.overflowY = textarea.scrollHeight + 2 > cap ? "auto" : "hidden";
+    }
   }
 
   // --- Editor live metrics ---
-  // The constraint panel lives outside the htmx swap region, so the char count and the placeholder
-  // checklist track the textarea as the user types. This is a convenience preview only: the server
-  // store layer owns the refusal, and the panel re-syncs on any swap.
-  // The box follows its content: a two-line entry renders a small field, and only a genuinely long
-  // one scrolls, capped at most of the viewport so the actions below never leave the screen.
-  function autosizeEditor(textarea) {
-    const cap = Math.round(window.innerHeight * 0.6);
-    textarea.style.height = "auto";
-    textarea.style.height = `${Math.min(textarea.scrollHeight + 2, cap)}px`;
-    textarea.style.overflowY = textarea.scrollHeight + 2 > cap ? "auto" : "hidden";
-  }
-
+  // The constraint row lives inside the htmx swap region now, so it re-renders with the swap;
+  // between swaps the char count and the placeholder checklist track the textarea as the user
+  // types. This is a convenience preview only: the server store layer owns the refusal.
   function refreshEditorMetrics() {
     const textarea = document.getElementById("editor-text");
     if (!textarea) return;
-    autosizeEditor(textarea);
+    autosizeTextareas();
     const announcements = [];
 
     const charCount = document.getElementById("char-count");
@@ -148,7 +326,9 @@ import { initDismiss, initTables, initViewportWidth, showToast } from "./ui.js";
         state.textContent = present ? "Present" : "Missing";
         state.classList.toggle("is-present", present);
         if (present !== wasPresent) {
-          announcements.push(`Placeholder {${placeholder}} ${present ? "present" : "missing"}`);
+          // The filed token may already carry its braces; the announcement shows one pair.
+          const bare = placeholder.replace(/^\{+|\}+$/g, "");
+          announcements.push(`Placeholder {${bare}} ${present ? "present" : "missing"}`);
         }
       }
     }
@@ -161,14 +341,21 @@ import { initDismiss, initTables, initViewportWidth, showToast } from "./ui.js";
   }
 
   document.addEventListener("input", (event) => {
-    if (event.target instanceof HTMLTextAreaElement && event.target.id === "editor-text") {
+    const target = event.target;
+    if (!(target instanceof HTMLTextAreaElement)) return;
+    if (target.id === "editor-text") {
       refreshEditorMetrics();
+    } else if (target.matches("textarea[data-autosize]")) {
+      autosizeTextareas();
     }
   });
 
   // A save swaps the editor region in; the textarea survives via hx-preserve, so one pass after
-  // the swap keeps the panel in sync with the value the server kept.
+  // the swap keeps the panel and every autosized box in sync with what the server kept.
   document.addEventListener("htmx:afterSwap", refreshEditorMetrics);
+  document.addEventListener("htmx:afterSwap", autosizeTextareas);
+  // The cap is a share of the current viewport, so a resize or rotation re-derives it.
+  addEventListener("resize", autosizeTextareas);
 
   // "Use" on a revision loads its text into the editor and re-syncs the panel, ready to save.
   document.addEventListener("click", (event) => {
@@ -185,9 +372,9 @@ import { initDismiss, initTables, initViewportWidth, showToast } from "./ui.js";
 
   // --- Batch selection count ---
   // The boxes and the select-all state machine belong to ui.js's initTables (re-run after every
-  // swap); this page only renders the count onto the approve button. All of it is progressive
-  // enhancement — without JS the approve button keeps its static label, stays enabled, and the
-  // native form still submits the checked rows.
+  // swap); this page only renders the count onto the approve button. It ships enabled so the no-JS
+  // form can fire it; the boot call below disables it at first paint and each selection event
+  // re-syncs it, so an empty selection reads as dead with JS.
   function updateApproveButton() {
     const button = document.querySelector('#batch-form .batch-bar button[type="submit"]');
     if (!button) return;
@@ -200,10 +387,19 @@ import { initDismiss, initTables, initViewportWidth, showToast } from "./ui.js";
   document.addEventListener("htmx:afterSwap", updateApproveButton);
 
   document.addEventListener("htmx:afterSwap", initTables);
+  // The OOB swap replaces the status tab strip: the fresh row needs its ink placed.
+  document.addEventListener("htmx:afterSwap", initTabs);
+  // A swapped list brings fresh table wraps and textareas; the cue controller skips the ones it
+  // has already dressed.
+  document.addEventListener("htmx:afterSwap", initScrollFade);
   // The list fragment replaces the page banner out of band; a banner the swap brought in needs
   // its dismiss control wired, since ui.js's one sweep ran at boot.
   document.addEventListener("htmx:afterSwap", initDismiss);
 
-  // First paint: the editor's box takes its content's height before the viewer touches it.
+  // First paint: the boxes take their content's height, the editor panel syncs with the prefill,
+  // and the batch button reflects the (empty) selection before the viewer touches anything.
+  autosizeTextareas();
   refreshEditorMetrics();
+  updateApproveButton();
+  revealActiveTab();
 })();

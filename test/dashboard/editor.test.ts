@@ -102,8 +102,10 @@ describe("editor page", () => {
     expect(html).toContain('<a class="nav-item active" href="/" aria-current="true"><span>Entries</span><span class="nav-badge" id="entries-badge">1</span></a>');
     expect(html).toContain('<a class="nav-item" href="/style-guide"><span>Style guide</span></a>');
     expect(html).not.toContain('class="navbar"');
-    expect(html).toContain("Entry review");
-    expect(html).toContain("<h1 class=\"page-title\">Edit entry</h1>");
+    // The header names the entry: the breadcrumb, then the entry title with its meta under it.
+    expect(html).toContain('<a class="breadcrumb-item" href="/">Entries</a>');
+    expect(html).toContain('<span class="breadcrumb-item current">alpha</span>');
+    expect(html).toContain('<h1 class="page-title editor-title">Run bun install</h1>');
     expect(html).toContain("Saving the text approves the entry and releases it to agents.");
 
     // The form wires both the native POST and the htmx swap of the whole editor view, so the
@@ -124,12 +126,12 @@ describe("editor page", () => {
     // Status tag: the draft is still a draft.
     expect(html).toContain("Draft");
 
-    // Context pane: the anchor leads, then the parsed context as key-value rows, then the anchor
-    // metadata. The diff view above the editor also carries the anchor text, so the order check is
-    // scoped to the pane itself, and the context value is matched with its cell markup since the
-    // anchor row contains the same words.
-    const contextPane = html.slice(html.indexOf('<table class="info-table">'));
-    expectOrder(contextPane, ["<td>Anchor</td>", "<td>where</td>", "setup docs", "<td>code</td>", "<td>bun install</td>"]);
+    // Details pane: the parsed context as key-value rows, then the provenance collapsed behind the
+    // disclosure. The anchor, repo and file live in the page header, so the order check is scoped
+    // to the pane itself, and the context value is matched with its cell markup since the current
+    // text card carries the same words.
+    const contextPane = html.slice(html.indexOf('<div class="card-title">Details</div>'));
+    expectOrder(contextPane, ["<td>where</td>", "setup docs", "<td>code</td>", "<td>bun install</td>"]);
     expect(html).toContain("https://example.com/org/repo.git");
     expect(html).toContain("docs/setup.md");
     expect(html).toContain("Run bun install");
@@ -179,17 +181,17 @@ describe("editor page", () => {
     env.close();
   });
 
-  test("shows the entry title in place of the bare 'Text' label and renders inert rails for a lone entry", async () => {
+  test("shows the entry title in the page header and renders inert nav buttons for a lone entry", async () => {
     const { env, id } = envWithDraft({ title: "Setup wording" });
     const html = await (await env.get(`/entries/${id}`)).text();
 
-    expect(html).toContain('<div class="card-title editor-title">Setup wording</div>');
-    expect(html).not.toContain('<div class="card-title">Text</div>');
-    // A lone entry has no neighbour in the list walk, so both rails render inert.
-    expect(html).toContain('class="editor-nav-btn editor-nav-prev is-disabled"');
-    expect(html).toContain('class="editor-nav-btn editor-nav-next is-disabled"');
-    expect(html).not.toContain('aria-label="Previous entry"');
-    expect(html).not.toContain('aria-label="Next entry"');
+    expect(html).toContain('<h1 class="page-title editor-title">Setup wording</h1>');
+    expect(html).not.toContain('<h1 class="page-title editor-title">Edit entry</h1>');
+    // A lone entry has no neighbour in the list walk, so both buttons render inert.
+    expect(html).toContain('class="btn btn-secondary" type="button" disabled="" aria-label="Previous entry"');
+    expect(html).toContain('class="btn btn-secondary" type="button" disabled="" aria-label="Next entry"');
+    expect(html).toContain('aria-label="Previous entry"');
+    expect(html).toContain('aria-label="Next entry"');
     env.close();
   });
 
@@ -210,11 +212,11 @@ describe("editor page", () => {
     expect(html).toContain('aria-label="Next entry"');
 
     const firstHtml = await (await env.get(`/entries/${first}`)).text();
-    expect(firstHtml).toContain('class="editor-nav-btn editor-nav-prev is-disabled"');
+    expect(firstHtml).toContain('class="btn btn-secondary" type="button" disabled="" aria-label="Previous entry"');
     expect(firstHtml).toContain(`href="/entries/${middle}"`);
 
     const lastHtml = await (await env.get(`/entries/${last}`)).text();
-    expect(lastHtml).toContain('class="editor-nav-btn editor-nav-next is-disabled"');
+    expect(lastHtml).toContain('class="btn btn-secondary" type="button" disabled="" aria-label="Next entry"');
     expect(lastHtml).toContain(`href="/entries/${middle}"`);
     env.close();
   });
@@ -597,15 +599,15 @@ describe("human notes", () => {
 });
 
 describe("saving from the editor", () => {
-  test("a save swaps in the diff after-side with the authored text, not the stale agent draft", async () => {
+  test("a save swaps in the proposal with the authored text, not the stale agent draft", async () => {
     const { env, id } = envWithDraft();
     const text = "Run the command to set up the project.";
     const res = await env.post(`/entries/${id}/save`, saveForm(text), HX);
     const html = await res.text();
 
-    // The save fragment re-renders the diff region, so the authored text reaches the after-side in
+    // The save fragment re-renders the editor view, so the authored text reaches the textarea in
     // the live DOM; without it the swap leaves the stale agent draft showing until a reload.
-    expect(html).toContain('<div class="card-title">After</div>');
+    expect(html).toContain('<div class="card-title">Proposed text</div>');
     expect(html).toContain("diff-anchor");
     expect(html).toContain(text);
     expect(html).not.toContain("Fix the wording of the setup section.");
@@ -753,22 +755,22 @@ describe("saving from the editor", () => {
     expect(html).toContain('href="/"');
     // The save swap targets the whole editor view, so the gone fragment answers in that same shape.
     expect(html).toContain('<div id="editor-view">');
-    expect(html).toContain('<div id="editor-region">');
+    expect(html).toContain('<div id="editor-region" tabindex="-1">');
     env.close();
   });
 });
 
 describe("the word diff", () => {
-  test("marks removed words red in the before card and added words green in the after card, leaving the shared words plain", async () => {
+  test("marks removed words in the current text card and carries the authored words in the proposal", async () => {
     // No constraints, so the save needs neither max_len room nor a placeholder.
     const { env, id } = envWithDraft({ constraintsJson: "{}" });
     const res = await env.post(`/entries/${id}/save`, saveForm("Run npm install"), HX);
     const html = await res.text();
 
-    // "bun" exists only in the anchor, "npm" only in the proposal; the shared words render as
-    // plain text between the marks.
+    // "bun" exists only in the anchor, so the current text marks it; the proposal's textarea
+    // carries the authored words as plain text.
     expect(html).toContain('Run <span class="diff-remove">bun</span> install');
-    expect(html).toContain('Run <span class="diff-add">npm</span> install');
+    expect(html).toContain(">Run npm install</textarea>");
     env.close();
   });
 
@@ -778,13 +780,13 @@ describe("the word diff", () => {
     const html = await res.text();
 
     expect(html).not.toContain("diff-remove");
-    expect(html).not.toContain("diff-add");
+    expect(html).toContain(">Run bun install</textarea>");
     env.close();
   });
 
   test("a pair too large for the LCS walk renders fully changed instead of hanging", async () => {
     // 1100 words per side crosses the LCS cell ceiling, so the walk is skipped and each side reads
-    // fully changed: both mark classes render, and the page answers in linear time.
+    // fully changed: the anchor marks every word and the page answers in linear time.
     const word = (n: number) => Array.from({ length: n }, (_, i) => `w${i}`).join(" ");
     const { env, id } = envWithDraft({
       constraintsJson: "{}",
@@ -793,7 +795,7 @@ describe("the word diff", () => {
     });
     const html = await (await env.get(`/entries/${id}`)).text();
     expect(html).toContain("diff-remove");
-    expect(html).toContain("diff-add");
+    expect(html).toContain("tail</textarea>");
     env.close();
   });
 });
