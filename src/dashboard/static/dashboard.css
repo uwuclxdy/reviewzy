@@ -54,17 +54,9 @@
 .partial-header { margin-bottom: var(--space-4); }
 
 /* ---- Bulk approve ----
-   Sticks under the shell's top edge so the action stays reachable while rows scroll;
-   its ground is the page's own, and the capped page column keeps the bar (and its
-   background) inside the content width instead of painting a band across the slack. */
-.batch-bar {
-  position: sticky;
-  top: var(--pin-top);
-  z-index: 5;
-  margin-bottom: var(--space-4);
-  padding: var(--space-2) 0;
-  background: var(--bg);
-}
+   The pinned batch action is the shipped section-sticky bar: transparent in flow so the sky
+   shows through, toned and hairlined only while it is stuck. Only its spacing is the page's. */
+.batch-bar { margin-bottom: var(--space-4); }
 
 /* ---- Project sections: one heading and one table each ----
    Batches stay a data concept behind the row selection and the one approve

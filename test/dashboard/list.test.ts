@@ -600,7 +600,7 @@ describe("dashboard entry list", () => {
     expect(js).toContain("wireRetry");
     expect(js).toContain('button.textContent = "Retry"');
     // The failure announces through the shipped toast, the system's own transient surface.
-    expect(js).toContain('import { initDismiss, initTables, showToast } from "./ui.js";');
+    expect(js).toContain('import { initDismiss, initTables, initViewportWidth, showToast } from "./ui.js";');
     expect(js).toContain('showToast("danger"');
     expect(js).toContain("htmx:responseError");
     expect(js).toContain("htmx:sendError");

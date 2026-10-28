@@ -3,10 +3,14 @@
 // table header label boxes come from ui.js; initTables is re-run after every htmx swap so a
 // freshly rendered table head gets its boxes and its selection state machine, and initDismiss
 // re-wires a banner the swap replaced out of band.
-import { initDismiss, initTables, showToast } from "./ui.js";
+import { initDismiss, initTables, initViewportWidth, showToast } from "./ui.js";
 
 (() => {
   "use strict";
+
+  // The shell is a sidebar shell, so the full-bleed sticky bar measures the page column, not the
+  // viewport: --vp-w on the column keeps the stuck bar inside the capped page beside the sidebar.
+  initViewportWidth(document.querySelector("main.page") ?? undefined);
 
   // --- Error toasts ---
   // A failed htmx round (HTTP error or network error) raises a transient toast carrying the

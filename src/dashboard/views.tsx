@@ -614,7 +614,7 @@ function BatchForm({ vm }: { vm: ListViewModel }) {
       <input type="hidden" name="q" value={vm.q} />
       <input type="hidden" name="status" value={vm.status} />
       <input type="hidden" name="project" value={vm.project} />
-      <div class="toolbar batch-bar">
+      <div class="toolbar batch-bar section-sticky">
         <button class="btn btn-fill btn-sm" type="submit" hx-disabled-elt="this">
           Approve selected
         </button>
