@@ -10,7 +10,7 @@ import { initDismiss, initScrollFade, initTables, initTabs, initViewportWidth, s
   "use strict";
 
   // The shell is a sidebar shell, so the full-bleed sticky bar measures the page column, not the
-  // viewport: --vp-w on the column keeps the stuck bar inside the capped page beside the sidebar.
+  // viewport: --vp-w on the column keeps the stuck bar inside the page beside the sidebar.
   initViewportWidth(document.querySelector("main.page") ?? undefined);
 
   // --- Error toasts ---
