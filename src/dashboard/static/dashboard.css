@@ -174,43 +174,54 @@
 }
 .diff-line { display: block; }
 
-/* ---- Entry editor: two columns, one swap node ----
-   The context column leads the DOM so the desktop layout and the focus order agree; under
-   900px the grid stacks with the proposal first, where the editor is the thing the narrow
-   screen is for. */
-.editor-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--space-8); align-items: start; }
-.editor-col { display: flex; flex-direction: column; gap: var(--space-4); min-width: 0; }
-/* Stacked, the two columns dissolve (`display: contents`) so the cards order themselves: the
-   proposal first, then the text it replaces, its details, the authoring supports, and the
-   history last. Keeping the column boxes would bury the current text under the notes and images
-   the proposal column carries. The DOM keeps the desktop order (context first), so the stacked
-   keyboard walk reads the current text before the proposal even though the proposal paints
-   first; both reads stay coherent, and swapping the DOM order at this width would lose the
-   desktop focus match. */
+/* ---- Entry editor: one capped comparison workspace ----
+   The workspace caps its own measure under the page title, so a wide monitor does not stretch
+   two panes of prose across the whole page. The pair is one grid row of equal-height cards:
+   the current pane scrolls its own text and the proposal caps its textarea, so neither side
+   grows the page with content. The support cards sit in a two-up grid below, each row's cards
+   the same height, so an editable card can no longer tower alone. */
+.editor-page { max-width: var(--page-w); }
+.editor-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: var(--space-4);
+  align-items: stretch;
+}
+#current-text { grid-column: 1; }
+#editor-region { grid-column: 2; display: flex; flex-direction: column; gap: var(--space-4); min-width: 0; }
+#editor-region > .card { flex: 1; min-width: 0; }
+/* Both panes take one height, written by dashboard.js: the taller of the two contents, floored
+   so a short entry still has an edit box and capped so a long one scrolls in place. */
+.editor-pane { min-height: 140px; overflow: auto; }
+.editor-support {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: var(--space-4);
+  align-items: stretch;
+}
+.editor-support > .card { min-width: 0; }
+#editor-notice:empty { display: none; }
+#editor-notice { margin-bottom: var(--space-4); }
 @media (max-width: 900px) {
-  .editor-grid { grid-template-columns: 1fr; gap: var(--space-4); }
-  .editor-col { display: contents; }
-  #editor-region { order: -6; }
-  .current-text-card { order: -5; }
-  .details-card { order: -4; }
-  .notes-card { order: -3; }
-  .images-card { order: -2; }
-  .history-card { order: -1; }
+  .editor-grid { grid-template-columns: minmax(0, 1fr); }
+  .editor-support { grid-template-columns: minmax(0, 1fr); }
+  /* The explicit desktop columns reset, or the placements open an implicit second column and
+     the page stacks into a sliver; the proposal leads on the narrow screen. */
+  #current-text { grid-column: 1; }
+  #editor-region { grid-column: 1; order: -1; }
+  .editor-support { grid-column: 1 / -1; }
 }
 /* A card holding an empty state keeps the component's page-level block padding out of it. */
 .card-content > .empty-state { padding-block: var(--space-6); }
-/* The region stacks its callout and its card; the column's own gap spaces the region from
-   the notes and images below it. */
-#editor-region { display: flex; flex-direction: column; gap: var(--space-4); min-width: 0; }
 
-/* ---- Textareas: no manual resize, the autosizer owns the height ----
+/* ---- Textareas: no manual resize ----
    The shipped .input pins a control height and the shipped textarea rule adds a resize
-   handle; both fight the autosizer, so the page's textareas opt out of both. The per-field
-   min-heights are the boxes' resting sizes; the autosizer grows them to their content,
-   capped at 60% of the viewport. */
+   handle; both fight the page's sizing. The editor and notes boxes hold one stable height
+   with their own scroll; the style-guide fields autosize to their content. */
 main.page textarea.input { height: auto; resize: none; }
-#editor-text { font-family: var(--font-mono); min-height: 140px; }
-#editor-notes { min-height: 90px; }
+#editor-text { font-family: var(--font-mono); }
+#editor-notes { height: 120px; min-height: 120px; max-height: 120px; overflow-y: auto; }
 #style-guide-markdown { min-height: 200px; }
 #style-guide-glossary { min-height: 140px; }
 

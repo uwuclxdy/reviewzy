@@ -215,17 +215,75 @@ describe("editor information architecture", () => {
     expect(html).not.toContain('class="editor-nav-btn');
   });
 
-  test("current text and the proposal sit side by side; the duplicated after card is gone", async () => {
+  test("the editor is a capped comparison workspace: equal panes, one action row, a support grid", async () => {
     const { env, draftId } = seededEnv();
     const html = await (await env.get(`/entries/${draftId}`)).text();
 
+    expect(html).toContain('<div class="editor-page">');
+    expect(html).toContain('<div class="editor-grid">');
     expect(html).toContain('<div class="card-title">Current text</div>');
+    expect(html).toContain('<div class="card current-text-card" id="current-text">');
+    expect(html).toContain('<div class="card-subtitle">As it reads in the file.</div>');
+    expect(html).toContain('<pre class="diff-code editor-pane">');
     expect(html).toContain('<div class="card-title">Proposed text</div>');
-    expect(html).toContain('<div class="editor-col editor-col-context">');
-    expect(html).toContain('<div class="editor-col editor-col-proposal">');
+    expect(html).toContain('<textarea id="editor-text" class="input editor-pane"');
+    expect(html).toContain('<form id="editor-form" class="card"');
+    expect(html).toContain('<div class="editor-actions">');
+    expect(html).toContain('<div class="editor-support">');
+    expect(html).not.toContain('class="editor-col');
     expect(html).not.toContain(">After</div>");
     expect(html).not.toContain(">Before</div>");
     expect(html).not.toContain('<div class="diff-grid">');
+  });
+
+  test("the textarea drives a live diff through the diff route", async () => {
+    const { env, draftId } = seededEnv();
+    const html = await (await env.get(`/entries/${draftId}`)).text();
+
+    expect(html).toContain(
+      `hx-post="/entries/${draftId}/diff" hx-trigger="input changed delay:250ms" hx-target="#current-text" hx-swap="outerHTML" hx-sync="this:replace"`,
+    );
+    expect(html).not.toContain('id="editor-text" class="input editor-pane" data-autosize');
+    expect(html).not.toContain('id="editor-notes" class="input" name="notes" rows="4" aria-label="Your notes" hx-preserve="true" data-autosize');
+  });
+
+  test("the diff route answers the marked current-text card against the submitted text, without writing", async () => {
+    const { env, draftId } = seededEnv();
+    const form = new FormData();
+    form.set("text", "Run bun");
+    const res = await env.post(`/entries/${draftId}/diff`, form, HX);
+    expect(res.status).toBe(200);
+    const html = await res.text();
+
+    expect(html).toContain('<div class="card-title">Current text</div>');
+    expect(html).toContain('<div class="card current-text-card" id="current-text">');
+    expect(html).toContain('<span class="diff-remove">install</span>');
+    expect(html).not.toContain("<html");
+    // A preview never writes: the entry is still a draft with no human text.
+    const after = await (await env.get(`/entries/${draftId}`)).text();
+    expect(after).toContain('<span class="tag tag-warning"><span class="tag-dot"></span>Draft</span>');
+  });
+
+  test("a plain POST to the diff route goes back to the editor", async () => {
+    const { env, draftId } = seededEnv();
+    const form = new FormData();
+    form.set("text", "Run bun");
+    const res = await env.post(`/entries/${draftId}/diff`, form);
+    expect(res.status).toBe(303);
+    expect(res.headers.get("location")).toBe(`/entries/${draftId}`);
+  });
+
+  test("a save refusal marks the current text against the refused text", async () => {
+    const { env, draftId } = seededEnv();
+    const form = new FormData();
+    form.set("text", "Run bun");
+    const res = await env.post(`/entries/${draftId}/save`, form, HX);
+    const html = await res.text();
+
+    expect(html).toContain("Text not saved");
+    expect(html).toContain('<div class="card-title">Current text</div>');
+    expect(html).toContain('<div class="card current-text-card" id="current-text">');
+    expect(html).toContain('<span class="diff-remove">install</span>');
   });
 
   test("the draft's one primary action is Save and approve; the agent-draft button is gone", async () => {

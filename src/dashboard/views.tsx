@@ -1196,20 +1196,23 @@ function EditorHeader({ vm }: { vm: EditorViewModel }) {
 
 /**
  * The anchored snippet as it reads in the file: the surrounding lines with the anchor between
- * them, the anchor marked as the annotation. When the entry has text to compare, words the anchor
- * has and the proposal does not carry the removed mark; the proposal side is the editor's own
- * textarea, so nothing here renders a second copy of it.
+ * them, the anchor marked as the annotation. When a compare text is given, words the anchor has
+ * and it does not carry the removed mark; the proposal side is the editor's own textarea, so
+ * nothing here renders a second copy of it. The diff route re-renders this card against the
+ * textarea's live value.
  */
-function CurrentTextCard({ entry }: { entry: EntryRow }) {
-  const after = entry.human_text ?? entry.agent_draft;
-  const diff = after === null ? null : diffWords(entry.anchor_text, after);
+export function currentTextCard(entry: EntryRow, compareText: string | null): JSX.Element {
+  const diff = compareText === null ? null : diffWords(entry.anchor_text, compareText);
   return (
-    <div class="card current-text-card">
+    <div class="card current-text-card" id="current-text">
       <div class="card-header">
-        <div class="card-title">Current text</div>
+        <div>
+          <div class="card-title">Current text</div>
+          <div class="card-subtitle">As it reads in the file.</div>
+        </div>
       </div>
       <div class="card-content">
-        <pre class="diff-code">
+        <pre class="diff-code editor-pane">
           <span class="diff-line">{entry.anchor_before}</span>
           <span class="diff-line diff-anchor annot-mark">
             {diff === null
@@ -1398,7 +1401,18 @@ function ProposalForm({ vm, state }: { vm: EditorViewModel; state: EditorState |
         </div>
       </div>
       <div class="card-content">
-        <textarea id="editor-text" class="input" name="text" rows={2} aria-label="Entry text" hx-preserve="true" data-autosize>
+        <textarea
+          id="editor-text"
+          class="input editor-pane"
+          name="text"
+          aria-label="Entry text"
+          hx-preserve="true"
+          hx-post={`/entries/${entry.id}/diff`}
+          hx-trigger="input changed delay:250ms"
+          hx-target="#current-text"
+          hx-swap="outerHTML"
+          hx-sync="this:replace"
+        >
           {text}
         </textarea>
         <ConstraintRow constraints={vm.constraints} text={text} />
@@ -1429,43 +1443,31 @@ function ProposalForm({ vm, state }: { vm: EditorViewModel; state: EditorState |
   );
 }
 
-/** The read-only proposal for a terminal entry: the settled text plus the state and the way out. */
+/** The read-only proposal for a terminal entry: the settled text in the comparison pane. */
 function TerminalTextCard({ entry }: { entry: EntryRow }) {
-  const applied = entry.status === "applied";
   return (
-    <>
-      <div class="card">
-        <div class="card-header">
-          <div class="card-title">Proposed text</div>
-        </div>
-        <div class="card-content">
-          <pre class="diff-code">{entry.human_text ?? ""}</pre>
+    <div class="card">
+      <div class="card-header">
+        <div>
+          <div class="card-title">Settled text</div>
+          <div class="card-subtitle">Read only: this state is final, as noted above.</div>
         </div>
       </div>
-      <InfoCallout
-        title="Read only"
-        body={
-          applied
-            ? "This entry is already applied, so its text can't be changed here. If the anchor goes stale, the entry returns to approved and can be edited."
-            : "This entry was rejected, so its text can't be changed. A rejected entry stays rejected; file a new entry if the passage still needs changing."
-        }
-      />
-    </>
+      <div class="card-content">
+        <pre class="diff-code editor-pane">{entry.human_text ?? ""}</pre>
+      </div>
+    </div>
   );
 }
 
 /**
- * The editor region, swapped wholesale by a save or a transition (proposal card + any refusal).
- * A terminal entry renders its text read-only with the state and the way out; notes stay editable
- * beside it.
+ * The proposal pane: the editable card for a draft or approved entry, or the settled text of a
+ * terminal one. The swap region lives here; the refusal and read-only notices sit above the pair.
  */
 function EditorRegion({ vm, state }: { vm: EditorViewModel; state: EditorState | undefined }) {
   const terminal = vm.entry.status === "applied" || vm.entry.status === "rejected";
   return (
     <div id="editor-region" tabindex={-1}>
-      {state?.refusal !== undefined ? (
-        <DangerCallout title={state.refusal.title} body={state.refusal.body} />
-      ) : null}
       {terminal ? <TerminalTextCard entry={vm.entry} /> : <ProposalForm vm={vm} state={state} />}
     </div>
   );
@@ -1508,7 +1510,6 @@ function NotesCard({ vm }: { vm: EditorViewModel }) {
               rows={4}
               aria-label="Your notes"
               hx-preserve="true"
-              data-autosize
             >
               {vm.entry.human_notes ?? ""}
             </textarea>
@@ -1623,27 +1624,40 @@ function RepoValue({ repo }: { repo: string }) {
 }
 
 /**
- * The editor view: two equal columns, the current text and its details on the left and the
- * proposal with the notes and images on the right, one swap node. A save changes what the
- * current-text marks compare against, so the save form targets this wrapper and its response
- * re-renders the whole view; the transitions target only the region inside. The context column
- * leads the DOM so the focus order matches the desktop layout; under 900px the cards reorder
- * themselves so the proposal is first on the stacked column.
+ * The editor view, one swap node: a fixed-height comparison pair (current text against the
+ * proposal), an optional notice above it, then the support cards in a two-up grid so neither
+ * pane can tower alone. A save re-renders the whole view because the marks follow the text and
+ * the status can move; the live diff swaps only the current-text card.
  */
 function EditorView({ vm, state }: { vm: EditorViewModel; state: EditorState | undefined }) {
-  const terminal = vm.entry.status === "applied" || vm.entry.status === "rejected";
+  const entry = vm.entry;
+  const terminal = entry.status === "applied" || entry.status === "rejected";
+  const applied = entry.status === "applied";
+  const compareText = state?.submittedText ?? entry.human_text ?? entry.agent_draft;
   return (
     <div id="editor-view">
+      <div id="editor-notice">
+        {state?.refusal !== undefined ? (
+          <DangerCallout title={state.refusal.title} body={state.refusal.body} />
+        ) : terminal ? (
+          <InfoCallout
+            title="Read only"
+            body={
+              applied
+                ? "This entry is already applied, so its text can't be changed here. If the anchor goes stale, the entry returns to approved and can be edited."
+                : "This entry was rejected, so its text can't be changed. A rejected entry stays rejected; file a new entry if the passage still needs changing."
+            }
+          />
+        ) : null}
+      </div>
       <div class="editor-grid">
-        <div class="editor-col editor-col-context">
-          <CurrentTextCard entry={vm.entry} />
-          <DetailsCard entry={vm.entry} />
-          <RevisionHistory revisions={vm.revisions} editable={!terminal} />
-        </div>
-        <div class="editor-col editor-col-proposal">
-          <EditorRegion vm={vm} state={state} />
+        {currentTextCard(entry, compareText)}
+        <EditorRegion vm={vm} state={state} />
+        <div class="editor-support">
+          <DetailsCard entry={entry} />
           <NotesCard vm={vm} />
-          <ImagesCard entry={vm.entry} />
+          <RevisionHistory revisions={vm.revisions} editable={!terminal} />
+          <ImagesCard entry={entry} />
         </div>
       </div>
     </div>
@@ -1659,11 +1673,14 @@ export function editorPage(vm: EditorViewModel, state: EditorState | undefined =
         <a class="skip-link" href="#main">Skip to content</a>
         <IconSprite />
         <Shell signedIn={signedIn} active="entries" draftCount={vm.draftCount}>
-          <EditorHeader vm={vm} />
-          <EditorView vm={vm} state={state} />
-          {/* The one live region: announcements on constraint-state flips only, so a screen reader
-              is not flooded with a per-keystroke value. Lives outside the swap region. */}
-          <span id="editor-live" class="sr-only" aria-live="polite"></span>
+          {/* The workspace caps its own measure; the list keeps the full page track. */}
+          <div class="editor-page">
+            <EditorHeader vm={vm} />
+            <EditorView vm={vm} state={state} />
+            {/* The one live region: announcements on constraint-state flips only, so a screen reader
+                is not flooded with a per-keystroke value. Lives outside the swap region. */}
+            <span id="editor-live" class="sr-only" aria-live="polite"></span>
+          </div>
         </Shell>
         <div class="toast-stack" id="toast-stack"></div>
         <PageModules />

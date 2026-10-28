@@ -70,6 +70,8 @@ import { initDismiss, initScrollFade, initTables, initTabs, initViewportWidth, s
     document.addEventListener(type, (event) => {
       const el = event.target instanceof Element ? event.target : null;
       if (!el) return;
+      // A failed live diff is a preview miss, not a failed save: leave the marks and stay quiet.
+      if (el.id === "editor-text") return;
       const inEditor = el.closest("#editor-view") !== null;
       const inList = el.closest("#batch-form") !== null;
       if (!inEditor && !inList) return;
@@ -178,7 +180,16 @@ import { initDismiss, initScrollFade, initTables, initTabs, initViewportWidth, s
       listActionFocus = true;
       listActionRowHref = el.closest("tr")?.querySelector('a[href^="/entries/"]')?.getAttribute("href") ?? null;
     }
+    // The live diff is the textarea's own request: it swaps the current-text card, and focus and
+    // announcements stay exactly where the typist left them.
+    if (el.id === "editor-text") return;
     if (!el.closest("#editor-view")) return;
+    // Any real editor action aborts a pending preview, or its late response would overwrite the
+    // freshly saved marks with ones computed from older text.
+    if (typeof htmx !== "undefined") {
+      const pending = document.getElementById("editor-text");
+      if (pending) htmx.trigger(pending, "htmx:abort");
+    }
     if (el.id === "editor-form") editorFocusAfterSwap = "save";
     else if (el.id === "notes-form") editorFocusAfterSwap = "notes";
     else if (el.closest("#image-upload") !== null || el.closest('form[action*="/images"]') !== null) editorFocusAfterSwap = "image";
@@ -198,7 +209,7 @@ import { initDismiss, initScrollFade, initTables, initTabs, initViewportWidth, s
     const live = document.getElementById("editor-live");
     if (!live) return;
     // Only a refusal speaks to the outcome; the read-only state callout is a standing fact.
-    const refusal = document.querySelector("#editor-region .callout-danger");
+    const refusal = document.querySelector("#editor-view .callout-danger");
     if (refusal) {
       const title = refusal.querySelector(".callout-title")?.textContent?.trim();
       const body = refusal.querySelector(".callout-body")?.textContent?.trim();
@@ -230,7 +241,24 @@ import { initDismiss, initScrollFade, initTables, initTabs, initViewportWidth, s
     }
   }
 
-  document.addEventListener("htmx:afterSwap", () => {
+  // The live diff re-renders the current-text card on every pause; keep the reader's place in it.
+  let currentPaneScroll = 0;
+  document.addEventListener("htmx:beforeSwap", (event) => {
+    const target = event.target instanceof Element ? event.target : null;
+    if (target?.id !== "current-text") return;
+    currentPaneScroll = target.querySelector(".editor-pane")?.scrollTop ?? 0;
+  });
+
+  document.addEventListener("htmx:afterSwap", (event) => {
+    // The live diff swaps only the current-text card; editor focus and announcements belong to the
+    // view and region swaps, so a preview must not consume a pending round's flag.
+    const swapTarget = event.target instanceof Element ? event.target : null;
+    const editorSwap = swapTarget !== null && (swapTarget.id === "editor-view" || swapTarget.id === "editor-region");
+    if (swapTarget?.id === "current-text") {
+      sizeComparisonPanes();
+      const pane = document.querySelector("#current-text .editor-pane");
+      if (pane) pane.scrollTop = currentPaneScroll;
+    }
     if (restoreStatusTabFocus) {
       restoreStatusTabFocus = false;
       const active = document.querySelector("#status-tabs .tab.active") ?? document.querySelector("#status-tabs .tab");
@@ -244,8 +272,8 @@ import { initDismiss, initScrollFade, initTables, initTabs, initViewportWidth, s
       const firstLink = document.querySelector("#entries-list .entry-link");
       (rowLink ?? banner ?? firstLink)?.focus();
     }
-    if (editorFocusAfterSwap !== null) {
-      const refused = document.querySelector("#editor-region .callout-danger") !== null;
+    if (editorFocusAfterSwap !== null && editorSwap) {
+      const refused = document.querySelector("#editor-view .callout-danger") !== null;
       const target =
         editorFocusAfterSwap === "save"
           ? refused
@@ -290,6 +318,39 @@ import { initDismiss, initScrollFade, initTables, initTabs, initViewportWidth, s
     }
   }
 
+  // --- Comparison panes ---
+  // Both panes of the editor pair take one height: the taller of the two contents, floored so a
+  // short entry still has an edit box and capped so a long one scrolls in place. The current
+  // card then stretches to the proposal card's height, so neither side towers alone.
+  function sizeComparisonPanes() {
+    const pane = document.querySelector("#current-text .editor-pane");
+    const textarea = document.getElementById("editor-text");
+    const settled = document.querySelector("#editor-region .editor-pane");
+    if (pane === null || (textarea === null && settled === null)) return;
+    const floor = 140;
+    const cap = 320;
+    const natural = (el) => {
+      if (!el) return 0;
+      const previous = el.style.height;
+      el.style.height = "auto";
+      const height = el.scrollHeight;
+      el.style.height = previous;
+      return height;
+    };
+    // Measuring sets a pane's height to auto, which clamps its scroll to the top; put the
+    // reader's place back after the new height lands.
+    const paneScroll = pane.scrollTop;
+    const textareaScroll = textarea?.scrollTop ?? 0;
+    const settledScroll = settled?.scrollTop ?? 0;
+    const height = Math.min(cap, Math.max(floor, natural(textarea), natural(settled), natural(pane)));
+    if (textarea) textarea.style.height = `${height}px`;
+    if (settled) settled.style.height = `${height}px`;
+    pane.style.height = `${height}px`;
+    pane.scrollTop = paneScroll;
+    if (textarea) textarea.scrollTop = textareaScroll;
+    if (settled) settled.scrollTop = settledScroll;
+  }
+
   // --- Editor live metrics ---
   // The constraint row lives inside the htmx swap region now, so it re-renders with the swap;
   // between swaps the char count and the placeholder checklist track the textarea as the user
@@ -298,6 +359,7 @@ import { initDismiss, initScrollFade, initTables, initTabs, initViewportWidth, s
     const textarea = document.getElementById("editor-text");
     if (!textarea) return;
     autosizeTextareas();
+    sizeComparisonPanes();
     const announcements = [];
 
     const charCount = document.getElementById("char-count");
@@ -356,6 +418,7 @@ import { initDismiss, initScrollFade, initTables, initTabs, initViewportWidth, s
   document.addEventListener("htmx:afterSwap", autosizeTextareas);
   // The cap is a share of the current viewport, so a resize or rotation re-derives it.
   addEventListener("resize", autosizeTextareas);
+  addEventListener("resize", sizeComparisonPanes);
 
   // "Use" on a revision loads its text into the editor and re-syncs the panel, ready to save.
   document.addEventListener("click", (event) => {

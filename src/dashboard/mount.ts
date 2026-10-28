@@ -9,6 +9,7 @@ import { parseStyleGuideForm, upsertStyleGuide } from "../db/style-guide.ts";
 import type { StyleGuideForm } from "../db/style-guide.ts";
 import type { Store } from "../db/store.ts";
 import {
+  currentTextCard,
   dashboardPage,
   editorPage,
   editorViewFragment,
@@ -196,6 +197,19 @@ export function mountDashboard(app: Hono, config: Config, store: Store): void {
     // The save swap targets the whole editor view, so the diff's after-side re-renders with the
     // authored text; the transitions below answer with the region fragment only.
     return c.html(editorViewFragment(vm, state));
+  });
+
+  // The live diff: the current-text card re-rendered against the textarea's value, with no write.
+  // Only the htmx preview calls it; a plain POST has no meaning and returns to the editor.
+  app.post("/entries/:id/diff", async (c) => {
+    const id = c.req.param("id");
+    if (c.req.header("HX-Request") === undefined) return c.redirect(`/entries/${id}`, 303);
+    const form = await c.req.formData();
+    const raw = form.get("text");
+    const text = typeof raw === "string" ? raw : "";
+    const entry = getEntry(store, id);
+    if (entry === undefined) return c.text("", 404);
+    return c.html(currentTextCard(entry, text));
   });
 
   // The image upload: one multipart file, converted to a data url here at the boundary after the
