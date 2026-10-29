@@ -331,6 +331,35 @@ describe("editor information architecture", () => {
     expect(html).toContain('<span class="diff-add">now</span>');
   });
 
+  test("a rewrite with four changed blocks renders two rows, a small edit stays on one", async () => {
+    const env = openEnv();
+    const filed = fileEntries(env.store, "alpha", "probe-agent", [
+      draft({
+        file: "docs/heavy.md",
+        anchorHash: "h-heavy",
+        fileHash: "f-heavy",
+        anchorText: "alpha of beta of gamma of delta",
+        agentDraft: "one of two of three of four",
+      }),
+      draft({
+        file: "docs/small.md",
+        anchorHash: "h-small",
+        fileHash: "f-small",
+        anchorText: "Run bun install",
+        agentDraft: "Run npm install",
+      }),
+    ]);
+    const heavy = await (await env.get(`/entries/${filed.results[0]!.id}`)).text();
+
+    expect(heavy).toContain('class="diff-code editor-pane diff-rows"');
+    expect(heavy).toContain('<span class="diff-line diff-proposed">');
+
+    const small = await (await env.get(`/entries/${filed.results[1]!.id}`)).text();
+    expect(small).toContain('<pre class="diff-code editor-pane">');
+    expect(small).not.toContain("diff-proposed");
+    env.close();
+  });
+
   test("a plain POST to the diff route goes back to the editor", async () => {
     const { env, draftId } = seededEnv();
     const form = new FormData();
