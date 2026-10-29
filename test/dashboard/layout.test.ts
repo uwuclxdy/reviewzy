@@ -276,7 +276,8 @@ describe("editor information architecture", () => {
     expect(html).toContain(
       `hx-post="/entries/${draftId}/diff" hx-trigger="input changed delay:250ms" hx-target="#current-text" hx-swap="outerHTML" hx-sync="this:replace"`,
     );
-    expect(html).not.toContain('id="editor-text" class="input editor-pane" data-autosize');
+    // The proposal box sizes to its text through the autosizer; the notes box keeps its fixed height.
+    expect(html).toMatch(/<textarea id="editor-text"[^>]*data-autosize/);
     expect(html).not.toContain('id="editor-notes" class="input" name="notes" rows="4" aria-label="Your notes" hx-preserve="true" data-autosize');
   });
 

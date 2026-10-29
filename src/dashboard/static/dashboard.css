@@ -181,16 +181,18 @@
   border-top: 1px solid var(--line-soft);
 }
 
-/* ---- Entry editor: one designed workspace ----
-   The shell track runs wider than a comparison can read, so the workspace, its header and its
-   support card take --page-w and centre in the track: uncapped at 1920 the pair measured 794px a
-   side and the support table 1604px. The page is the query container, so the pair's collapse
-   follows the track width, not the viewport. Each card sizes to its own content and its pane
-   scrolls past the cap; one support card spans the workspace below. */
-.editor-page { container-type: inline-size; max-width: var(--page-w); width: 100%; margin-inline: auto; }
-/* The entry title reads one line on the 1920 and 1440 columns and two on a 1024 one; at --t-7 the
-   long machine title wrapped mid-hyphen even on the widest column. */
-.editor-title { font-size: var(--t-6); }
+/* ---- Entry editor: one full-track workspace ----
+   The workspace, its header and its support card take the page column's whole track: a cap beside
+   the sidebar centres a column away from the nav it belongs to. The page is the query container,
+   so the pair's collapse follows the track width, not the viewport. Each card sizes to its own
+   content and its pane scrolls past the cap; one support card spans the workspace below. */
+.editor-page { container-type: inline-size; }
+/* The entry title runs one line on the 1920 and 1440 tracks; a narrow page column steps it down
+   so a long machine title does not wrap mid-hyphen. */
+.editor-title { font-size: var(--t-7); }
+@container (max-width: 800px) {
+  .editor-title { font-size: var(--t-6); }
+}
 .editor-grid {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
@@ -202,39 +204,24 @@
 /* A terminal entry has no change card: the settled pane takes the full row. */
 #editor-region.editor-region-wide { grid-column: 1 / -1; }
 .editor-pane { max-height: 60vh; overflow: auto; }
-/* A compact editor box: tall enough to write a paragraph in, never a slab of empty well under a
-   one-line entry. Text past the height scrolls inside it. */
-#editor-text { height: 180px; }
-/* One support card spans the workspace: four stacked sections cost a full-width band each and a
-   ~1000px stack. At the workspace width it is a two-up grid, so Details' values keep a readable
-   measure and the card ends before the fold; DOM order stays Details, Notes, Images, Revision. */
+/* The proposal box sizes to its text through dashboard.js's autosizer, so a one-line entry gets a
+   one-line box and a long one grows to the viewport cap instead of scrolling from the start. */
+/* One support card, two balanced columns: the sections keep their DOM order down each column and
+   each takes its own height, so a short Details never stretches to a taller Notes. The section
+   labels head their sections at the next type step; the nested "More" keeps the shipped size. */
 .editor-support { grid-column: 1 / -1; min-width: 0; }
 .editor-support-card .card-content {
   padding: var(--space-2);
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  columns: 2;
   column-gap: var(--space-5);
-  row-gap: var(--space-2);
-  align-items: start;
 }
-/* The section labels head their sections, so they take the next type step; the nested "More"
-   disclosure keeps the shipped summary size. */
+.editor-support-card .support-section {
+  break-inside: avoid;
+  margin-bottom: var(--space-3);
+}
 .editor-support-card .support-section > summary { font-size: var(--t-4); }
-/* A hairline opens each grid row after the first. In the two-up grid that is sections 3 and 4. */
-.support-section:nth-of-type(n + 3) {
-  border-top: 1px solid var(--line-soft);
-  padding-top: var(--space-2);
-}
-/* Under 900px of page column a two-up cell squeezes Details' values and the agent's notes to
-   ~40 characters, so Details and Notes take the full row and Images pairs with Revision history.
-   The hairlines move to the rows that layout opens. */
 @container (max-width: 900px) {
-  .editor-support-card .support-section:first-of-type,
-  .editor-support-card .support-section:nth-of-type(2) { grid-column: 1 / -1; }
-  .support-section:nth-of-type(n + 2) {
-    border-top: 1px solid var(--line-soft);
-    padding-top: var(--space-2);
-  }
+  .editor-support-card .card-content { columns: 1; }
 }
 /* The shipped empty state's block padding is card-scale; one line of it inside a section leaves
    a tall blank band. It also centres its one line across the full card, which reads as a hole;

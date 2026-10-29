@@ -1271,52 +1271,64 @@ function SupportSection({ label, children }: { label: string; children: Child })
   );
 }
 
+/** The entry's provenance rows: file hash, filer, stale note. */
+function ProvenanceTable({ entry }: { entry: EntryRow }) {
+  return (
+    <table class="info-table">
+      <tr>
+        <td>File hash</td>
+        <td>{entry.file_hash}</td>
+      </tr>
+      {entry.filed_by !== null ? (
+        <tr>
+          <td>Filed by</td>
+          <td>{entry.filed_by}</td>
+        </tr>
+      ) : null}
+      {entry.stale_note !== null ? (
+        <tr>
+          <td>Stale note</td>
+          <td>{entry.stale_note}</td>
+        </tr>
+      ) : null}
+    </table>
+  );
+}
+
 /**
- * The entry's agent-supplied context rows plus the provenance (hash, filer, stale note) collapsed
- * behind the disclosure. The anchor, repo, file and filed time all live in the page header, so no
- * row here repeats them.
+ * The entry's agent-supplied context rows, then the provenance behind a disclosure. An entry
+ * without context rows shows the provenance directly: a section holding only a "More" toggle reads
+ * as an empty card. The anchor, repo, file and filed time live in the page header, so no row here
+ * repeats them.
  */
 function DetailsSection({ entry }: { entry: EntryRow }) {
   const context = parseContext(entry.context);
   const rows = Object.entries(context);
   return (
     <SupportSection label="Details">
-      {rows.length > 0 ? (
-        <table class="info-table">
-          {rows.map(([key, value]) => (
-            <tr key={key}>
-              <td>{key}</td>
-              <td>{typeof value === "string" ? value : JSON.stringify(value)}</td>
-            </tr>
-          ))}
-        </table>
-      ) : null}
-      <details class="disclosure context-secondary">
-        <summary>
-          <svg aria-hidden="true"><use href="#i-chevron-right" /></svg>
-          <span>More</span>
-        </summary>
-        <div class="disclosure-body">
+      {rows.length === 0 ? (
+        <ProvenanceTable entry={entry} />
+      ) : (
+        <>
           <table class="info-table">
-            <tr>
-              <td>File hash</td>
-              <td>{entry.file_hash}</td>
-            </tr>
-            {entry.filed_by !== null ? (
-              <tr>
-                <td>Filed by</td>
-                <td>{entry.filed_by}</td>
+            {rows.map(([key, value]) => (
+              <tr key={key}>
+                <td>{key}</td>
+                <td>{typeof value === "string" ? value : JSON.stringify(value)}</td>
               </tr>
-            ) : null}
-            {entry.stale_note !== null ? (
-              <tr>
-                <td>Stale note</td>
-                <td>{entry.stale_note}</td>
-              </tr>
-            ) : null}
+            ))}
           </table>
-        </div>
-      </details>
+          <details class="disclosure context-secondary">
+            <summary>
+              <svg aria-hidden="true"><use href="#i-chevron-right" /></svg>
+              <span>More</span>
+            </summary>
+            <div class="disclosure-body">
+              <ProvenanceTable entry={entry} />
+            </div>
+          </details>
+        </>
+      )}
     </SupportSection>
   );
 }
@@ -1436,6 +1448,7 @@ function ProposalForm({ vm, state }: { vm: EditorViewModel; state: EditorState |
           name="text"
           aria-label="Entry text"
           hx-preserve="true"
+          data-autosize
           hx-post={`/entries/${entry.id}/diff`}
           hx-trigger="input changed delay:250ms"
           hx-target="#current-text"
