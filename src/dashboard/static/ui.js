@@ -359,18 +359,28 @@ export function initDrawer() {
   const hamburger = document.getElementById('hamburger-btn');
   if (!sidebar) return;
 
+  /* Under 768 the column is the off-canvas drawer, and a transform moves paint, never focus:
+     without `inert` its rows stay in the tab order behind a closed drawer. Above 768 the same
+     column is in flow and always reachable, so the flag follows the query as well as the state. */
+  const narrow = matchMedia('(max-width: 768px)');
+  const setInert = () => { sidebar.inert = narrow.matches && !sidebar.classList.contains('open'); };
   const setOpen = open => {
     sidebar.classList.toggle('open', open);
     overlay?.classList.toggle('open', open);
     hamburger?.setAttribute('aria-expanded', String(open));
+    const held = sidebar.contains(document.activeElement);
+    setInert();
+    if (!open && held) hamburger?.focus();
   };
+  narrow.addEventListener('change', setInert);
+  setInert();
   if (hamburger && once(hamburger, 'uiDrawer')) hamburger.addEventListener('click', () => setOpen(true));
   if (overlay && once(overlay, 'uiDrawer')) overlay.addEventListener('click', () => setOpen(false));
   if (once(sidebar, 'uiDrawerRows')) {
     document.querySelectorAll('.nav-item, .navbar-link').forEach(item => {
       item.addEventListener('click', () => { if (innerWidth <= 768) setOpen(false); });
     });
-    addEventListener('keydown', e => { if (e.key === 'Escape') setOpen(false); });
+    addEventListener('keydown', e => { if (e.key === 'Escape' && sidebar.classList.contains('open')) setOpen(false); });
   }
 }
 
