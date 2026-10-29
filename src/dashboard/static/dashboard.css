@@ -197,7 +197,9 @@
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: var(--space-4);
-  align-items: start;
+  /* The pair's cards share one height: the taller card sets the row and the shorter one keeps its
+     own content at the top. The inner boxes stay content-sized; the slack is card surface. */
+  align-items: stretch;
 }
 #current-text { grid-column: 1; }
 #editor-region { grid-column: 2; min-width: 0; }
