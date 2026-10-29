@@ -155,7 +155,7 @@ export function mountDashboard(app: Hono, config: Config, store: Store): void {
   // The editor page; an unknown id is a true 404 page with the way onward.
   app.get("/entries/:id", (c) => {
     const vm = loadEditor(store, c.req.param("id"));
-    if (vm === null) return c.html(html`<!doctype html>${notFoundPage(auth.enabled)}`, 404);
+    if (vm === null) return c.html(html`<!doctype html>${notFoundPage("entry")}`, 404);
     return c.html(html`<!doctype html>${editorPage(vm, undefined, auth.enabled)}`);
   });
 
@@ -390,7 +390,7 @@ export function mountDashboard(app: Hono, config: Config, store: Store): void {
 
   // Any request no route served, any method: the styled not-found page. app.notFound fires only
   // when no path matches, so a wrong method on a known path keeps its 405.
-  app.notFound((c) => c.html(html`<!doctype html>${notFoundPage(auth.enabled)}`, 404));
+  app.notFound((c) => c.html(html`<!doctype html>${notFoundPage("route")}`, 404));
 }
 
 /** The three filters straight off an action's POST body, kept alive across a re-render. */

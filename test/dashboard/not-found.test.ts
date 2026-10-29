@@ -33,7 +33,23 @@ describe("unknown routes", () => {
       expect(res.headers.get("content-type")?.startsWith("text/html")).toBe(true);
       const body = await res.text();
       expect(body).toContain('<html lang="en" data-theme="dark">');
+      expect(body).toContain("<title>Page not found · reviewzy</title>");
+      expect(body).toContain('<p class="page-state-title">Page not found</p>');
+      expect(body).toContain("Nothing lives at this address.");
+    } finally {
+      app.close();
+    }
+  });
+
+  test("an entry id no store holds keeps the entry's own copy", async () => {
+    const app = serveApp();
+    try {
+      const res = await app.get("/entries/does-not-exist");
+      expect(res.status).toBe(404);
+      const body = await res.text();
       expect(body).toContain("<title>Entry not found · reviewzy</title>");
+      expect(body).toContain('<p class="page-state-title">Entry not found</p>');
+      expect(body).toContain("This entry doesn&#39;t exist. Return to the list to find it.");
     } finally {
       app.close();
     }

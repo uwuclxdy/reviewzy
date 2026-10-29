@@ -340,9 +340,9 @@ describe("entry images", () => {
     // name, associated to the submit form by id so the zone stays the dropzone's direct child.
     expect(html).toContain('<div class="dropzone">');
     expect(html).toContain('<label class="dropzone-target">');
-    expect(html).toContain('<span class="dropzone-lede">Image file</span>');
+    expect(html).toContain('<span class="dropzone-lede">Drop an image, or choose one</span>');
     expect(html).toContain(
-      'class="dropzone-input" type="file" name="file" accept="image/*" aria-label="Image file" form="image-upload"',
+      'class="dropzone-input" type="file" name="file" accept="image/*" aria-label="Drop an image, or choose one" form="image-upload"',
     );
     expect(html).toContain('<form id="image-upload" class="image-upload" method="post"');
     expect(html).toContain('enctype="multipart/form-data"');

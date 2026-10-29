@@ -1581,13 +1581,13 @@ function ImagesSection({ entry }: { entry: EntryRow }) {
             keeps the direct-child shape the dropzone's own state rules select on. */}
         <label class="dropzone-target">
           <svg class="icon" aria-hidden="true"><use href="#i-upload" /></svg>
-          <span class="dropzone-lede">Image file</span>
+          <span class="dropzone-lede">Drop an image, or choose one</span>
           <input
             class="dropzone-input"
             type="file"
             name="file"
             accept="image/*"
-            aria-label="Image file"
+            aria-label="Drop an image, or choose one"
             form="image-upload"
           />
         </label>
@@ -1738,18 +1738,23 @@ export function editorViewFragment(vm: EditorViewModel, state: EditorState | und
   );
 }
 
-/** The viewport-owning error page for an unknown entry id or route, with the way onward the page-not-found pattern demands. */
-export function notFoundPage(_signedIn = false): JSX.Element {
+/** The viewport-owning error page for an unknown entry id or route, with the way onward the page-not-found pattern demands. A route that never named an entry has no entry to miss. */
+export function notFoundPage(kind: "entry" | "route"): JSX.Element {
+  const entry = kind === "entry";
   return (
     <html lang="en" data-theme="dark">
-      <PageHead title={`Entry not found · ${NAME}`} />
+      <PageHead title={`${entry ? "Entry" : "Page"} not found · ${NAME}`} />
       <body>
         <IconSprite />
         <main class="page-state">
           <div class="page-state-gap">
             <div class="page-state-body">
-              <p class="page-state-title">Entry not found</p>
-              <p class="page-state-text">This entry doesn't exist. Return to the list to find it.</p>
+              <p class="page-state-title">{entry ? "Entry not found" : "Page not found"}</p>
+              <p class="page-state-text">
+                {entry
+                  ? "This entry doesn't exist. Return to the list to find it."
+                  : "Nothing lives at this address."}
+              </p>
               <div class="page-state-actions">
                 <a href="/" class="btn btn-fill">Back to entries</a>
               </div>
