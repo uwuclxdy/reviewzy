@@ -13,9 +13,13 @@
 
 /* The page column takes the main track's width: the design drops the cap beside a sidebar,
    because a capped column leaves a dead strip beside the content once the track outgrows
-   --page-w (268px on each side at 1920). min-width keeps the grid item from growing to its
-   widest table's min-content width, which would widen the document at 390. */
-.layout > .page { min-width: 0; }
+   --page-w (268px on each side at 1920). The track is pinned rather than auto-placed: under
+   768 the sidebar is the fixed drawer and leaves the grid, so auto-placement would land the
+   page in the `auto` track, which sizes to the content's own intrinsic width — zero inside a
+   `container-type: inline-size` wrapper, collapsing the editor page to its padding. min-width
+   keeps the grid item from growing to its widest table's min-content width, which would widen
+   the document at 390. */
+.layout > .page { grid-column: 2; min-width: 0; }
 
 /* One spacing ladder: the page opens at --space-8 and closes at --space-16. */
 .page { padding-block: var(--space-8) var(--space-16); }
@@ -184,8 +188,9 @@
 /* ---- Entry editor: one full-track workspace ----
    The workspace, its header and its support card take the page column's whole track: a cap beside
    the sidebar centres a column away from the nav it belongs to. The page is the query container,
-   so the pair's collapse follows the track width, not the viewport. Each card sizes to its own
-   content and its pane scrolls past the cap; one support card spans the workspace below. */
+   so the title step, the support card's columns and the pair's order follow the track width, not
+   the viewport. Each card sizes to its own content and its pane scrolls past the cap; one support
+   card spans the workspace below. */
 .editor-page { container-type: inline-size; }
 /* The entry title runs one line on the 1920 and 1440 tracks; a narrow page column steps it down
    so a long machine title does not wrap mid-hyphen. */
@@ -194,27 +199,31 @@
   .editor-title { font-size: var(--t-6); }
 }
 .editor-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  display: flex;
+  flex-wrap: wrap;
   gap: var(--space-4);
   /* The pair's cards share one height: the taller card sets the row and the shorter one keeps its
      own content at the top. The inner boxes stay content-sized; the slack is card surface. */
   align-items: stretch;
 }
-#current-text { grid-column: 1; }
-#editor-region { grid-column: 2; min-width: 0; }
-/* A terminal entry has no change card: the settled pane takes the full row. */
-#editor-region.editor-region-wide { grid-column: 1 / -1; }
+/* Each card asks for its own readable measure and the pair wraps when the track cannot hold two,
+   so the collapse follows the track's own width instead of a breakpoint: it needs no container
+   query and holds in an engine without them. A terminal entry has no change card, so the settled
+   pane asks for the whole row, and one support card spans it below the pair. */
+.editor-grid > * { flex: 1 1 320px; min-width: 0; }
+#editor-region.editor-region-wide,
+.editor-support { flex: 1 0 100%; }
 .editor-pane { max-height: 60vh; overflow: auto; }
 /* The proposal box sizes to its text through dashboard.js's autosizer, so a one-line entry gets a
    one-line box and a long one grows to the viewport cap instead of scrolling from the start. */
 /* One support card, two balanced columns: the sections keep their DOM order down each column and
    each takes its own height, so a short Details never stretches to a taller Notes. The section
-   labels head their sections at the next type step; the nested "More" keeps the shipped size. */
-.editor-support { grid-column: 1 / -1; min-width: 0; }
+   labels head their sections at the next type step; the nested "More" keeps the shipped size. The
+   320px floor is the same measure the pair asks for, so an engine without container queries still
+   meets one column on a phone instead of two slivers. */
 .editor-support-card .card-content {
   padding: var(--space-2);
-  columns: 2;
+  columns: 320px 2;
   column-gap: var(--space-5);
 }
 .editor-support-card .support-section {
@@ -235,15 +244,11 @@
 }
 #editor-notice:empty { display: none; }
 #editor-notice { margin-bottom: var(--space-4); }
-/* The pair keeps its compare down to a 640px page column (about a 956px window with the expanded
-   sidebar), so a 1024 laptop still reads as an editor; below that it stacks. The explicit desktop
-   columns reset, or the placements open an implicit second column and the page stacks into a
-   sliver; the proposal leads on the narrow track. The support card follows the same breakpoint. */
+/* The one part of the narrow layout the pair's own measure cannot carry: once it has wrapped, the
+   proposal leads, so the reader meets the words before the file's own text. An engine without
+   container queries keeps the file's text first. */
 @container (max-width: 640px) {
-  .editor-grid { grid-template-columns: minmax(0, 1fr); }
-  #current-text { grid-column: 1; }
-  #editor-region { grid-column: 1; order: -1; }
-  .editor-support-card .card-content { grid-template-columns: minmax(0, 1fr); }
+  #editor-region { order: -1; }
 }
 
 /* ---- Textareas: no manual resize ----
