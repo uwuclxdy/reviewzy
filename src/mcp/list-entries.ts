@@ -1,6 +1,6 @@
 import type { McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
-import { listEntries, listProjects, projectIdBySlug } from "../db/queries.ts";
+import { listEntries, listProjects, projectIdBySlug, resolveEntryIds } from "../db/queries.ts";
 import type { EntryRow } from "../db/queries.ts";
 import type { Store } from "../db/store.ts";
 
@@ -70,6 +70,8 @@ const Entry = z.object({
 const ListEntriesOutput = z.object({
   entries: z.array(Entry),
   next_cursor: z.string().optional(),
+  missing_ids: z.array(z.string()).optional(),
+  archived_ids: z.array(z.string()).optional(),
 });
 
 /** A refusal is an ordinary thrown Error: the SDK answers it as a tool result with `isError: true`, never as a json-rpc protocol error. */
@@ -88,7 +90,7 @@ export function registerListEntriesTool(server: McpServer, store: Store): void {
     {
       title: "List entries for review",
       description:
-        "List the review queue's entries, ordered by ascending entry id. Every filter is optional and combines with AND. Walk pages via next_cursor; the walk is exhausted when it stops coming back. Each row is a lean index: id, project slug, file, title, status, updated_at. Apply-back fields (anchor, hashes, human text, constraints) come back through fetch_approved, and rejected or applied entries expose no agent-readable text anywhere — the dashboard owns authoring.",
+        "List the review queue's entries, ordered by ascending entry id. Every filter is optional and combines with AND. Walk pages via next_cursor; the walk is exhausted when it stops coming back. Each row is a lean index: id, project slug, file, title, status, updated_at. Apply-back fields (anchor, hashes, human text, constraints) come back through fetch_approved, and rejected or applied entries expose no agent-readable text anywhere — the dashboard owns authoring. An ids call adds missing_ids for an id no live row holds and archived_ids for one the sweep archived.",
       inputSchema: ListEntriesArgs,
       outputSchema: ListEntriesOutput,
     },
@@ -119,9 +121,16 @@ export function registerListEntriesTool(server: McpServer, store: Store): void {
       // empty page must never smuggle one in. The slug map mirrors the dashboard's own
       // project_id → slug resolution (the store row carries the fk, never the slug).
       const slugByProjectId = new Map(listProjects(store).map((p) => [p.id, p.slug]));
+      // Only a caller that asked by exact id needs the ids it cannot see; a filtered walk reports
+      // neither field, so its absence stays the statement that nothing was asked by id.
+      const resolved = args.ids === undefined ? undefined : resolveEntryIds(store, args.ids);
       const output = {
         entries: rows.map((row) => toWireEntry(row, slugByProjectId)),
         ...(nextCursor === null ? {} : { next_cursor: nextCursor }),
+        ...(resolved === undefined ? {} : {
+          missing_ids: resolved.missing,
+          archived_ids: resolved.archived,
+        }),
       };
       return {
         content: [{ type: "text" as const, text: JSON.stringify(output) }],

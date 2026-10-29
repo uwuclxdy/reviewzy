@@ -6,6 +6,7 @@ import { Hono } from "hono";
 import { loadConfig } from "../../src/config.ts";
 import { openStore } from "../../src/db/store.ts";
 import type { Store } from "../../src/db/store.ts";
+import { sweepArchive } from "../../src/db/sweep.ts";
 import { originGate } from "../../src/daemon/origin.ts";
 import { mountMcp } from "../../src/mcp/route.ts";
 
@@ -21,7 +22,12 @@ const META = {
 const PORT = 3200;
 
 type WireEntry = Record<string, unknown>;
-type ListResult = { entries: WireEntry[]; next_cursor?: string };
+type ListResult = {
+  entries: WireEntry[];
+  next_cursor?: string;
+  missing_ids?: string[];
+  archived_ids?: string[];
+};
 type FiledResult = { results: { id: string }[] };
 
 type WireResult = {
@@ -135,7 +141,7 @@ describe("the tool surface", () => {
     expect(limit.minimum).toBe(1);
 
     const output = tool.outputSchema as { properties?: Record<string, unknown> };
-    expect(Object.keys(output.properties ?? {})).toEqual(["entries", "next_cursor"]);
+    expect(Object.keys(output.properties ?? {})).toEqual(["entries", "next_cursor", "missing_ids", "archived_ids"]);
   });
 });
 
@@ -440,6 +446,60 @@ describe("pagination", () => {
       ?.structuredContent as ListResult;
     expect(past.entries).toEqual([]);
     expect("next_cursor" in past).toBe(false);
+  });
+});
+
+describe("ids the caller asked for", () => {
+  const DAY = 24 * 60 * 60 * 1000;
+  const NOW = 1_700_000_000_000;
+
+  test("an id no live row holds comes back as missing, never as an empty page alone", async () => {
+    const filed = (await fileEntries({ project: "ids-missing", entries: [entry()] })).body.result
+      ?.structuredContent as FiledResult;
+    const live = filed.results[0]!.id;
+    const neverFiled = "01J00000000000000000000000";
+
+    const result = (await listEntries({ ids: [live, neverFiled] })).body.result
+      ?.structuredContent as ListResult;
+    expect(result.entries.map((e) => e.id)).toEqual([live]);
+    expect(result.missing_ids).toEqual([neverFiled]);
+    expect(result.archived_ids).toEqual([]);
+  });
+
+  test("an id the retention sweep archived is named as archived, not as never filed", async () => {
+    const filed = (await fileEntries({ project: "ids-archived", entries: [entry({ anchor_text: "archive me" })] }))
+      .body.result?.structuredContent as FiledResult;
+    const archivedId = filed.results[0]!.id;
+    first.store.db.run("UPDATE entries SET status = 'applied', applied_at = ? WHERE id = ?", [
+      NOW - 100 * DAY,
+      archivedId,
+    ]);
+    expect(sweepArchive(first.store, NOW, 90)).toBe(1);
+
+    const result = (await listEntries({ ids: [archivedId] })).body.result
+      ?.structuredContent as ListResult;
+    expect(result.entries).toEqual([]);
+    expect(result.missing_ids).toEqual([archivedId]);
+    expect(result.archived_ids).toEqual([archivedId]);
+  });
+
+  test("a live row another filter hid is neither missing nor archived", async () => {
+    const filed = (await fileEntries({ project: "ids-filtered", entries: [entry()] })).body.result
+      ?.structuredContent as FiledResult;
+    const draftId = filed.results[0]!.id;
+
+    const result = (await listEntries({ ids: [draftId], status: "approved" })).body.result
+      ?.structuredContent as ListResult;
+    expect(result.entries).toEqual([]);
+    expect(result.missing_ids).toEqual([]);
+    expect(result.archived_ids).toEqual([]);
+  });
+
+  test("a walk without an ids filter carries neither field", async () => {
+    const result = (await listEntries({ project: "fields" })).body.result
+      ?.structuredContent as ListResult;
+    expect("missing_ids" in result).toBe(false);
+    expect("archived_ids" in result).toBe(false);
   });
 });
 

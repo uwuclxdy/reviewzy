@@ -327,6 +327,29 @@ export function listEntries(store: Store, filter: ListEntriesFilter): ListEntrie
 }
 
 /**
+ * Splits ids a read could not return into the two answers a caller acts on differently: never
+ * filed (a typo, a renamed entry) and archived (the retention sweep holds it). A live row another
+ * filter hid is in neither list — it exists, and only the filter excluded it, so it is not missing.
+ */
+export function resolveEntryIds(
+  store: Store,
+  ids: readonly string[],
+): { missing: string[]; archived: string[] } {
+  const live = store.db
+    .query(`SELECT id FROM entries WHERE id IN (${ids.map(() => "?").join(", ")})`)
+    .all(...ids) as { id: string }[];
+  const liveIds = new Set(live.map((row) => row.id));
+  const missing = ids.filter((id) => !liveIds.has(id));
+  if (missing.length === 0) return { missing, archived: [] };
+
+  const archived = store.db
+    .query(`SELECT id FROM entries_archive WHERE id IN (${missing.map(() => "?").join(", ")})`)
+    .all(...missing) as { id: string }[];
+  const archivedIds = new Set(archived.map((row) => row.id));
+  return { missing, archived: missing.filter((id) => archivedIds.has(id)) };
+}
+
+/**
  * The entries immediately before and after `id` in the ascending-id walk the list renders, for the
  * editor's full-height prev/next rails; null at either boundary. The `id` column is a primary key,
  * so both comparisons run on its unique index.
