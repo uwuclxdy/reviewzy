@@ -189,8 +189,9 @@
    The workspace, its header and its support card take the page column's whole track: a cap beside
    the sidebar centres a column away from the nav it belongs to. The page is the query container,
    so the title step, the support card's columns and the pair's order follow the track width, not
-   the viewport. Each card sizes to its own content and its pane scrolls past the cap; one support
-   card spans the workspace below. */
+   the viewport. Container queries sit inside the browser floor the readme states, so the title step
+   and the pair's order keep the query rather than an intrinsic fallback. Each card sizes to its own
+   content and its pane scrolls past the cap; one support card spans the workspace below. */
 .editor-page { container-type: inline-size; }
 /* The entry title runs one line on the 1920 and 1440 tracks; a narrow page column steps it down
    so a long machine title does not wrap mid-hyphen. */

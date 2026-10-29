@@ -119,7 +119,7 @@ curl http://127.0.0.1:3123/health
 {"name":"reviewzy","version":"0.3.0","pid":4172598,"nonce":"881f0e93-8dde-4c75-b559-d2e3d3b223f0","startedAt":"2026-08-16T19:31:28.640Z"}
 ```
 
-open http://127.0.0.1:3123/ for the dashboard.
+open http://127.0.0.1:3123/ for the dashboard. it needs a current evergreen browser (chrome/edge 117+, safari 16.2+, firefox 121+); older engines get a degraded page, since no fallback sheet ships.
 
 ## Configuration
 
