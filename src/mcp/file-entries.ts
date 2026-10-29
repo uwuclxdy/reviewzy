@@ -252,7 +252,7 @@ export function registerFileEntriesTool(server: McpServer, baseUrl: string, stor
     {
       title: "File entries for review",
       description:
-        "File the text you want changed as draft entries for a human to author, approve or reject on the dashboard. One entry is one edit: a multi-line block is ONE entry, not one entry per line. Re-filing a known anchor is safe: a draft updates in place; an approved, applied or rejected entry comes back untouched. The dashboard groups entries by project and batch, newest batches first.",
+        "File the text you want changed as draft entries for a human to author, approve or reject on the dashboard. One entry is one edit: a multi-line block is ONE entry, not one entry per line. Re-filing a known anchor is safe: a draft updates in place; an approved, applied or rejected entry comes back untouched. The dashboard groups entries by project.",
       inputSchema: z.object({
         project: z.string().min(1).describe("The project slug: 1-63 chars of lowercase letters, digits, and inner hyphens. An unknown slug auto-creates the project on first file."),
         entries: z.array(FileEntryArgs).min(1).describe("The entries to file. One edit per entry."),
