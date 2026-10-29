@@ -224,7 +224,7 @@ describe("editor information architecture", () => {
     expect(html).toContain('<div class="card-title">The change</div>');
     expect(html).toContain('<div class="card current-text-card" id="current-text">');
     expect(html).toContain('<div class="card-subtitle">Removed words tint red; added words tint green.</div>');
-    expect(html).toContain('<pre class="diff-code editor-pane">');
+    expect(html).toContain('<pre class="diff-code editor-pane diff-rows">');
     expect(html).toContain('<div class="card-title">Proposed text</div>');
     expect(html).toContain('<textarea id="editor-text" class="input editor-pane"');
     expect(html).toContain('<form id="editor-form" class="card"');
@@ -331,32 +331,33 @@ describe("editor information architecture", () => {
     expect(html).toContain('<span class="diff-add">now</span>');
   });
 
-  test("a rewrite with four changed blocks renders two rows, a small edit stays on one", async () => {
+  test("a substitution renders two rows, an addition stays on one line", async () => {
     const env = openEnv();
     const filed = fileEntries(env.store, "alpha", "probe-agent", [
       draft({
-        file: "docs/heavy.md",
-        anchorHash: "h-heavy",
-        fileHash: "f-heavy",
-        anchorText: "alpha of beta of gamma of delta",
-        agentDraft: "one of two of three of four",
+        file: "docs/substitution.md",
+        anchorHash: "h-sub",
+        fileHash: "f-sub",
+        anchorText: "codex — switch with `clauth switch <name>`",
+        agentDraft: "codex · switch with clauth switch <name>",
       }),
       draft({
-        file: "docs/small.md",
-        anchorHash: "h-small",
-        fileHash: "f-small",
+        file: "docs/addition.md",
+        anchorHash: "h-add",
+        fileHash: "f-add",
         anchorText: "Run bun install",
-        agentDraft: "Run npm install",
+        agentDraft: "Run bun install now",
       }),
     ]);
-    const heavy = await (await env.get(`/entries/${filed.results[0]!.id}`)).text();
+    // Both sides changed: one line would render "`clauth" and "clauth" side by side, so the two
+    // whole rows carry the file text and the proposal instead.
+    const substituted = await (await env.get(`/entries/${filed.results[0]!.id}`)).text();
+    expect(substituted).toContain('class="diff-code editor-pane diff-rows"');
+    expect(substituted).toContain('<span class="diff-line diff-proposed">');
 
-    expect(heavy).toContain('class="diff-code editor-pane diff-rows"');
-    expect(heavy).toContain('<span class="diff-line diff-proposed">');
-
-    const small = await (await env.get(`/entries/${filed.results[1]!.id}`)).text();
-    expect(small).toContain('<pre class="diff-code editor-pane">');
-    expect(small).not.toContain("diff-proposed");
+    const added = await (await env.get(`/entries/${filed.results[1]!.id}`)).text();
+    expect(added).toContain('<pre class="diff-code editor-pane">');
+    expect(added).not.toContain("diff-proposed");
     env.close();
   });
 

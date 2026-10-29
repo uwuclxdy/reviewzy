@@ -1195,33 +1195,17 @@ function EditorHeader({ vm }: { vm: EditorViewModel }) {
   );
 }
 
-/** The changed blocks of a word diff: adjacent removed and added tokens are one block. */
-function changedRuns(diff: readonly WordDiffToken[]): number {
-  let runs = 0;
-  let inRun = false;
-  for (const token of diff) {
-    if (token.kind === "same") {
-      inRun = false;
-    } else if (!inRun) {
-      runs++;
-      inRun = true;
-    }
-  }
-  return runs;
-}
-
 /**
- * A rewrite is a mosaic when both sides changed and the marks alternate across four or more
- * blocks: on one line every other word then flips colour and the sentence stops reading. A single
- * edit or a one-sided change stays on the unified line.
+ * Whether the change touches both sides: a substitution or rewrite then renders two rows, while an
+ * addition-only or removal-only edit stays on the unified line. On one line a substitution reads as
+ * two differently tinted copies of the same word ("`clauth" then "clauth"), so the two whole rows
+ * keep the sentence readable.
  */
-function isMosaic(diff: readonly WordDiffToken[]): boolean {
-  const removed = diff.some((token) => token.kind === "removed");
-  const added = diff.some((token) => token.kind === "added");
-  return removed && added && changedRuns(diff) >= 4;
+function hasBothSides(diff: readonly WordDiffToken[]): boolean {
+  return diff.some((token) => token.kind === "removed") && diff.some((token) => token.kind === "added");
 }
 
-/** One side of a mosaic: the anchor without the additions, or the proposal without the removals, each a whole sentence. */
+/** One side of a two-row change: the anchor without the additions, or the proposal without the removals, each a whole sentence. */
 function diffSide(diff: readonly WordDiffToken[], side: "anchor" | "proposal"): Child[] {
   const dropped = side === "anchor" ? "added" : "removed";
   const mark = side === "anchor" ? "diff-remove" : "diff-add";
@@ -1234,14 +1218,14 @@ function diffSide(diff: readonly WordDiffToken[], side: "anchor" | "proposal"): 
 
 /**
  * The change card: the anchored snippet with the anchor line marked, diffed against the compare
- * text when one is given. A small edit renders the unified stream, so removed and added words mark
- * in place while the kept words read once; a heavy rewrite renders the file text and the proposal
- * as two rows, each whole. A null or empty compare renders the anchor plain. The diff route
- * re-renders this card against the textarea's live value.
+ * text when one is given. A one-sided edit renders the unified stream, so the marks sit in place
+ * while the kept words read once; a change on both sides renders the file text and the proposal as
+ * two whole rows. A null or empty compare renders the anchor plain. The diff route re-renders this
+ * card against the textarea's live value.
  */
 export function currentTextCard(entry: EntryRow, compareText: string | null): JSX.Element {
   const diff = compareText === null || compareText === "" ? null : diffWords(entry.anchor_text, compareText);
-  const mosaic = diff !== null && isMosaic(diff);
+  const twoRow = diff !== null && hasBothSides(diff);
   return (
     <div class="card current-text-card" id="current-text">
       <div class="card-header">
@@ -1251,12 +1235,12 @@ export function currentTextCard(entry: EntryRow, compareText: string | null): JS
         </div>
       </div>
       <div class="card-content">
-        <pre class={mosaic ? "diff-code editor-pane diff-rows" : "diff-code editor-pane"}>
+        <pre class={twoRow ? "diff-code editor-pane diff-rows" : "diff-code editor-pane"}>
           <span class="diff-line">{entry.anchor_before}</span>
           <span class="diff-line diff-anchor annot-mark">
             {diff === null
               ? entry.anchor_text
-              : mosaic
+              : twoRow
                 ? diffSide(diff, "anchor")
                 : diff.map((token, index) =>
                     token.kind === "same" ? (
@@ -1267,7 +1251,7 @@ export function currentTextCard(entry: EntryRow, compareText: string | null): JS
                   )}
           </span>
           <span class="diff-line">{entry.anchor_after}</span>
-          {mosaic && diff !== null ? <span class="diff-line diff-proposed">{diffSide(diff, "proposal")}</span> : null}
+          {twoRow && diff !== null ? <span class="diff-line diff-proposed">{diffSide(diff, "proposal")}</span> : null}
         </pre>
       </div>
     </div>

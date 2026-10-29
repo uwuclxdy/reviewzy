@@ -768,9 +768,10 @@ describe("the word diff", () => {
     const res = await env.post(`/entries/${id}/save`, saveForm("Run npm install"), HX);
     const html = await res.text();
 
-    // "bun" exists only in the anchor, so the unified passage marks it removed and the word that
-    // replaces it added; the proposal's textarea carries the authored words as plain text.
-    expect(html).toContain('Run <span class="diff-remove">bun</span><span class="diff-add">npm</span> install');
+    // Both sides changed, so the card renders two whole rows: the file text with "bun" removed
+    // and the proposal with "npm" added; the textarea carries the authored words as plain text.
+    expect(html).toContain('Run <span class="diff-remove">bun</span> install');
+    expect(html).toContain('Run <span class="diff-add">npm</span> install');
     expect(html).toContain(">Run npm install</textarea>");
     env.close();
   });

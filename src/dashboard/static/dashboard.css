@@ -173,7 +173,7 @@
   word-break: break-word;
 }
 .diff-line { display: block; }
-/* A rewrite that alternates many changed blocks renders two rows: the file text with its removals,
+/* A change with both removed and added words renders two rows: the file text with its removals,
    then the proposal with its additions. The rule between them keeps each sentence whole. */
 .diff-rows .diff-proposed {
   margin-top: var(--space-2);
@@ -185,8 +185,8 @@
    The shell track runs wider than a comparison can read, so the workspace, its header and its
    support card take --page-w and centre in the track: uncapped at 1920 the pair measured 794px a
    side and the support table 1604px. The page is the query container, so the pair's collapse
-   follows the track width, not the viewport. The pair's two cards share one height and each pane
-   scrolls inside it; one support card spans the workspace below. */
+   follows the track width, not the viewport. Each card sizes to its own content and its pane
+   scrolls past the cap; one support card spans the workspace below. */
 .editor-page { container-type: inline-size; max-width: var(--page-w); width: 100%; margin-inline: auto; }
 /* The entry title reads one line on the 1920 and 1440 columns and two on a 1024 one; at --t-7 the
    long machine title wrapped mid-hyphen even on the widest column. */
@@ -195,23 +195,16 @@
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: var(--space-4);
-  align-items: stretch;
+  align-items: start;
 }
-#current-text { grid-column: 1; display: flex; flex-direction: column; }
-#editor-region { grid-column: 2; min-width: 0; display: flex; flex-direction: column; }
+#current-text { grid-column: 1; }
+#editor-region { grid-column: 2; min-width: 0; }
 /* A terminal entry has no change card: the settled pane takes the full row. */
 #editor-region.editor-region-wide { grid-column: 1 / -1; }
 .editor-pane { max-height: 60vh; overflow: auto; }
-#editor-text { height: clamp(200px, 24vh, 300px); flex: 1 1 auto; }
-/* Both cards fill the pair's one height. A short diff then sits in a pane sized to the proposal
-   instead of beside a page-toned hole, and the diff well takes the slack as a scroller. */
-#current-text > .card-content { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; }
-/* An auto basis lets a long anchor size the pair: the row takes the taller of the two contents, so
-   the snippet is never clipped by the proposal's height. A shorter diff grows to fill the row, and
-   the pane keeps its 60vh cap as the scroller for anything longer. */
-#current-text > .card-content > .diff-code { flex: 1 1 auto; min-height: 0; }
-#editor-region > .card { display: flex; flex-direction: column; flex: 1 1 auto; }
-#editor-region > .card > .card-content { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; }
+/* A compact editor box: tall enough to write a paragraph in, never a slab of empty well under a
+   one-line entry. Text past the height scrolls inside it. */
+#editor-text { height: 180px; }
 /* One support card spans the workspace: four stacked sections cost a full-width band each and a
    ~1000px stack. At the workspace width it is a two-up grid, so Details' values keep a readable
    measure and the card ends before the fold; DOM order stays Details, Notes, Images, Revision. */
@@ -222,17 +215,8 @@
   grid-template-columns: repeat(2, minmax(0, 1fr));
   column-gap: var(--space-5);
   row-gap: var(--space-2);
-  align-items: stretch;
+  align-items: start;
 }
-/* A cell takes its row's height, and the notes field grows into that slack: the space beside a
-   long Details section becomes a taller notes box instead of a band under its save button. The
-   growth passes through the details content wrapper, which is the flex item Chrome renders. */
-.editor-support-card .support-section { display: flex; flex-direction: column; }
-.editor-support-card .support-section[open]::details-content { display: flex; flex-direction: column; flex: 1 1 auto; }
-.editor-support-card .support-section > .disclosure-body { display: flex; flex-direction: column; flex: 1 1 auto; }
-.support-section #notes-form { display: flex; flex-direction: column; flex: 1 1 auto; }
-.support-section #notes-form .field { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; }
-.support-section #editor-notes { flex: 1 1 auto; height: auto; min-height: 120px; max-height: none; }
 /* The section labels head their sections, so they take the next type step; the nested "More"
    disclosure keeps the shipped summary size. */
 .editor-support-card .support-section > summary { font-size: var(--t-4); }
