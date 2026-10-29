@@ -55,7 +55,7 @@ export const MIGRATIONS: Migration[] = [
 
       -- entry_id keeps a plain NO ACTION foreign key: a sweep that archives an entry without
       -- first moving its revisions must fail loudly rather than orphan or destroy them
-      -- (cloudy, 2026-08-15; mcp-contract "three more tables").
+      -- (mcp-contract "three more tables").
       CREATE TABLE entry_revisions (
         id TEXT PRIMARY KEY NOT NULL,
         entry_id TEXT NOT NULL REFERENCES entries(id),
@@ -93,8 +93,7 @@ export const MIGRATIONS: Migration[] = [
       );
 
       -- Mirrors entry_revisions plus archived_at; a sweep moves an entry's revisions here in the
-      -- same transaction as the entry's own move, so the history has no expiry
-      -- (cloudy, 2026-08-15; docs/design.md "revisions").
+      -- same transaction as the entry's own move, so the history has no expiry.
       CREATE TABLE entry_revisions_archive (
         id TEXT PRIMARY KEY NOT NULL,
         entry_id TEXT NOT NULL REFERENCES entries_archive(id),
@@ -138,8 +137,8 @@ export const MIGRATIONS: Migration[] = [
     name: "mark-applied",
     sql: `
       -- mark_applied stores the hash of the text the agent applied; the contract's param table
-      -- listed applied_hash a day before the entry schema had a column to hold it (cloudy,
-      -- 2026-08-16), so the column lands now, with the doc edit in the same round.
+      -- listed applied_hash a day before the entry schema had a column to hold it, so the column
+      -- lands now, with the doc edit in the same round.
       ALTER TABLE entries ADD COLUMN applied_hash TEXT;
       -- entries_archive mirrors entries column-for-column: the retention sweep copies applied
       -- rows over whole, so it must not lose the new column.
@@ -151,7 +150,7 @@ export const MIGRATIONS: Migration[] = [
     name: "entry-title",
     sql: `
       -- An optional human-readable label the dashboard shows in place of the file basename, so a
-      -- row reads as what it changes rather than where it lives (cloudy, 2026-08-20). Nullable:
+      -- row reads as what it changes rather than where it lives. Nullable:
       -- an entry without one falls back to its anchor text at render. The archive mirrors entries
       -- column-for-column, so it gains the column too.
       ALTER TABLE entries ADD COLUMN title TEXT;

@@ -389,7 +389,7 @@ export function initDrawer() {
 /* A `.toggle` is a real button carrying `aria-pressed`, so the state and the
    semantics move together and never disagree.
 
-   THE ROW IS THE TARGET, her call 2026-08-29: a coarse pointer gets its 44px on
+   THE ROW IS THE TARGET: a coarse pointer gets its 44px on
    the row and the control keeps its proportions, so the row has to be clickable
    or that floor buys nothing. The guard skips a click that landed on another
    control, so the control's own handler runs once and the row cannot double-toggle
@@ -1837,7 +1837,7 @@ export function initTypedPlaceholder() {
    from what the element actually scrolls, never from a class the author wrote.
    A consumer scroller opts in with `data-scroll-fade`; `no-scroll-fade` on any
    scroller is the one opt-out. Floating panels never carry it: the select menu
-   and the palette scroll bare, her call 2026-09-23. Off at rest, so a no-JS
+   and the palette scroll bare. Off at rest, so a no-JS
    page paints no cue. The two has-more classes are the CSS's own gate. */
 const SCROLL_FADE_SELECTOR = 'pre, .table-wrap, .chart-scroll, .modal-body, .log-view, .pagination-pages, .sidebar-nav, .navbar-nav, [data-scroll-fade]';
 
@@ -1898,7 +1898,7 @@ export function initScrollFade() {
    positioned wrapper around every scrolling component in the system.
 
    It appears on any pointer move inside a scroller and on a scroll, and retires
-   `SCROLLBAR_IDLE` after both stop, her call 2026-09-02. Two things hold it past
+   `SCROLLBAR_IDLE` after both stop. Two things hold it past
    that: a drag, and the pointer resting on the thumb itself, or the bar would
    retire out from under a pointer on its way to grab it. */
 const SCROLLBAR_IDLE = 900;
@@ -1993,8 +1993,8 @@ export function initScrollbars() {
   };
 
   /* Chrome pinned over the scrollport hides the track under it, and a thumb
-     drawn there marks a position nobody can scroll to. Her call 2026-09-02, and
-     the covers are DERIVED rather than named: every visible fixed or sticky box
+     drawn there marks a position nobody can scroll to. The covers are DERIVED
+     rather than named: every visible fixed or sticky box
      is a candidate, and one counts against this bar only where it overlaps the
      bar's own lane and sits below the bar in the stacking ladder.
 

@@ -387,7 +387,7 @@ input.btn-lg { line-height: 42px; }
 .tabs-boxed-wrap.has-ink .tab-box.active { background: transparent; box-shadow: none; }
 
 /* ---- Press ----
-   The jelly squish (2026-10-07 combo): hover grows, press flattens wider and
+   The jelly squish: hover grows, press flattens wider and
    shorter, and --press-spring settles the wobble over --press-dur. Only the
    transform moves on the spring: .btn keeps its background, border-color and
    color on --dur-tint, .tab-box its background and color, and neither
@@ -893,8 +893,8 @@ select.input {
    carries its own mark. It is the row's HOVER costume, not a 2px accent edge:
    `.focus` lands on the selected row at open time, so the edge stacked against
    the panel's own accent border AND against that row's fill, which is the band
-   plus capsule her 2026-09-02 ruling retired. The selected row keeps the fill as
-   its one mark, so the two states never paint on one row. */
+   plus capsule the selected row no longer carries. The selected row keeps the
+   fill as its one mark, so the two states never paint on one row. */
 .select-menu .menu-item.focus:not([aria-selected="true"]) {
   background: var(--surface-2);
   --tint-ground: transparent;
@@ -2159,7 +2159,7 @@ pre code {
 
 /* ---- Range slider ----
    Real elements, no native range: a UA shadow thumb paints the platform pointer over
-   the ring whatever cursor the page declares (her tools-page followup: the thumb
+   the ring whatever cursor the page declares (the thumb
    pseudo computed `none` and the pointer still painted), the same family the native
    select and the file input retired for. The thumb rides the fill's right edge, so one
    width drives both. */
@@ -2322,7 +2322,7 @@ pre code {
   transform: translateY(-160%);
   /* the float shadow belongs to the revealed chip. The hidden one parks
      60px above the viewport, but its shadow still painted ~4 levels deep
-     into the top-left rows (measured 2026-08-31, her "shadow on top left
+     into the top-left rows (measured 2026-08-31, the "shadow on top left
      side" report); visibility:hidden would drop the link from the tab
      order, so the shadow waits for focus instead. */
   box-shadow: none;
@@ -2606,9 +2606,9 @@ hr, .divider {
    keeps its accent rather than repainting grey, the treatment
    `.menu-item.active` already had. The shape is NOT here: each row carries
    --r-1 at rest, so the band arrives on a corner that is already rounded and
-   nothing animates. ONE accent mark appears per row, and it is this band: her
-   call 2026-09-02 retired the 2px capsule the tree and the palette added on
-   top of it, for the reason .nav-indicator went on 2026-08-29. The sidebar's
+   nothing animates. ONE accent mark appears per row, and it is this band: the
+   2px capsule the tree and the palette added on top of it is gone, for the same
+   reason `.nav-indicator` was dropped. The sidebar's
    dot is not a second mark, since it is on every row at rest and only changes
    shape here. */
 /* The dot IS the marker: the active row's own dot grows into a capsule, and the
@@ -2641,9 +2641,9 @@ hr, .divider {
   margin-left: auto;
   transition: background var(--dur-tint) var(--ease), color var(--dur-tint) var(--ease);
 }
-/* on the active row the badge drops its own fill and sits on the band, her
-   pick 2026-10-09: a quiet fill on the quiet band read 4.41:1 dark on the
-   sidebar. On the band it reads 5.82:1 dark and, with the shared remix, 5.48
+/* on the active row the badge drops its own fill and sits on the band: a
+   quiet fill on the quiet band read 4.41:1 dark on the sidebar. On the band
+   it reads 5.82:1 dark and, with the shared remix, 5.48
    light. */
 .nav-item.active .nav-badge { background: transparent; color: var(--accent-text); }
 .sidebar-user {
@@ -2907,9 +2907,8 @@ html:has(.navbar) { --pin-top: var(--navbar-h); }
 
    Both legs run the slide curve, the one the inks run. --ease-out
    front-loads 88 percent of its travel, which on a width change reads as
-   a jump followed by a linear creep (her note, 2026-08-31: "less linear
-   animation curve"); the slide curve starts gentle, moves quick through
-   the middle and lands soft. The card also floats --space-3 off the top
+   a jump followed by a linear creep; the slide curve starts gentle, moves
+   quick through the middle and lands soft. The card also floats --space-3 off the top
    edge, on transform and never on margin: a margin reflows the page
    below on every swap, a transform only moves the bar. Reduced motion
    keeps the float and snaps the moves (transition: none below). */
@@ -2942,7 +2941,7 @@ html:has(.navbar) { --pin-top: var(--navbar-h); }
   /* the dock's cover strip: while the card is away, a fixed page-toned
      band sits over the float's gap, so the transform can glide the bar
      home instead of snapping and nothing paints in the strip at any
-     scroll speed (her fast-flick report, 2026-08-31). It lands the frame
+     scroll speed. It lands the frame
      scrolling starts, hides behind the docked band, and is gone at rest,
      where the dot grid owns the strip.
 
@@ -5344,9 +5343,9 @@ th.num-col .th-sort { flex-direction: row-reverse; }
    here paints a second tone: `.band` is the tone device and every one of these
    sits on it or on the page.
 
-   REGISTER. The demo strings are all lowercase, because these surfaces were
-   built for cloudy's own site. A sentence-case product page swaps the copy and
-   keeps the classes; nothing in this block encodes a case.
+   REGISTER. The demo strings are all lowercase; a sentence-case product page
+   swaps the copy and keeps the classes, and nothing in this block encodes a
+   case.
 
    ONE GRID, SIX USERS. Every row here is N equal cells that collapse, and the
    collapse is keyed on the CELL's own minimum rather than on a viewport
@@ -6393,8 +6392,8 @@ html:has(> body > .page-state) { --dot-rest: 0.60; }
 html:has(> body > .page-state) > body::after { content: none; }
 /* The gap IS the design, and it is TORN rather than cut. A page-toned box with a
    radius paints a hard-edged rectangle across the canvas, which reads as a card
-   laid on the grid: her words, "a gray square that blocks the view of background
-   dots". The radial ramp holds the copy's own area at page tone and hands the
+   laid on the grid: a gray square that blocks the view of the background dots.
+   The radial ramp holds the copy's own area at page tone and hands the
    grid back on the way out, so there is no edge to read. A stepped, grid-aligned
    edge was tried at the grid's own 40px pitch (--dot-gap) and reads no
    differently from the plain box. */
@@ -7864,7 +7863,7 @@ html:has(> body > .page-state) > body::after { content: none; }
    overlay on the field types one real example, holds it, deletes it, and moves to
    the next. `data-typed` on the field carries the examples; `ui.js` builds the
    wrapper and the overlay and owns the loop. Ported from the contact form it was
-   built for, cloudy's call 2026-09-01.
+   built for.
 
    IT RENDERS REAL VALUES, so it is content and not a decorative hint.
    `--text-placeholder` is what the native placeholder takes; this sits one step

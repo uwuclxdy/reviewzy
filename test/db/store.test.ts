@@ -576,12 +576,12 @@ describe("referential integrity", () => {
 
     store.db.run(
       "INSERT INTO entry_revisions (id, entry_id, human_text, status, created_at) VALUES (?, ?, ?, ?, ?)",
-      [ulid(), entry.id, "cloudy's prose", "approved", Date.now()],
+      [ulid(), entry.id, "the human's prose", "approved", Date.now()],
     );
     const row = store.db
       .query("SELECT human_text FROM entry_revisions WHERE entry_id = ?")
       .get(entry.id) as { human_text: string };
-    expect(row.human_text).toBe("cloudy's prose");
+    expect(row.human_text).toBe("the human's prose");
 
     expect(() =>
       store.db.run(

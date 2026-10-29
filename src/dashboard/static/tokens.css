@@ -178,7 +178,7 @@
   --glass-dim:  oklch(0.800 0.030 280);   /* --text-3 and --text-4 on a panel:
      4.67:1 on the worst case; unlifted, .720 / .680 fall to 3.52 / 3.03 */
   --glass-danger: oklch(0.84 0.140 15);   /* 4.62:1 on the panel worst case.
-     --danger is 3.31:1 there, and the round-1 value L 0.78 fell to 4.04 at
+     --danger is 3.31:1 there, and L 0.78 fell to 4.04 at
      0.86, so the re-floor moves with the alpha */
   --glass-disabled: oklch(0.700 0.030 280);   /* 3.27:1 on the panel worst case.
      --text-disabled falls to 2.49 there, and the opacity: 0.45 costume this
@@ -316,7 +316,7 @@
   --dur-out-near: calc(var(--dur-near) * 0.6);
   --dur-out-far:  calc(var(--dur-far)  * 0.6);
 
-  /* ---- The jelly press (2026-10-07 combo). A spring settle, NOT a travel
+  /* ---- The jelly press. A spring settle, NOT a travel
      distance, so it takes no --dur-* slot: --press-dur is how long the wobble
      takes to settle, and --press-spring is the 320/18 spring sampled over
      49 points as a linear() curve, normalized to settle at 1. ---- */
