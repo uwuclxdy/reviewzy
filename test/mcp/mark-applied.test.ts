@@ -96,7 +96,7 @@ const entry = (overrides: Record<string, unknown> = {}) => ({
   anchor_before: "const label = t(`home.hero`)",
   anchor_after: "</button>",
   agent_draft: "Continue",
-  file_content: "line one\nClick here to continue\nline three\n",
+  file_hash: sha256("line one\nClick here to continue\nline three\n"),
   context: { where: "hero button", surrounding: "<button>{{label}}</button>" },
   constraints: { max_len: 24, placeholders: ["{name}"], tone: "plain", notes: "no exclamation marks" },
   ...overrides,

@@ -139,7 +139,11 @@ describe("a first file", () => {
       filed_by: "audit-agent",
       entries: [
         entry(),
-        entry({ file: "src/settings.ts", anchor_text: "Save changes now" }),
+        entry({
+          file: "src/settings.ts",
+          anchor_text: "Save changes now",
+          file_content: "const label = 'settings';\nSave changes now\n</button>\n",
+        }),
       ],
     });
 
@@ -169,7 +173,13 @@ describe("a first file", () => {
       expect(row.status).toBe("draft");
       expect(row.filed_by).toBe("audit-agent");
       expect(row.anchor_hash).toBe(sha256(row.anchor_text as string));
-      expect(row.file_hash).toBe(sha256("line one\nClick here to continue\nline three\n"));
+      expect(row.file_hash).toBe(
+        sha256(
+          row.file === "src/settings.ts"
+            ? "const label = 'settings';\nSave changes now\n</button>\n"
+            : "line one\nClick here to continue\nline three\n",
+        ),
+      );
       expect(row.human_text).toBeNull();
       expect(JSON.parse(row.constraints as string)).toEqual(entry().constraints);
       expect(JSON.parse(row.context as string)).toEqual(entry().context);
@@ -178,7 +188,7 @@ describe("a first file", () => {
 
   test("auto-creates the project on an unknown slug, and a second file reuses it", async () => {
     await fileEntries({ project: "solo", entries: [entry()] });
-    await fileEntries({ project: "solo", entries: [entry({ anchor_text: "another anchor" })] });
+    await fileEntries({ project: "solo", entries: [entry({ anchor_text: "another anchor", file_content: undefined, file_hash: "c".repeat(64) })] });
 
     // Scoped to the slug: earlier legs filed into other projects, and a global count would count theirs.
     const projects = first.store.db
@@ -215,6 +225,7 @@ describe("a first file", () => {
     });
     expect(body.result?.isError).toBe(true);
     expect(body.result?.content?.[0]?.text).toContain("file_hash");
+    expect(body.result?.content?.[0]?.text).toContain("files[] row whose file matches");
     expect(rows(first.store, "hashes-none")).toHaveLength(0);
   });
 
@@ -268,7 +279,7 @@ describe("a first file", () => {
   });
 
   test("stores anchor_text and agent_draft containing newlines verbatim, and fetch_approved returns the anchor unstripped", async () => {
-    const anchor = "line one\nline two\nline three";
+    const anchor = "line one\nClick here to continue";
     const draft = "first line\nsecond line";
     const filed = (await fileEntries({
       project: "multiline",
@@ -442,7 +453,7 @@ describe("re-file semantics", () => {
     async (status) => {
       const filed = (await fileEntries({
         project: `noop-${status}`,
-        entries: [entry({ anchor_text: `anchor ${status}` })],
+        entries: [entry({ anchor_text: `anchor ${status}`, file_content: undefined, file_hash: "f".repeat(64) })],
       })).body.result?.structuredContent as Result;
       const id = filed.results[0]!.id;
       first.store.db.run("UPDATE entries SET status = ?, human_text = ?, updated_at = 1000 WHERE id = ?", [
@@ -453,7 +464,7 @@ describe("re-file semantics", () => {
 
       const redone = await fileEntries({
         project: `noop-${status}`,
-        entries: [entry({ anchor_text: `anchor ${status}`, agent_draft: "late draft" })],
+        entries: [entry({ anchor_text: `anchor ${status}`, agent_draft: "late draft", file_content: undefined, file_hash: "f".repeat(64) })],
       });
 
       const out = redone.body.result?.structuredContent as Result;
@@ -494,6 +505,8 @@ describe("the json boundary", () => {
         entry({
           file: "src/other.ts",
           anchor_text: "Delete this item",
+          file_content: undefined,
+          file_hash: "d".repeat(64),
           constraints: { max_len: "24" },
         }),
       ],
@@ -612,7 +625,7 @@ describe("entry images", () => {
     async (item) => {
       const { body } = await fileEntries({
         project: "images-prefix",
-        entries: [entry({ file: `src/${item.length}.ts`, anchor_text: `anchor ${item.length}`, images: [item] })],
+        entries: [entry({ file: `src/${item.length}.ts`, anchor_text: `anchor ${item.length}`, images: [item], file_content: undefined, file_hash: "f".repeat(64) })],
       });
       expect(body.result?.isError).toBe(true);
       expect(body.result?.content?.[0]?.text).toContain("images[0]");
@@ -654,5 +667,187 @@ describe("entry images", () => {
       "https://example.com/new.png",
     ]);
     expect(rows(first.store, "images-refile")).toHaveLength(1);
+  });
+});
+
+describe("anchor verification", () => {
+  test("files an anchor that appears exactly once in the sent content", async () => {
+    const { body } = await fileEntries({ project: "verified-once", entries: [entry()] });
+    expect(body.result?.isError).toBeUndefined();
+    expect(rows(first.store, "verified-once")).toHaveLength(1);
+  });
+
+  test("refuses an anchor_text the sent content does not contain, naming the entry, the field, and the fix", async () => {
+    const { body } = await fileEntries({
+      project: "verified-miss",
+      entries: [entry({ anchor_text: "Subscribe to our newsletter" })],
+    });
+    expect(body.result?.isError).toBe(true);
+    expect(body.error).toBeUndefined();
+    const text = body.result?.content?.[0]?.text ?? "";
+    expect(text).toContain("anchor_text");
+    expect(text).toContain("src/app.ts");
+    expect(text).toMatch(/fix:/i);
+    expect(rows(first.store, "verified-miss")).toHaveLength(0);
+  });
+
+  test("refuses an anchor appearing twice with no context, naming the count and the fix", async () => {
+    const { body } = await fileEntries({
+      project: "verified-ambiguous",
+      entries: [
+        entry({
+          anchor_text: "Continue",
+          anchor_before: undefined,
+          anchor_after: undefined,
+          file_content: "before\nContinue\nmiddle\nContinue\nafter\n",
+        }),
+      ],
+    });
+    expect(body.result?.isError).toBe(true);
+    const text = body.result?.content?.[0]?.text ?? "";
+    expect(text).toContain("2");
+    expect(text).toContain("anchor_before");
+    expect(rows(first.store, "verified-ambiguous")).toHaveLength(0);
+  });
+
+  test("files an anchor appearing twice when anchor_before disambiguates it", async () => {
+    const { body } = await fileEntries({
+      project: "verified-context",
+      entries: [
+        entry({
+          anchor_text: "Continue",
+          file_content: "before\nContinue\nmiddle\nContinue\nafter\n",
+        }),
+      ],
+    });
+    expect(body.result?.isError).toBeUndefined();
+    expect(rows(first.store, "verified-context")).toHaveLength(1);
+  });
+
+  test("a file_hash-only entry skips verification: the server never saw the file", async () => {
+    const { body } = await fileEntries({
+      project: "verified-hash-only",
+      entries: [
+        entry({ anchor_text: "whatever the file really holds", file_content: undefined, file_hash: "e".repeat(64) }),
+      ],
+    });
+    expect(body.result?.isError).toBeUndefined();
+    expect(rows(first.store, "verified-hash-only")).toHaveLength(1);
+  });
+
+  test("counts overlapping matches: an anchor that self-overlaps is ambiguous without context", async () => {
+    const { body } = await fileEntries({
+      project: "verified-overlap",
+      entries: [
+        entry({ anchor_text: "aa", anchor_before: undefined, anchor_after: undefined, file_content: "aaa\n" }),
+      ],
+    });
+    expect(body.result?.isError).toBe(true);
+    const text = body.result?.content?.[0]?.text ?? "";
+    expect(text).toContain("2");
+    expect(rows(first.store, "verified-overlap")).toHaveLength(0);
+  });
+
+  test("a re-file whose sent content no longer contains the anchor is refused, not silently no-oped", async () => {
+    const filed = await fileEntries({
+      project: "verified-drift",
+      entries: [entry({ file_content: undefined, file_hash: "9".repeat(64) })],
+    });
+    const id = (filed.body.result?.structuredContent as Result).results[0]!.id;
+    first.store.db.run("UPDATE entries SET status = 'approved', human_text = 'human prose' WHERE id = ?", [id]);
+
+    const redone = await fileEntries({
+      project: "verified-drift",
+      entries: [entry({ file_content: "totally different content\n" })],
+    });
+    expect(redone.body.result?.isError).toBe(true);
+    const text = redone.body.result?.content?.[0]?.text ?? "";
+    expect(text).toContain("anchor_text not found");
+  });
+});
+
+describe("files[] provenance", () => {
+  const sharedContent = "line one\nClick here to continue\nline three\n";
+
+  test("resolves every entry filing from the same file from one files[] row", async () => {
+    const { body } = await fileEntries({
+      project: "files-shared",
+      files: [
+        { file: "src/app.ts", file_content: sharedContent },
+        { file: "src/other.ts", file_content: "alpha\nContinue here too\nomega\n" },
+      ],
+      entries: [
+        entry({ file_content: undefined, file_hash: undefined }),
+        entry({ file: "src/other.ts", anchor_text: "Continue here too", file_content: undefined, file_hash: undefined }),
+      ],
+    });
+    expect(body.result?.isError).toBeUndefined();
+    const stored = rows(first.store, "files-shared");
+    expect(stored).toHaveLength(2);
+    const hashByFile = new Map(stored.map((r) => [r.file, r.file_hash]));
+    expect(hashByFile.get("src/app.ts")).toBe(sha256(sharedContent));
+    expect(hashByFile.get("src/other.ts")).toBe(sha256("alpha\nContinue here too\nomega\n"));
+  });
+
+  test("refuses a files[] row no entry matches, naming the path", async () => {
+    const { body } = await fileEntries({
+      project: "files-orphan",
+      files: [{ file: "src/orphan.ts", file_content: sharedContent }],
+      entries: [entry({ file_content: undefined, file_hash: undefined })],
+    });
+    expect(body.result?.isError).toBe(true);
+    const text = body.result?.content?.[0]?.text ?? "";
+    expect(text).toContain("src/orphan.ts");
+    expect(rows(first.store, "files-orphan")).toHaveLength(0);
+  });
+
+  test("refuses two files[] rows naming the same file", async () => {
+    const { body } = await fileEntries({
+      project: "files-dupe",
+      files: [
+        { file: "src/app.ts", file_content: sharedContent },
+        { file: "src/app.ts", file_content: sharedContent },
+      ],
+      entries: [entry({ file_content: undefined, file_hash: undefined })],
+    });
+    expect(body.result?.isError).toBe(true);
+    const text = body.result?.content?.[0]?.text ?? "";
+    expect(text).toContain("src/app.ts");
+    expect(rows(first.store, "files-dupe")).toHaveLength(0);
+  });
+
+  test("an entry's own file_content overrides the files[] row and is what gets verified", async () => {
+    const overrideContent = "override\nClick here to continue\nend\n";
+    const { body } = await fileEntries({
+      project: "files-override",
+      // The row's content lacks the anchor: verification against it instead of the override would
+      // refuse, so the stored hash and the success both bind the override.
+      files: [{ file: "src/app.ts", file_content: "row content that never held the anchor\n" }],
+      entries: [entry({ file_content: overrideContent })],
+    });
+    expect(body.result?.isError).toBeUndefined();
+    expect(rows(first.store, "files-override")[0]?.file_hash).toBe(sha256(overrideContent));
+  });
+
+  test("an entry's own file_hash wins over a matching files[] row and skips verification", async () => {
+    const { body } = await fileEntries({
+      project: "files-hash-wins",
+      files: [{ file: "src/app.ts", file_content: sharedContent }],
+      entries: [entry({ file_content: undefined, file_hash: "e".repeat(64) })],
+    });
+    expect(body.result?.isError).toBeUndefined();
+    expect(rows(first.store, "files-hash-wins")[0]?.file_hash).toBe("e".repeat(64));
+  });
+
+  test("verifies against the files[] content when the entry has none of its own", async () => {
+    const { body } = await fileEntries({
+      project: "files-verified",
+      files: [{ file: "src/app.ts", file_content: "nothing matches in this content\n" }],
+      entries: [entry({ file_content: undefined, file_hash: undefined })],
+    });
+    expect(body.result?.isError).toBe(true);
+    const text = body.result?.content?.[0]?.text ?? "";
+    expect(text).toContain("anchor_text");
+    expect(rows(first.store, "files-verified")).toHaveLength(0);
   });
 });

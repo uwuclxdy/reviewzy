@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { afterAll, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -9,6 +10,8 @@ import type { Store } from "../../src/db/store.ts";
 import { sweepArchive } from "../../src/db/sweep.ts";
 import { originGate } from "../../src/daemon/origin.ts";
 import { mountMcp } from "../../src/mcp/route.ts";
+
+const sha256 = (text: string) => createHash("sha256").update(text).digest("hex");
 
 const REVISION = "2026-07-28";
 
@@ -98,7 +101,7 @@ const entry = (overrides: Record<string, unknown> = {}) => ({
   anchor_before: "const label = t(`home.hero`)",
   anchor_after: "</button>",
   agent_draft: "Continue",
-  file_content: "line one\nClick here to continue\nline three\n",
+  file_hash: sha256("line one\nClick here to continue\nline three\n"),
   context: { where: "hero button", surrounding: "<button>{{label}}</button>" },
   constraints: { max_len: 24, placeholders: ["{name}"], tone: "plain", notes: "no exclamation marks" },
   ...overrides,

@@ -46,10 +46,10 @@ const EntryShape = {
   file: z.string().min(1).describe("The path relative to the repo root."),
   title: z.string().min(1).optional().describe("Optional human-readable label the dashboard shows in place of the file path."),
   anchor_text: z.string().min(1).describe("The exact current text to replace: one line or many, the whole passage being replaced."),
-  anchor_before: z.string().optional().describe("3 lines of context above the anchor, disambiguating a repeated string."),
-  anchor_after: z.string().optional().describe("3 lines of context below the anchor, disambiguating a repeated string."),
+  anchor_before: z.string().optional().describe("3 lines of context above the anchor, disambiguating a repeated string. Send it (or anchor_after) when anchor_text appears more than once in the file; the server refuses an ambiguous anchor without it."),
+  anchor_after: z.string().optional().describe("3 lines of context below the anchor, disambiguating a repeated string (same rule as anchor_before)."),
   agent_draft: z.string().optional().describe("The proposed replacement text; inert until a human touches it."),
-  file_content: z.string().optional().describe("The whole file at filing time; the server hashes it."),
+  file_content: z.string().optional().describe("The whole file at filing time; the server hashes it. Preferred: it lets the server verify your anchors against the file."),
   file_hash: z.string().optional().describe("The sha256 of the whole file as 64 lowercase hex chars."),
   context: z.unknown().optional().describe("A json object of free-form notes for the human: where the string renders, surrounding code."),
   constraints: z.unknown().optional().describe("What the copy must keep: max_len (a length cap), placeholders (strings the text must contain), tone, notes — all optional."),
@@ -59,6 +59,38 @@ const FileEntryArgs = z.looseObject(EntryShape);
 
 /** Strict twin of the wire shape: the handler re-parses against it to refuse an unrecognized top-level key by name. */
 const StrictEntryArgs = z.strictObject(EntryShape);
+
+/**
+ * A files[] row carries one file's content once per call. Loose at the wire for the same reason as
+ * an entry: the sdk's refusal can name only a field path ("files.0.fileContent"), never the row's
+ * file and the fix, so the handler re-parses each row strictly and refuses by file.
+ */
+const FileProvenanceShape = {
+  file: z.string().optional().describe("The path relative to the repo root, matching an entry's file."),
+  file_content: z.string().optional().describe("The whole file at filing time; the server hashes it and verifies anchors against it."),
+};
+const FileProvenanceWire = z.looseObject(FileProvenanceShape);
+const StrictFileProvenance = z.strictObject({
+  file: z.string().min(1),
+  file_content: z.string().min(1),
+});
+
+/**
+ * The tool's own arguments get the same loose-wire/strict-handler pair as their parts: a plain
+ * z.object would strip a misspelled top-level key (`Files`) before the handler saw it, and the
+ * entries would then be refused for missing provenance with no mention of the key that was meant
+ * to carry it.
+ */
+const FileEntriesArgs = {
+  project: z.string().min(1).describe("The project slug: 1-63 chars of lowercase letters, digits, and inner hyphens. An unknown slug auto-creates the project on first file."),
+  files: z
+    .array(FileProvenanceWire)
+    .optional()
+    .describe("Provenance sent once for entries filed from the same file: each item is {file, file_content}; an entry without its own file_content or file_hash picks up the row matching its file. Every row must match an entry."),
+  entries: z.array(FileEntryArgs).min(1).describe("The entries to file. One edit per entry."),
+  filed_by: z.string().min(1).optional().describe("A free-form label for the filing agent, shown on the dashboard."),
+};
+const StrictFileEntriesArgs = z.strictObject(FileEntriesArgs);
 
 const FiledOutput = z.object({
   batch_id: z.string(),
@@ -74,6 +106,17 @@ const FiledOutput = z.object({
 });
 
 const sha256 = (text: string) => createHash("sha256").update(text).digest("hex");
+
+/** Every starting position counts: overlapping matches are distinct places, so a self-overlapping anchor still reads as ambiguous. */
+function countOccurrences(haystack: string, needle: string): number {
+  let count = 0;
+  let at = haystack.indexOf(needle);
+  while (at !== -1) {
+    count += 1;
+    at = haystack.indexOf(needle, at + 1);
+  }
+  return count;
+}
 
 /** The `where` of a refusal: the entry's place in the call plus enough of it to spot it in a repo. */
 function entryName(index: number, file: string, anchorText: string): string {
@@ -122,12 +165,69 @@ function refuseEntryKeys(index: number, file: string, anchorText: string, issues
 }
 
 /**
+ * Every files[] row is checked before any entry: a row the handler cannot use must be refused, not
+ * dropped, since the entry it was meant to cover would otherwise be refused for missing provenance.
+ * Returns the resolved content by file path for entries that carry none of their own.
+ */
+function validateFiles(
+  rows: z.output<typeof FileProvenanceWire>[],
+  entries: readonly { file: string }[],
+): Map<string, string> {
+  const parsed: { where: string; file: string; content: string }[] = [];
+  rows.forEach((raw, index) => {
+    const path = typeof raw.file === "string" ? raw.file : "";
+    const where = `files[${index}] ("${path}")`;
+    const strict = StrictFileProvenance.safeParse(raw);
+    if (!strict.success) {
+      const keys = strict.error.issues.flatMap((issue) => (issue.code === "unrecognized_keys" ? issue.keys : []));
+      if (keys.length > 0) {
+        refuse(
+          where,
+          `unrecognized key(s) ${keys.map((k) => JSON.stringify(k).slice(0, 60)).join(", ")}`,
+          "files[] items take only file and file_content; spell them snake_case",
+        );
+      }
+      const lacking = [...new Set(strict.error.issues.map((issue) => String(issue.path[0] ?? "")))].filter(Boolean);
+      refuse(where, `${lacking.join(" and ")} is missing or empty`, "send the row's file path and the file's full content");
+    }
+    parsed.push({ where, file: strict.data.file, content: strict.data.file_content });
+  });
+
+  const seen = new Set<string>();
+  for (const row of parsed) {
+    if (seen.has(row.file)) {
+      refuse(row.where, "files[] names this file twice", "send each file once; entries pick it up by path");
+    }
+    seen.add(row.file);
+  }
+
+  const entryFiles = new Set(entries.map((raw) => raw.file));
+  const byFile = new Map<string, string>();
+  for (const row of parsed) {
+    if (!entryFiles.has(row.file)) {
+      refuse(
+        row.where,
+        "no entry names this file",
+        "every files[] path must match an entry's file; drop the row or fix the path",
+      );
+    }
+    byFile.set(row.file, row.content);
+  }
+  return byFile;
+}
+
+/**
  * One entry from wire shape to store shape: json validated at this boundary, `anchor_hash` always
  * computed here, and file provenance taken from exactly one of `file_content` (the server hashes
- * it) or `file_hash` (the caller already did). The server never reads a repo, so it can never
- * invent this value: an entry carrying neither is refused rather than filed with a fake hash.
+ * it), `file_hash` (the caller already did), or the files[] row whose file matches. The server
+ * never reads a repo, so it can never invent this value: an entry carrying none is refused rather
+ * than filed with a fake hash. An anchor is verified against content only when the caller sent it.
  */
-function validateEntry(index: number, raw: z.output<typeof FileEntryArgs>): NewEntry {
+function validateEntry(
+  index: number,
+  raw: z.output<typeof FileEntryArgs>,
+  files: ReadonlyMap<string, string>,
+): NewEntry {
   const where = entryName(index, raw.file, raw.anchor_text);
 
   // Unknown keys first: a wire-shape mistake outranks every field-level check below.
@@ -197,6 +297,10 @@ function validateEntry(index: number, raw: z.output<typeof FileEntryArgs>): NewE
   }
 
   let fileHash: string;
+  // The content an anchor can be checked against: present only when the caller sent one, on the
+  // entry or in the files[] row its file matches. A hash-only entry has none, and verification
+  // would be a guess: the server never reads a repo.
+  let content: string | null;
   if (raw.file_content !== undefined && raw.file_hash !== undefined) {
     refuse(
       where,
@@ -205,6 +309,7 @@ function validateEntry(index: number, raw: z.output<typeof FileEntryArgs>): NewE
     );
   } else if (raw.file_content !== undefined) {
     fileHash = sha256(raw.file_content);
+    content = raw.file_content;
   } else if (raw.file_hash !== undefined) {
     if (!SHA256_HEX.test(raw.file_hash)) {
       refuse(
@@ -214,12 +319,37 @@ function validateEntry(index: number, raw: z.output<typeof FileEntryArgs>): NewE
       );
     }
     fileHash = raw.file_hash;
+    content = null;
   } else {
-    refuse(
-      where,
-      "no file provenance: the server never reads repos, so it cannot know what the file looked like",
-      "send file_content (the whole file at filing time) or file_hash (its sha256), exactly one",
-    );
+    const shared = files.get(raw.file);
+    if (shared === undefined) {
+      refuse(
+        where,
+        "no file provenance: the server never reads repos, so it cannot know what the file looked like",
+        "send file_content, file_hash, or a files[] row whose file matches this entry's file",
+      );
+    }
+    fileHash = sha256(shared);
+    content = shared;
+  }
+
+  if (content !== null) {
+    const matches = countOccurrences(content, raw.anchor_text);
+    if (matches === 0) {
+      refuse(
+        where,
+        "anchor_text not found in the file content",
+        "read the file and copy anchor_text exactly as it is now, or send the current file_content",
+      );
+    }
+    // Presence-only: any non-empty context string admits an ambiguous anchor, whatever it holds.
+    if (matches > 1 && !raw.anchor_before && !raw.anchor_after) {
+      refuse(
+        where,
+        `anchor_text appears ${matches} times in the file content and no disambiguating context was sent`,
+        "add anchor_before or anchor_after (3 lines of context each side), or make anchor_text longer so it matches exactly one place",
+      );
+    }
   }
 
   return {
@@ -252,15 +382,21 @@ export function registerFileEntriesTool(server: McpServer, baseUrl: string, stor
     {
       title: "File entries for review",
       description:
-        "File the text you want changed as draft entries for a human to author, approve or reject on the dashboard. One entry is one edit: a multi-line block is ONE entry, not one entry per line. Re-filing a known anchor is safe: a draft updates in place; an approved, applied or rejected entry comes back untouched. The dashboard groups entries by project.",
-      inputSchema: z.object({
-        project: z.string().min(1).describe("The project slug: 1-63 chars of lowercase letters, digits, and inner hyphens. An unknown slug auto-creates the project on first file."),
-        entries: z.array(FileEntryArgs).min(1).describe("The entries to file. One edit per entry."),
-        filed_by: z.string().min(1).optional().describe("A free-form label for the filing agent, shown on the dashboard."),
-      }),
+        "File the text you want changed as draft entries for a human to author, approve or reject on the dashboard. One entry is one edit: a multi-line block is ONE entry, not one entry per line. anchor_text is verified against the file content you send. Re-filing a known anchor is safe: a draft updates in place; an approved, applied or rejected entry comes back untouched when the content you send still contains its anchor. The dashboard groups entries by project.",
+      inputSchema: z.looseObject(FileEntriesArgs),
       outputSchema: FiledOutput,
     },
     async (args) => {
+      const strictArgs = StrictFileEntriesArgs.safeParse(args);
+      if (!strictArgs.success) {
+        const keys = strictArgs.error.issues.flatMap((issue) => (issue.code === "unrecognized_keys" ? issue.keys : []));
+        refuse(
+          "arguments",
+          `unrecognized key(s) ${keys.map((k) => JSON.stringify(k).slice(0, 60)).join(", ")}`,
+          "file_entries takes only project, files, entries, and filed_by; drop the extra key or spell it snake_case",
+        );
+      }
+
       if (!SLUG.test(args.project)) {
         refuse(
           `project "${args.project}"`,
@@ -269,7 +405,8 @@ export function registerFileEntriesTool(server: McpServer, baseUrl: string, stor
         );
       }
 
-      const entries = args.entries.map((raw, index) => validateEntry(index, raw));
+      const files = validateFiles(args.files ?? [], args.entries);
+      const entries = args.entries.map((raw, index) => validateEntry(index, raw, files));
       const batch = fileEntries(store, args.project, args.filed_by ?? null, entries);
 
       // The ping announces work for the human, so only a batch that changed the store fires: an

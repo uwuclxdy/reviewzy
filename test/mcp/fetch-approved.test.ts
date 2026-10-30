@@ -31,8 +31,6 @@ type WireEntry = {
   anchor_text: string;
   anchor_before: string;
   anchor_after: string;
-  anchor_hash: string;
-  file_hash: string;
   text: string | null;
   constraints: Record<string, unknown>;
 };
@@ -110,7 +108,7 @@ const entry = (overrides: Record<string, unknown> = {}) => ({
   anchor_before: "const label = t(`home.hero`)",
   anchor_after: "</button>",
   agent_draft: "Continue",
-  file_content: "line one\nClick here to continue\nline three\n",
+  file_hash: sha256("line one\nClick here to continue\nline three\n"),
   context: { where: "hero button", surrounding: "<button>{{label}}</button>" },
   constraints: { max_len: 24, placeholders: ["{name}"], tone: "plain", notes: "no exclamation marks" },
   ...overrides,
@@ -227,11 +225,9 @@ describe("what comes back", () => {
     expect(Object.keys(wire).sort()).toEqual([
       "anchor_after",
       "anchor_before",
-      "anchor_hash",
       "anchor_text",
       "constraints",
       "file",
-      "file_hash",
       "id",
       "repo",
       "text",
@@ -242,8 +238,6 @@ describe("what comes back", () => {
     expect(wire.anchor_text).toBe("Click here to continue");
     expect(wire.anchor_before).toBe("const label = t(`home.hero`)");
     expect(wire.anchor_after).toBe("</button>");
-    expect(wire.anchor_hash).toBe(sha256("Click here to continue"));
-    expect(wire.file_hash).toBe(sha256("line one\nClick here to continue\nline three\n"));
     expect("status" in wire).toBe(false);
     expect("context" in wire).toBe(false);
   });
@@ -405,28 +399,18 @@ describe("pagination", () => {
     expect("style_guide" in bare).toBe(true);
   });
 
-  test("a project with no approved entries returns an empty entries list, no next_since, and the guide", async () => {
+  test("a project with no approved entries returns an empty entries list, no next_since, and no guide key", async () => {
     await fileEntries({ project: "empty", entries: [entry()] });
 
     // The "voice" leg above seeded global guide rows into this shared store; clear them so this
-    // leg reaches the no-rows state, the same leg style-guide-resource.test.ts uses. Byte-equality
-    // against the resource then pins the empty-guide case the seeded leg cannot reach: the tool
-    // and the resource read through the same merge, so only a state where the merge yields ""
-    // separates them.
+    // leg reaches the no-rows state. The merge then yields "", and the tool ships no key at all:
+    // the rider's absence says "no guide" the same way an absent next_since says "walk over".
     first.store.db.run("DELETE FROM style_guides");
-
-    const resource = await first.call(
-      "resources/read",
-      { uri: "reviewzy://projects/empty/style-guide" },
-      "reviewzy://projects/empty/style-guide",
-    );
-    const resourceText = resource.body.result?.contents?.[0]?.text ?? "";
 
     const out = (await fetchApproved({ project: "empty" })).body.result?.structuredContent as FetchResult;
     expect(out.entries).toEqual([]);
     expect("next_since" in out).toBe(false);
-    expect(out.style_guide).toBe(resourceText);
-    expect(out.style_guide).toBe("");
+    expect("style_guide" in out).toBe(false);
   });
 });
 

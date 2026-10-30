@@ -34,8 +34,6 @@ export const ApprovedEntry = z.object({
   anchor_text: z.string(),
   anchor_before: z.string(),
   anchor_after: z.string(),
-  anchor_hash: z.string(),
-  file_hash: z.string(),
   text: z.string().nullable(),
   constraints: ParsedConstraints,
 });
@@ -81,8 +79,6 @@ export function approvedRowsToWire(rows: readonly ApprovedEntryRow[]): z.infer<t
     anchor_text: row.anchor_text,
     anchor_before: row.anchor_before,
     anchor_after: row.anchor_after,
-    anchor_hash: row.anchor_hash,
-    file_hash: row.file_hash,
     text: row.human_text,
     constraints: parseConstraints(row.constraints),
   }));
@@ -116,14 +112,16 @@ export function registerFetchApprovedTool(server: McpServer, store: Store): void
 
       const { rows, nextSince } = approvedEntries(store, projectId, { ids: args.ids, since: args.since });
 
+      // The guide rides a walk's first page only — a call carrying neither ids nor since.
+      // Continuation pages and targeted id fetches omit it: the same text is the style-guide
+      // resource, so a bulk rewrite pays it once per walk. An empty merged guide ships no key
+      // either: absence says "no guide" the same way an absent next_since says "walk over".
+      const styleGuide =
+        args.ids === undefined && args.since === undefined ? mergedStyleGuide(store, args.project) : null;
+
       const output = {
         entries: approvedRowsToWire(rows),
-        // The guide rides a walk's first page only — a call carrying neither ids nor since.
-        // Continuation pages and targeted id fetches omit it: the same text is the style-guide
-        // resource, so a bulk rewrite pays it once per walk.
-        ...(args.ids === undefined && args.since === undefined
-          ? { style_guide: mergedStyleGuide(store, args.project) }
-          : {}),
+        ...(styleGuide !== null && styleGuide.trim().length > 0 ? { style_guide: styleGuide } : {}),
         // An exhausted walk carries no `next_since` key at all: absent is the signal to stop, so an
         // empty page must never smuggle one in.
         ...(nextSince === null ? {} : { next_since: nextSince }),

@@ -14,7 +14,7 @@ const ListEntriesArgs = z.object({
   project: z.string().min(1).optional().describe("Only entries of this project slug."),
   status: z.enum(["draft", "approved", "applied", "rejected"]).optional().describe("Only entries in this status: draft, approved, applied, or rejected. Unset = all statuses."),
   ids: z.array(z.string().min(1)).min(1).optional().describe("Only these exact entry ids."),
-  q: z.string().min(1).optional().describe("Case-insensitive substring (ASCII-only case fold) over file, anchor_text, agent_draft, and human_text."),
+  q: z.string().min(1).optional().describe("Case-insensitive substring (ASCII-only case fold) over file, anchor_text, agent_draft, and human_text. Matches stored text the returned row does not carry."),
   limit: z.number().int().min(1).max(200).default(50).describe("Rows per page (max: 200, default 50)."),
   cursor: z.string().min(1).optional().describe("Keyset pagination: pass the previous page's next_cursor to continue from after the last row returned."),
 });
