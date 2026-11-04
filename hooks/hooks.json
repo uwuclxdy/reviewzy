@@ -1,0 +1,16 @@
+{
+  "description": "inject the project's merged reviewzy style guide into session start context",
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bun \"${CLAUDE_PLUGIN_ROOT}/hooks/session-start.ts\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}

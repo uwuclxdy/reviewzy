@@ -6,6 +6,8 @@ import {
 import { Hono } from "hono";
 import { timingSafeEqual } from "hono/utils/buffer";
 import type { Config } from "../config.ts";
+import { projectIdBySlug } from "../db/queries.ts";
+import { mergedStyleGuide, readStyleGuideSection } from "../db/style-guide.ts";
 import type { Store } from "../db/store.ts";
 import { mountDashboard } from "../dashboard/mount.ts";
 import { mountMcp } from "../mcp/route.ts";
@@ -150,6 +152,43 @@ export function createApp(
       }
     }
     return c.json({ status: "draining" });
+  });
+
+  // GET /style-guide.md: the SessionStart hook's one read (`hooks/session-start.ts`). It mounts in
+  // this layer, ahead of the mcp and dashboard mounts, because the hook carries neither a session
+  // cookie nor a JSON-RPC envelope — the dashboard's login gate must never answer it. The bearer
+  // rule is /drain's own, and the route is a pure read: a slug nothing was ever filed into is a
+  // 404, never a minted project.
+  app.get("/style-guide.md", async (c) => {
+    const token = config.REVIEWZY_TOKEN;
+    if (token !== undefined && !(await tokenAccepted(c.req.header("Authorization"), token))) {
+      return bearerAuthChallengeResponse(
+        new OAuthError(OAuthErrorCode.InvalidToken, "REVIEWZY_TOKEN is set; a bearer token is required"),
+      );
+    }
+
+    const project = c.req.query("project");
+    if (project === undefined) {
+      return new Response(null, { status: 400 });
+    }
+    if (projectIdBySlug(store, project) === null) {
+      return new Response(null, { status: 404 });
+    }
+
+    // A project without guide content of its own serves nothing, even when a global guide exists:
+    // the hook stays silent for every repo whose project has no guide of its own, so the global
+    // row never leaks out alone through this route — an author's empty markdown save included.
+    const section = readStyleGuideSection(store, project);
+    const hasOwnGuide =
+      section !== null &&
+      (section.markdown.trim() !== "" || section.bannedWords.length > 0 || Object.keys(section.glossary).length > 0);
+    if (!hasOwnGuide) {
+      return new Response(null, { status: 204 });
+    }
+    return new Response(mergedStyleGuide(store, project), {
+      status: 200,
+      headers: { "content-type": "text/markdown" },
+    });
   });
 
   mountMcp(app, config, store, notifier);

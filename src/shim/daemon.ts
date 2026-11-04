@@ -105,7 +105,7 @@ async function waitHealthy(port: number, timeoutMs: number, childPid: number): P
 }
 
 /** The daemon a valid lockfile names, when it is alive, ours, and actually serving its port. */
-async function liveDaemon(lockPath: string): Promise<{ lock: Lockfile; health: Health } | null> {
+export async function liveDaemon(lockPath: string): Promise<{ lock: Lockfile; health: Health } | null> {
   const lock = readLockfile(lockPath);
   if (lock === null) return null;
   if (!isPidAlive(lock.pid)) return null;

@@ -47,11 +47,12 @@ export function mountDashboard(app: Hono, config: Config, store: Store): void {
   if (auth.enabled) {
     // The gate, registered before every dashboard route so nothing below it answers unsigned.
     // Exempt: the auth surface itself (both spellings of each path), the vendored assets
-    // (css/js/fonts, never data), and the mcp/health/drain surface this app mounts ahead of the
-    // dashboard, which owns its own gates. Everything else fails closed. htmx requests answer 401
-    // with HX-Redirect so the browser follows the login instead of swapping it into the target
-    // region (a 303 would swap the login page into the list); a plain GET redirects with the path
-    // as `next` so the login lands back; a plain POST goes to the login without one.
+    // (css/js/fonts, never data), and the mcp/health/drain/style-guide.md surface this app
+    // mounts ahead of the dashboard, which owns its own gates. Everything else fails closed.
+    // htmx requests answer 401 with HX-Redirect so the browser follows the login instead of
+    // swapping it into the target region (a 303 would swap the login page into the list); a
+    // plain GET redirects with the path as `next` so the login lands back; a plain POST goes to
+    // the login without one.
     app.use("*", async (c, next) => {
       const path = c.req.path;
       if (
