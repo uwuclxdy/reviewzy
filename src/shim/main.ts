@@ -69,10 +69,37 @@ function transportError(frame: LooseFrame | undefined, message: string): string 
 }
 
 /**
- * Forwards one stdin line. Returns the response frame to write, or null when nothing may be
- * written: a notification the daemon accepted, or any body-less reply.
+ * The socket codes a failed delivery or transfer carries — the connection refused before any byte
+ * moved, or the socket dropped, timed out or broken mid-flight. Only such a failure can mean a dead
+ * daemon, so only it may re-ensure: a fetch that rejects the frame itself (a malformed header value
+ * rejects before any socket opens) is client input no recovery can help.
  */
-export async function forwardLine(line: string, port: number, token?: string): Promise<string | null> {
+const CONNECT_ERROR_CODES = new Set(["ECONNREFUSED", "ECONNRESET", "ETIMEDOUT", "EPIPE"]);
+
+function isConnectFailure(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  const cause = (error as { cause?: unknown }).cause;
+  const code = typeof cause === "object" && cause !== null ? (cause as { code?: unknown }).code : undefined;
+  if (typeof code === "string") return CONNECT_ERROR_CODES.has(code);
+  // Bun's fetch reports a refused connect as a bare TypeError with no cause (measured 2026-11-04:
+  // "Unable to connect. Is the computer able to access the url?"), so the message is the fallback.
+  // `startsWith`, never `includes`: the raw header value is interpolated into the validation error,
+  // so client input naming that phrase must not read as a connect failure.
+  return error.message.startsWith("Unable to connect");
+}
+
+/**
+ * Forwards one stdin line. Returns the response frame to write, or null when nothing may be
+ * written: a notification the daemon accepted, or any body-less reply. With `reensure`, a fetch
+ * that cannot connect runs it once and retries the fetch once against the port it returns; a
+ * daemon that answered is never re-ensured, and a failed attempt falls back to the transport error.
+ */
+export async function forwardLine(
+  line: string,
+  port: number,
+  token?: string,
+  reensure?: () => Promise<number>,
+): Promise<string | null> {
   let frame: LooseFrame | undefined;
   try {
     const parsed: unknown = JSON.parse(line);
@@ -88,11 +115,34 @@ export async function forwardLine(line: string, port: number, token?: string): P
   };
   if (token !== undefined) headers.authorization = `Bearer ${token}`;
 
+  const postMcp = (targetPort: number): Promise<Response> =>
+    fetch(`http://127.0.0.1:${targetPort}/mcp`, { method: "POST", headers, body: line });
+
   let response: Response;
   try {
-    response = await fetch(`http://127.0.0.1:${port}/mcp`, { method: "POST", headers, body: line });
+    response = await postMcp(port);
   } catch (error) {
-    return transportError(frame, `daemon unreachable on port ${port}: ${(error as Error).message}`);
+    // A non-connect throw never delivered the frame to any daemon, so there is nothing to recover:
+    // the transport error carries the fetch's own message straight out.
+    if (reensure === undefined || !isConnectFailure(error)) {
+      return transportError(frame, `daemon unreachable on port ${port}: ${(error as Error).message}`);
+    }
+    // A connect-class failure can land after the daemon processed a write, so the retry is
+    // at-least-once — bounded by file_entries' re-file dedupe and mark_applied's state refusal.
+    // One attempt, one retry: ensureDaemon's own attempt bound is the only loop.
+    let retryPort: number;
+    try {
+      retryPort = await reensure();
+    } catch (ensureError) {
+      // The recovery's own failure must not vanish behind the transport error the client gets.
+      console.error(`reviewzy: re-ensure failed: ${(ensureError as Error).message}`);
+      return transportError(frame, `daemon unreachable on port ${port}: ${(error as Error).message}`);
+    }
+    try {
+      response = await postMcp(retryPort);
+    } catch (retryError) {
+      return transportError(frame, `daemon unreachable on port ${retryPort}: ${(retryError as Error).message}`);
+    }
   }
 
   // `202 Accepted` is the transport's "notification received": no response frame exists for it.
@@ -137,6 +187,15 @@ export async function forwardLine(line: string, port: number, token?: string): P
   return transportError(frame, `daemon replied http ${response.status} with a non-json-rpc body`);
 }
 
+/** The wait for in-flight frames after stdin closes, before the shim exits. */
+const PENDING_DRAIN_MS = 5_000;
+
+// The frozen residual after each re-arm while a re-ensure is in flight: stdin EOF mid-recovery
+// keeps waiting while the attempt runs, and ATTEMPTS (daemon.ts) bounds a boot-failing attempt at
+// roughly 4 boot waits, so the total hold is the attempt's own bound, never this constant. Re-derive
+// with the boot timeout.
+const REENSURE_DRAIN_MS = 12_000;
+
 /**
  * The published stdio entrypoint. Establishes the singleton daemon, then bridges stdin to it one
  * line at a time until stdin closes; the daemon is detached, so it outlives the shim. All logging
@@ -150,17 +209,43 @@ export async function runShim(): Promise<void> {
   // told. Draining to stdin EOF and exiting cleanly is the portable shutdown.
   process.stdout.on("error", () => {});
 
-  const handle = await ensureDaemon({
+  // One options object for the startup ensure and every re-ensure: the recovery must rebuild the
+  // daemon this session bridged, not one from drifted options.
+  const ensureOptions = {
     lockfile: lockfilePath(process.env),
     port: config.REVIEWZY_PORT,
     shimVersion: VERSION,
     token: config.REVIEWZY_TOKEN,
     dev: config.REVIEWZY_DEV === "1",
     env: process.env,
-  });
+  };
+  const handle = await ensureDaemon(ensureOptions);
   console.error(
     `reviewzy: shim ${VERSION} bridging stdio to daemon ${handle.version} (pid ${handle.pid}, port ${handle.port})`,
   );
+
+  // Later lines follow the daemon the lockfile names: ensureDaemon may adopt a daemon on the
+  // lockfile's port, so a re-ensure can retarget the session.
+  let currentPort = handle.port;
+
+  // Single-flight: concurrent failing lines share one in-flight re-ensure instead of racing N
+  // ensureDaemon calls; the lockfile claim already serializes across processes. Cleared once
+  // settled, so a daemon that dies again later gets one fresh attempt.
+  let reensuring: Promise<number> | undefined;
+  const reensure = (): Promise<number> => {
+    if (reensuring !== undefined) return reensuring;
+    console.error(`reviewzy: daemon unreachable on port ${currentPort}; re-ensuring`);
+    const attempt = ensureDaemon(ensureOptions)
+      .then((fresh) => {
+        currentPort = fresh.port;
+        return fresh.port;
+      })
+      .finally(() => {
+        reensuring = undefined;
+      });
+    reensuring = attempt;
+    return attempt;
+  };
 
   const lines = readline.createInterface({ input: process.stdin, terminal: false });
 
@@ -170,7 +255,7 @@ export async function runShim(): Promise<void> {
   lines.on("line", (line: string) => {
     if (line.trim() === "") return;
     pending += 1;
-    void forwardLine(line, handle.port, config.REVIEWZY_TOKEN)
+    void forwardLine(line, currentPort, config.REVIEWZY_TOKEN, reensure)
       .then((frame) => {
         if (frame !== null) process.stdout.write(`${frame}\n`);
       })
@@ -183,8 +268,13 @@ export async function runShim(): Promise<void> {
   });
 
   await new Promise<void>((resolve) => lines.once("close", () => resolve()));
-  const deadline = Date.now() + 5_000;
-  while (pending > 0 && Date.now() < deadline) {
+  let deadline = Date.now() + PENDING_DRAIN_MS;
+  while (pending > 0) {
+    // A one-shot client closes stdin right after its frame; with a recovery mid-flight the base cap
+    // would expire first and drop the answer base answered in milliseconds. Hold one boot+retry
+    // window while a re-ensure is in flight, then the frozen deadline applies.
+    if (reensuring !== undefined) deadline = Math.max(deadline, Date.now() + REENSURE_DRAIN_MS);
+    if (Date.now() >= deadline) break;
     await new Promise((resolve) => setTimeout(resolve, 10));
   }
   // The daemon stays up for the next session; only the bridge goes away.
