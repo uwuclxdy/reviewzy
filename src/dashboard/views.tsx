@@ -15,6 +15,7 @@ import {
 } from "../db/queries.ts";
 import type { EntryRow, EntryStatus } from "../db/queries.ts";
 import { readStyleGuideSection } from "../db/style-guide.ts";
+import { readStyleGuideDraft, styleGuideDraftFingerprint } from "../db/style-guide-drafts.ts";
 import type { StyleGuideForm, StyleGuideFormRefusal, StyleGuideInput } from "../db/style-guide.ts";
 import type { Store } from "../db/store.ts";
 import { parseRepoLink, REPO_ICON } from "./repo-link.ts";
@@ -1795,16 +1796,21 @@ export type StyleGuideViewModel = {
   readonly hasRow: boolean;
   /** The stored section, or the empty defaults when there is no row yet. */
   readonly section: StyleGuideInput;
+  /** The agent's standing proposal for this section; null for the global guide, which has no drafts, and when none is waiting. */
+  readonly draft: StyleGuideInput | null;
+  /** The standing proposal's fingerprint, or null with no draft: the card's forms carry it, and a save refuses when the proposal changed while the human edited. */
+  readonly draftFingerprint: string | null;
   /** The sidebar's queue badge, read with the page's own store access. */
   readonly draftCount: number;
 };
 
-/** What the last save round settled into, rendered by the swap: the saved notice, the unknown-project notice, or the refusal with its message. The submitted form is kept so a refusal re-renders what the user typed. */
+/** What the last action round settled into, rendered by the swap: the saved notice, the unknown-project notice, the proposal's approve or discard, or the refusal with its message. A save keeps the submitted form so a refusal re-renders what the user typed; the draft actions submit no editor form and leave it unset. */
 export type StyleGuideEditorState = {
-  readonly submitted: StyleGuideForm;
+  readonly submitted?: StyleGuideForm;
   readonly notice:
     | { readonly kind: "saved" }
     | { readonly kind: "unknown_project" }
+    | { readonly kind: "draft"; readonly action: "approved" | "discarded" }
     | { readonly kind: "refusal"; readonly title: string; readonly body: string };
 };
 
@@ -1814,12 +1820,16 @@ export function loadStyleGuide(store: Store, projectQuery: string | undefined): 
   const projects = listProjects(store);
   const unknown = projectSlug !== null && !projects.some((project) => project.slug === projectSlug);
   const section = readStyleGuideSection(store, projectSlug);
+  // Only a project section can hold a proposal; the join resolves null on an unknown slug too.
+  const draft = projectSlug === null ? null : readStyleGuideDraft(store, projectSlug);
   return {
     projectSlug,
     projects,
     unknown,
     hasRow: section !== null,
     section: section ?? { markdown: "", bannedWords: [], glossary: {} },
+    draft,
+    draftFingerprint: draft === null ? null : styleGuideDraftFingerprint(draft),
     draftCount: countEntriesByStatus(store).draft,
   };
 }
@@ -1885,12 +1895,64 @@ function StyleGuideUnknownRegion({ slug }: { slug: string }) {
   );
 }
 
-/** The region htmx swaps: the settled notice on top, then the editor form. A save re-renders the stored values (normalized), a refusal keeps the submitted ones. */
+/**
+ * The agent's standing proposal, rendered beside the section editor it would replace. Read-only:
+ * the editor below starts from it, so editing means Save (which publishes the human's words), and
+ * the buttons take the whole proposal verbatim or drop it. One proposal per project, so the card
+ * names no agent — the store holds exactly one.
+ */
+function StyleGuideDraftCard({ projectSlug, draft, fingerprint }: { projectSlug: string; draft: StyleGuideInput; fingerprint: string }) {
+  return (
+    <div class="card style-guide-card">
+      <div class="card-header">
+        <div class="card-title">Agent proposal</div>
+      </div>
+      <div class="card-content style-guide-fields">
+        <div class="field">
+          <span class="field-label">Markdown</span>
+          {draft.markdown !== "" ? <pre>{draft.markdown}</pre> : null}
+          {draft.markdown === "" ? <p class="field-hint">No markdown proposed.</p> : null}
+        </div>
+        <div class="field">
+          <span class="field-label">Banned words</span>
+          {draft.bannedWords.length > 0 ? <p>{draft.bannedWords.join(", ")}</p> : null}
+          {draft.bannedWords.length === 0 ? <p class="field-hint">No banned words proposed.</p> : null}
+        </div>
+        <div class="field">
+          <span class="field-label">Glossary</span>
+          {Object.keys(draft.glossary).length > 0 ? (
+            <pre>{Object.entries(draft.glossary).map(([key, value]) => `${key}: ${value}`).join("\n")}</pre>
+          ) : null}
+          {Object.keys(draft.glossary).length === 0 ? <p class="field-hint">No glossary entries proposed.</p> : null}
+        </div>
+        <div class="editor-actions">
+          <form method="post" action="/style-guide/draft/approve" hx-post="/style-guide/draft/approve" hx-target="#style-guide-region" hx-swap="outerHTML">
+            <input type="hidden" name="project" value={projectSlug} />
+            <input type="hidden" name="draft_fingerprint" value={fingerprint} />
+            <button class="btn btn-fill" type="submit" hx-disabled-elt="this">Approve proposal</button>
+          </form>
+          <form method="post" action="/style-guide/draft/discard" hx-post="/style-guide/draft/discard" hx-target="#style-guide-region" hx-swap="outerHTML">
+            <input type="hidden" name="project" value={projectSlug} />
+            <input type="hidden" name="draft_fingerprint" value={fingerprint} />
+            <button class="btn btn-secondary" type="submit" hx-disabled-elt="this">Discard proposal</button>
+          </form>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** The region htmx swaps: the settled notice on top, then the proposal card and the editor form. A save re-renders the stored values (normalized), a refusal keeps the submitted ones. While a proposal stands, the editor edits it — the human's save is itself the approval. */
 function StyleGuideRegion({ vm, state }: { vm: StyleGuideViewModel; state: StyleGuideEditorState | undefined }) {
   if (vm.unknown || state?.notice.kind === "unknown_project") {
     return <StyleGuideUnknownRegion slug={vm.projectSlug ?? ""} />;
   }
-  const formValues = state !== undefined && state.notice.kind === "refusal" ? state.submitted : sectionToForm(vm.section);
+  const edited = vm.draft ?? vm.section;
+  const editedRow = vm.draft !== null || vm.hasRow;
+  const formValues =
+    state !== undefined && state.notice.kind === "refusal" && state.submitted !== undefined
+      ? state.submitted
+      : sectionToForm(edited);
   return (
     <div id="style-guide-region">
       {state?.notice.kind === "saved" ? (
@@ -1908,6 +1970,21 @@ function StyleGuideRegion({ vm, state }: { vm: StyleGuideViewModel; state: Style
           </div>
         </div>
       ) : null}
+      {state?.notice.kind === "draft" ? (
+        <div class="callout callout-success" role="status">
+          <div class="callout-icon">
+            <svg aria-hidden="true"><use href="#i-success" /></svg>
+          </div>
+          <div class="callout-content">
+            <div class="callout-title">{state.notice.action === "approved" ? "Proposal approved" : "Proposal discarded"}</div>
+            <div class="callout-body">
+              {state.notice.action === "approved"
+                ? `The ${vm.projectSlug} section now applies below the global guide.`
+                : "The proposal is removed; the section is unchanged."}
+            </div>
+          </div>
+        </div>
+      ) : null}
       {state?.notice.kind === "refusal" ? <DangerCallout title={state.notice.title} body={state.notice.body} /> : null}
       {!vm.hasRow ? (
         <InfoCallout
@@ -1915,6 +1992,7 @@ function StyleGuideRegion({ vm, state }: { vm: StyleGuideViewModel; state: Style
           body="Your save creates it."
         />
       ) : null}
+      {vm.draft !== null ? <StyleGuideDraftCard projectSlug={vm.projectSlug ?? ""} draft={vm.draft} fingerprint={vm.draftFingerprint ?? ""} /> : null}
       <div class="card style-guide-card">
         <form
           id="style-guide-form"
@@ -1926,6 +2004,7 @@ function StyleGuideRegion({ vm, state }: { vm: StyleGuideViewModel; state: Style
           hx-indicator="#style-guide-loading"
         >
           <input type="hidden" name="project" value={vm.projectSlug ?? ""} />
+          <input type="hidden" name="draft_fingerprint" value={vm.draftFingerprint ?? ""} />
           <div class="card-header">
             <div class="card-title">{vm.projectSlug === null ? "Global guide" : `${vm.projectSlug} guide`}</div>
           </div>
@@ -1935,13 +2014,13 @@ function StyleGuideRegion({ vm, state }: { vm: StyleGuideViewModel; state: Style
               <textarea class="input" id="style-guide-markdown" name="markdown" rows={10} aria-label="Guide markdown" data-autosize data-scroll-fade>
                 {formValues.markdown}
               </textarea>
-              {vm.hasRow && vm.section.markdown === "" ? <p class="field-hint">No markdown yet.</p> : null}
+              {editedRow && edited.markdown === "" ? <p class="field-hint">No markdown yet.</p> : null}
             </div>
             <div class="field">
               <label class="field-label" for="style-guide-banned">Banned words</label>
               <input class="input" id="style-guide-banned" name="banned_words" type="text" value={formValues.bannedWordsCsv} />
               <p class="field-hint">Comma-separated. Extra whitespace and duplicates are dropped.</p>
-              {vm.hasRow && vm.section.bannedWords.length === 0 ? <p class="field-hint">No banned words yet.</p> : null}
+              {editedRow && edited.bannedWords.length === 0 ? <p class="field-hint">No banned words yet.</p> : null}
             </div>
             <div class="field">
               <label class="field-label" for="style-guide-glossary">Glossary</label>
@@ -1949,7 +2028,7 @@ function StyleGuideRegion({ vm, state }: { vm: StyleGuideViewModel; state: Style
                 {formValues.glossaryText}
               </textarea>
               <p class="field-hint">One key: value pair per line. A line without a colon is refused.</p>
-              {vm.hasRow && Object.keys(vm.section.glossary).length === 0 ? (
+              {editedRow && Object.keys(edited.glossary).length === 0 ? (
                 <p class="field-hint">No glossary entries yet.</p>
               ) : null}
             </div>

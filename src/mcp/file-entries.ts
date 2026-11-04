@@ -11,7 +11,7 @@ import type { Notifier } from "../notify.ts";
  * dashboard paths, and a case pair would fold into one path on a case-insensitive mount while
  * sqlite holds two projects.
  */
-const SLUG = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
+export const SLUG = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
 
 /** sha256 as 64 lowercase hex chars: the shape of `anchor_hash` and of a caller-supplied `file_hash`. */
 const SHA256_HEX = /^[0-9a-f]{64}$/;

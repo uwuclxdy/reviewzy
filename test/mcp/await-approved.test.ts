@@ -205,7 +205,7 @@ function reject(store: Store, id: string): void {
 }
 
 describe("the tool surface", () => {
-  test("await_approved is advertised last, with the wait schemas, the park clause in the description, and the cap documented on its parameter", async () => {
+  test("await_approved is advertised with the wait schemas, the park clause in the description, and the cap documented on its parameter", async () => {
     const { body } = await first.call("tools/list", {});
     const tools = body.result?.tools ?? [];
     expect(tools.map((t) => t.name)).toEqual([
@@ -214,6 +214,7 @@ describe("the tool surface", () => {
       "fetch_approved",
       "mark_applied",
       "await_approved",
+      "file_style_guide",
     ]);
 
     const tool = tools[4]!;

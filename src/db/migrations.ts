@@ -183,4 +183,27 @@ export const MIGRATIONS: Migration[] = [
       ALTER TABLE entries_archive ADD COLUMN human_notes TEXT;
     `,
   },
+  {
+    version: 7,
+    name: "style-guide-drafts",
+    sql: `
+      -- An agent's proposed project guide, filed by the file_style_guide tool and published only
+      -- by the dashboard's human action (approve, or a section save). It sits beside style_guides,
+      -- never in it: the merge reads style_guides alone, so a draft is invisible to the resource
+      -- and the fetch_approved rider until it becomes a live row. NOT NULL project_id keeps the
+      -- global guide out of proposals — only a project section can be drafted — and UNIQUE pins
+      -- one proposal per project; a re-file replaces it through the upsert in
+      -- src/db/style-guide-drafts.ts. No archive mirror: a draft is ephemeral, discarded or
+      -- published by the human, never swept.
+      CREATE TABLE style_guide_drafts (
+        id TEXT PRIMARY KEY NOT NULL,
+        project_id TEXT NOT NULL UNIQUE REFERENCES projects(id),
+        markdown TEXT NOT NULL DEFAULT '',
+        banned_words TEXT NOT NULL DEFAULT '[]',
+        glossary TEXT NOT NULL DEFAULT '{}',
+        ${tsRequired("created_at")},
+        ${tsRequired("updated_at")}
+      );
+    `,
+  },
 ];

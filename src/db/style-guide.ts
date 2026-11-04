@@ -120,7 +120,7 @@ export function upsertStyleGuide(store: Store, projectSlug: string | null, input
 }
 
 /** The stored json array, or the empty list when it is not an array of strings: only the editor (task 15) writes these columns, so a malformed value is a foreign or hand-edited row, not something to crash a read over. */
-function parseBannedWords(json: string): readonly string[] {
+export function parseBannedWords(json: string): readonly string[] {
   try {
     const parsed: unknown = JSON.parse(json);
     if (Array.isArray(parsed) && parsed.every((item) => typeof item === "string")) return parsed;
@@ -131,7 +131,7 @@ function parseBannedWords(json: string): readonly string[] {
 }
 
 /** The stored json map, or the empty map when it is not an object of strings; same tolerance as `parseBannedWords`. */
-function parseGlossary(json: string): Readonly<Record<string, string>> {
+export function parseGlossary(json: string): Readonly<Record<string, string>> {
   try {
     const parsed: unknown = JSON.parse(json);
     if (

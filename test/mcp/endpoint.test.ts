@@ -223,7 +223,7 @@ describe("protocol conformance", () => {
     expect(result?.instructions as string).toContain("reviewzy");
     // The router: one line per tool a caller decides by, under the client's 2048-character cut.
     const instructions = result?.instructions as string;
-    for (const name of ["file_entries", "await_approved", "fetch_approved", "mark_applied"]) {
+    for (const name of ["file_entries", "await_approved", "fetch_approved", "mark_applied", "file_style_guide"]) {
       expect(instructions).toContain(name);
     }
     expect(instructions).toContain("rejected stays rejected");
@@ -240,7 +240,7 @@ describe("protocol conformance", () => {
   // empty list it was. Tasks 8, 9, and 10 added `fetch_approved`, `mark_applied`, and
   // `await_approved` the same way. `test/mcp/file-entries.test.ts`, `test/mcp/list-entries.test.ts`,
   // and `test/mcp/fetch-approved.test.ts` own the tools' own behavior.
-  test("tools/list answers exactly the registered tools, file_entries, list_entries, fetch_approved, mark_applied, and await_approved", async () => {
+  test("tools/list answers exactly the registered tools: file_entries, list_entries, fetch_approved, mark_applied, await_approved, and file_style_guide", async () => {
     const { status, body } = await probe({ rpc: "tools/list" });
     expect(status).toBe(200);
     const tools = (body?.result?.tools ?? []) as { name: string }[];
@@ -250,6 +250,7 @@ describe("protocol conformance", () => {
       "fetch_approved",
       "mark_applied",
       "await_approved",
+      "file_style_guide",
     ]);
     expect(body?.result?.resultType).toBe("complete");
   });

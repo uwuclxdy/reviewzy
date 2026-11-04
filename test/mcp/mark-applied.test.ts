@@ -138,10 +138,10 @@ function expectUnchanged(store: Store, id: string, before: Record<string, unknow
 }
 
 describe("the tool surface", () => {
-  test("mark_applied is advertised beside the other four tools, with the loop-close schemas and the result arms on the parameter", async () => {
+  test("mark_applied is advertised beside the other five tools, with the loop-close schemas and the result arms on the parameter", async () => {
     const { body } = await first.call("tools/list", {});
     const tools = body.result?.tools ?? [];
-    expect(tools.map((t) => t.name)).toEqual(["file_entries", "list_entries", "fetch_approved", "mark_applied", "await_approved"]);
+    expect(tools.map((t) => t.name)).toEqual(["file_entries", "list_entries", "fetch_approved", "mark_applied", "await_approved", "file_style_guide"]);
 
     const tool = tools[3]!;
     const input = tool.inputSchema as {

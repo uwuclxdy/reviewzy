@@ -4,6 +4,7 @@ import type { Store } from "../db/store.ts";
 import { registerAwaitApprovedTool } from "./await-approved.ts";
 import { registerFetchApprovedTool } from "./fetch-approved.ts";
 import { registerFileEntriesTool } from "./file-entries.ts";
+import { registerFileStyleGuideTool } from "./file-style-guide.ts";
 import { registerListEntriesTool } from "./list-entries.ts";
 import { registerMarkAppliedTool } from "./mark-applied.ts";
 import { registerStyleGuideResource } from "./style-guide-resource.ts";
@@ -21,6 +22,7 @@ const INSTRUCTIONS = `reviewzy is a review queue for user-facing text. Agents dr
 - \`await_approved\`: wait when this session needs the human's sign-off before continuing.
 - \`fetch_approved\`: fetch whatever is approved and apply the text in place.
 - \`mark_applied\`: after applying, report the outcome (applied or anchor_stale).
+- \`file_style_guide\`: propose a project style guide as a draft the human signs off.
 - rejected stays rejected: re-filing a rejected anchor returns the existing entry.`;
 
 /**
@@ -59,6 +61,7 @@ export function createMcpServer(config: Config, store: Store, notifier: Notifier
   registerFetchApprovedTool(server, store);
   registerMarkAppliedTool(server, store);
   registerAwaitApprovedTool(server, store);
+  registerFileStyleGuideTool(server, store);
   registerStyleGuideResource(server, store);
   return server;
 }

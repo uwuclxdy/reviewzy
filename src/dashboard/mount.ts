@@ -5,7 +5,14 @@ import type { Config } from "../config.ts";
 import { appendEntryImage, approveEntry, batchApproveEntries, rejectEntry, removeEntryImage, saveHumanNotes, saveHumanText } from "../db/human-save.ts";
 import type { ApproveOutcome, BatchApproveResult, RejectOutcome, TransitionRefusal } from "../db/human-save.ts";
 import { projectIdBySlug } from "../db/queries.ts";
-import { parseStyleGuideForm, upsertStyleGuide } from "../db/style-guide.ts";
+import {
+  approveStyleGuideDraft,
+  discardStyleGuideDraft,
+  readStyleGuideDraft,
+  saveStyleGuideSection,
+  styleGuideDraftFingerprint,
+} from "../db/style-guide-drafts.ts";
+import { parseStyleGuideForm } from "../db/style-guide.ts";
 import type { StyleGuideForm } from "../db/style-guide.ts";
 import type { Store } from "../db/store.ts";
 import {
@@ -363,10 +370,13 @@ export function mountDashboard(app: Hono, config: Config, store: Store): void {
       glossaryText: field("glossary"),
     };
 
-    // The store owns the write; this route owns the two refusals the parse cannot name: the
-    // malformed glossary line (nothing written) and the vanished project (the store's upsert would
-    // throw, and the editor never mints one).
+    // The store owns the write; this route owns the refusals the parse cannot name: the malformed
+    // glossary line (nothing written), the vanished project (the store's upsert would throw, and
+    // the editor never mints one), and a proposal that changed while the human edited (nothing
+    // written — the fingerprint the form carried no longer matches the standing row's).
     const parsed = parseStyleGuideForm(raw);
+    const draftValue = form.get("draft_fingerprint");
+    const seenFingerprint = typeof draftValue === "string" ? draftValue : "";
     let notice: StyleGuideEditorState["notice"];
     if (!parsed.ok) {
       const formatted = formatStyleGuideRefusal(parsed.refusal);
@@ -374,8 +384,23 @@ export function mountDashboard(app: Hono, config: Config, store: Store): void {
     } else if (projectSlug !== null && projectIdBySlug(store, projectSlug) === null) {
       notice = { kind: "unknown_project" };
     } else {
-      upsertStyleGuide(store, projectSlug, parsed.input);
-      notice = { kind: "saved" };
+      // A project save spends the standing proposal the editor prefills from, so the fingerprint
+      // the form carried must still be the standing row's — otherwise the save would clear a
+      // proposal the human never saw. The global guide holds no drafts and never reaches this read.
+      const standing = projectSlug === null ? null : readStyleGuideDraft(store, projectSlug);
+      if (standing !== null && styleGuideDraftFingerprint(standing) !== seenFingerprint) {
+        notice = {
+          kind: "refusal",
+          title: "Guide not saved",
+          body: "The proposal changed on disk. The current proposal is shown below.",
+        };
+      } else {
+        // A project save is the approval too: the editor starts from the standing proposal, so the
+        // human's words spend it — one transaction, so a crash cannot leave the saved guide beside
+        // the proposal it replaced. The global guide has no drafts, and a save there clears nothing.
+        saveStyleGuideSection(store, projectSlug, parsed.input);
+        notice = { kind: "saved" };
+      }
     }
 
     const vm = loadStyleGuide(store, projectSlug ?? undefined);
@@ -389,9 +414,82 @@ export function mountDashboard(app: Hono, config: Config, store: Store): void {
     return c.html(styleGuideRegionFragment(vm, state));
   });
 
+  // The proposal card's two transitions, answered by one helper: the card's buttons POST the
+  // project hidden field, exactly like the editor form's. The global section holds no drafts, so
+  // a missing project refuses before the store is asked for a row that cannot exist.
+  app.post("/style-guide/draft/approve", (c) => styleGuideDraftReply(c, store, "approve", auth.enabled));
+  app.post("/style-guide/draft/discard", (c) => styleGuideDraftReply(c, store, "discard", auth.enabled));
+
   // Any request no route served, any method: the styled not-found page. app.notFound fires only
   // when no path matches, so a wrong method on a known path keeps its 405.
   app.notFound((c) => c.html(html`<!doctype html>${notFoundPage("route")}`, 404));
+}
+
+/**
+ * The proposal's approve or discard, in the save route's shapes: the store owns every decision
+ * (the unknown project, the nothing-waiting refusal, the stale-proposal refusal, the
+ * publish-plus-delete); this helper only formats the outcome. htmx gets the region fragment
+ * swapped in, a plain navigation redirects on success and gets the full page with the callout
+ * otherwise. No editor form was submitted, so the state carries no `submitted` and a refusal
+ * re-renders the stored section.
+ */
+async function styleGuideDraftReply(c: Context, store: Store, action: "approve" | "discard", signedIn: boolean) {
+  const form = await c.req.formData();
+  const projectValue = form.get("project");
+  const projectSlug = typeof projectValue === "string" && projectValue !== "" ? projectValue : null;
+  const draftValue = form.get("draft_fingerprint");
+  const seenFingerprint = typeof draftValue === "string" ? draftValue : "";
+
+  let notice: StyleGuideEditorState["notice"];
+  if (projectSlug === null) {
+    notice = {
+      kind: "refusal",
+      title: action === "approve" ? "Proposal not approved" : "Proposal not discarded",
+      body: "The global guide has no agent proposals; only a project section can hold one.",
+    };
+  } else if (projectIdBySlug(store, projectSlug) === null) {
+    notice = { kind: "unknown_project" };
+  } else {
+    // A click binds to the proposal the card rendered: the fingerprint the form carried must
+    // still be the standing row's, or the action would publish (or drop) a proposal the human
+    // never saw. A gone row falls through, and the action below answers no-proposal-waiting.
+    const standing = readStyleGuideDraft(store, projectSlug);
+    const standingFingerprint = standing === null ? null : styleGuideDraftFingerprint(standing);
+    if (standing !== null && standingFingerprint !== seenFingerprint) {
+      notice = {
+        kind: "refusal",
+        title: action === "approve" ? "Proposal not approved" : "Proposal not discarded",
+        body: "The proposal changed on disk. The current proposal is shown below.",
+      };
+    } else if (action === "approve") {
+      const outcome = approveStyleGuideDraft(store, projectSlug);
+      notice = outcome.ok
+        ? { kind: "draft", action: "approved" }
+        : {
+            kind: "refusal",
+            title: "Proposal not approved",
+            body: "No proposal is waiting for this project. It may already be approved or discarded.",
+          };
+    } else {
+      notice = discardStyleGuideDraft(store, projectSlug)
+        ? { kind: "draft", action: "discarded" }
+        : {
+            kind: "refusal",
+            title: "Proposal not discarded",
+            body: "No proposal is waiting for this project. It may already be approved or discarded.",
+          };
+    }
+  }
+
+  const vm = loadStyleGuide(store, projectSlug ?? undefined);
+  const state: StyleGuideEditorState = { notice };
+  if (c.req.header("HX-Request") === undefined) {
+    if (notice.kind === "draft") {
+      return c.redirect(projectSlug === null ? "/style-guide" : `/style-guide?project=${encodeURIComponent(projectSlug)}`, 303);
+    }
+    return c.html(html`<!doctype html>${styleGuidePage(vm, state, signedIn)}`);
+  }
+  return c.html(styleGuideRegionFragment(vm, state));
 }
 
 /** The three filters straight off an action's POST body, kept alive across a re-render. */
