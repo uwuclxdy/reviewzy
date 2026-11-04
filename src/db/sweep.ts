@@ -53,14 +53,14 @@ export function sweepArchive(store: Store, now: number, archiveAfterDays: number
     // write count comes from this insert: it is exactly the entries moved.
     const moved = store.db.run(
       `INSERT INTO entries_archive (
-        id, project_id, batch_id, repo, file, anchor_text, anchor_before, anchor_after,
+        id, project_id, batch_id, repo, file, title, anchor_text, anchor_before, anchor_after,
         anchor_hash, file_hash, agent_draft, human_text, status, context, constraints,
-        filed_by, stale_note, applied_hash, images, human_notes, created_at, updated_at, applied_at, archived_at
+        filed_by, stale_note, applied_hash, images, human_notes, tag, created_at, updated_at, applied_at, archived_at
       )
       SELECT
-        id, project_id, batch_id, repo, file, anchor_text, anchor_before, anchor_after,
+        id, project_id, batch_id, repo, file, title, anchor_text, anchor_before, anchor_after,
         anchor_hash, file_hash, agent_draft, human_text, status, context, constraints,
-        filed_by, stale_note, applied_hash, images, human_notes, created_at, updated_at, applied_at, ?
+        filed_by, stale_note, applied_hash, images, human_notes, tag, created_at, updated_at, applied_at, ?
       FROM entries
       WHERE ${EXPIRED_APPLIED}`,
       [now, cutoff],

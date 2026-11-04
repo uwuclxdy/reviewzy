@@ -134,7 +134,7 @@ describe("openStore", () => {
     const store = openTempStore();
     const version = (store.db.query("PRAGMA user_version").get() as { user_version: number })
       .user_version;
-    expect(version).toBe(7);
+    expect(version).toBe(8);
     store.close();
   });
 
@@ -202,7 +202,7 @@ describe("openStore", () => {
     const second = openStore(configWithDb(dbPath));
     const version = (second.db.query("PRAGMA user_version").get() as { user_version: number })
       .user_version;
-    expect(version).toBe(7);
+    expect(version).toBe(8);
 
     const row = second.db.query("SELECT slug FROM projects WHERE id = ?").get(project.id) as {
       slug: string;
@@ -535,6 +535,17 @@ describe("timestamps", () => {
       const humanNotes = columns.find((c) => c.name === "human_notes");
       expect(humanNotes, `${table}.human_notes column`).toBeDefined();
       expect(humanNotes?.notnull, `${table}.human_notes is nullable`).toBe(0);
+    }
+    store.close();
+  });
+
+  test("tag exists and is nullable on entries and entries_archive (migration 8)", () => {
+    const store = openTempStore();
+    for (const table of ["entries", "entries_archive"]) {
+      const columns = (store.db.query(`PRAGMA table_info(${table})`).all() as { name: string; notnull: number }[]);
+      const tag = columns.find((c) => c.name === "tag");
+      expect(tag, `${table}.tag column`).toBeDefined();
+      expect(tag?.notnull, `${table}.tag is nullable`).toBe(0);
     }
     store.close();
   });

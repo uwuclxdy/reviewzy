@@ -6,15 +6,16 @@ import type { Store } from "../db/store.ts";
 
 /**
  * Every filter optional, `limit` bounded at the boundary rather than clamped: a caller asking for
- * 201 rows gets a refusal naming the field, never a silently smaller page. The `ids` and `q`
- * minimums refuse the degenerate inputs (an empty list, an empty search) instead of guessing what
- * they meant.
+ * 201 rows gets a refusal naming the field, never a silently smaller page. The `ids`, `q`, and
+ * `tag` minimums refuse the degenerate inputs (an empty list, an empty search, an empty tag)
+ * instead of guessing what they meant.
  */
 const ListEntriesArgs = z.object({
   project: z.string().min(1).optional().describe("Only entries of this project slug."),
   status: z.enum(["draft", "approved", "applied", "rejected"]).optional().describe("Only entries in this status: draft, approved, applied, or rejected. Unset = all statuses."),
   ids: z.array(z.string().min(1)).min(1).optional().describe("Only these exact entry ids."),
   q: z.string().min(1).optional().describe("Case-insensitive substring (ASCII-only case fold) over file, anchor_text, agent_draft, and human_text. Matches stored text the returned row does not carry."),
+  tag: z.string().min(1).optional().describe("Only entries carrying this exact tag: a whole-value match, never a substring. A tag no entry carries returns an empty page."),
   limit: z.number().int().min(1).max(200).default(50).describe("Rows per page (max: 200, default 50)."),
   cursor: z.string().min(1).optional().describe("Keyset pagination: pass the previous page's next_cursor to continue from after the last row returned."),
 });
@@ -49,6 +50,7 @@ function toWireEntry(row: EntryRow, slugByProjectId: ReadonlyMap<string, string>
     file: ellipsize(row.file),
     title: row.title === null ? null : ellipsize(row.title),
     human_notes: row.human_notes === null ? null : ellipsize(row.human_notes),
+    tag: row.tag === null ? null : ellipsize(row.tag),
     status: row.status,
     updated_at: row.updated_at,
   };
@@ -66,6 +68,7 @@ const Entry = z.object({
   file: z.string(),
   title: z.string().nullable(),
   human_notes: z.string().nullable(),
+  tag: z.string().nullable(),
   status: z.enum(["draft", "approved", "applied", "rejected"]),
   updated_at: z.number(),
 });
@@ -93,7 +96,7 @@ export function registerListEntriesTool(server: McpServer, store: Store): void {
     {
       title: "List entries for review",
       description:
-        "List the review queue's entries, ordered by ascending entry id. Every filter is optional and combines with AND. Walk pages via next_cursor; the walk is exhausted when it stops coming back. Each row is a lean index: id, project slug, file, title, status, updated_at, plus the human's own notes (human_notes, capped like file/title). Apply-back fields (anchor, the approved text, the agent's draft, constraints) come back through fetch_approved, and the agent's draft never rides this row — the dashboard owns authoring. An ids call adds missing_ids for an id no live row holds and archived_ids for one the sweep archived.",
+        "List the review queue's entries, ordered by ascending entry id. Every filter is optional and combines with AND. Walk pages via next_cursor; the walk is exhausted when it stops coming back. Each row is a lean index: id, project slug, file, title, tag, status, updated_at, plus the human's own notes (human_notes, capped like file/title). Apply-back fields (anchor, the approved text, the agent's draft, constraints) come back through fetch_approved, and the agent's draft never rides this row — the dashboard owns authoring. An ids call adds missing_ids for an id no live row holds and archived_ids for one the sweep archived.",
       inputSchema: ListEntriesArgs,
       outputSchema: ListEntriesOutput,
     },
@@ -116,6 +119,7 @@ export function registerListEntriesTool(server: McpServer, store: Store): void {
         status: args.status,
         ids: args.ids,
         q: args.q,
+        tag: args.tag,
         limit: args.limit,
         cursor: args.cursor,
       });

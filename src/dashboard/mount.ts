@@ -142,6 +142,7 @@ export function mountDashboard(app: Hono, config: Config, store: Store): void {
       q: c.req.query("q"),
       status: c.req.query("status"),
       project: c.req.query("project"),
+      tag: c.req.query("tag"),
     };
     // htmx marks its requests with HX-Request; those get the list region alone, swapped into
     // #entries-list. Everything else is a navigation and gets the full page.
@@ -493,12 +494,14 @@ async function styleGuideDraftReply(c: Context, store: Store, action: "approve" 
 }
 
 /** The three filters straight off an action's POST body, kept alive across a re-render. */
+||||||| parent of 2a6d1db (feat(mcp): optional per-entry tags, filterable in list and dashboard)
+/** The filters straight off an action's POST body, kept alive across a re-render. */
 async function listParamsFrom(form: FormData): Promise<ListParams> {
   const get = (key: string) => {
     const value = form.get(key);
     return typeof value === "string" && value !== "" ? value : undefined;
   };
-  return { q: get("q"), status: get("status"), project: get("project") };
+  return { q: get("q"), status: get("status"), project: get("project"), tag: get("tag") };
 }
 
 /** An action round's settled notice: the full page for a plain navigation, the list region for htmx. */

@@ -24,7 +24,7 @@ import type { WordDiffToken } from "./word-diff.ts";
 import { NAME } from "../version.ts";
 
 /**
- * The three dashboard filters, straight off the query string. `status` and `project` are the raw
+ * The dashboard's list filters, straight off the query string. `status` and `project` are the raw
  * values: an unrecognized one is a filter that cannot match and renders the no-match state rather
  * than being silently dropped, so the page never contradicts the URL it was asked for.
  */
@@ -32,6 +32,7 @@ export type ListParams = {
   readonly q: string | undefined;
   readonly status: string | undefined;
   readonly project: string | undefined;
+  readonly tag: string | undefined;
 };
 
 /** The list entries are walked in pages of this many rows; the dashboard has no pagination UI, so the walk always runs to exhaustion. */
@@ -81,6 +82,7 @@ export type ListViewModel = {
   readonly q: string;
   readonly status: string;
   readonly project: string;
+  readonly tag: string;
   readonly filtersActive: boolean;
   /** Whether the default Open view is what hides every match: a filter found rows, but all of them are applied or rejected. */
   readonly hiddenByActiveView: boolean;
@@ -89,7 +91,7 @@ export type ListViewModel = {
 /** Runs the keyset walk to exhaustion: the mcp tool's own list query, page size 200, no pagination UI. */
 function allEntries(
   store: Store,
-  filter: { q: string | undefined; status: EntryStatus | undefined; projectId: string | undefined },
+  filter: { q: string | undefined; status: EntryStatus | undefined; projectId: string | undefined; tag: string | undefined },
 ): EntryRow[] {
   const rows: EntryRow[] = [];
   let cursor: string | undefined;
@@ -99,6 +101,7 @@ function allEntries(
       status: filter.status,
       ids: undefined,
       q: filter.q,
+      tag: filter.tag,
       cursor,
       limit: PAGE_SIZE,
     });
@@ -137,10 +140,14 @@ function loadList(store: Store, params: ListParams): ListViewModel {
   const projectRaw = params.project;
   const projectActive = projectRaw !== undefined && projectRaw !== "";
   const projectId = projectActive ? (projectIdBySlug(store, projectRaw) ?? undefined) : undefined;
+  // The tag filter is an exact match over the raw value, like the store's own `tag = ?`: trimming
+  // or folding here would answer for a tag the store does not hold.
+  const tagRaw = params.tag;
+  const tagActive = tagRaw !== undefined && tagRaw !== "";
 
   // A status or project value no filter can match is a settled no-match, not a page error.
   const impossible = (statusActive && !allStatuses && status === undefined) || (projectActive && projectId === undefined);
-  const walked = impossible ? [] : allEntries(store, { q: qActive ? q : undefined, status, projectId });
+  const walked = impossible ? [] : allEntries(store, { q: qActive ? q : undefined, status, projectId, tag: tagActive ? tagRaw : undefined });
   const rows = statusActive ? walked : walked.filter((row) => ACTIVE_STATUSES.includes(row.status));
 
   const projects = listProjects(store);
@@ -154,7 +161,8 @@ function loadList(store: Store, params: ListParams): ListViewModel {
     q: q ?? "",
     status: statusRaw ?? "",
     project: projectRaw ?? "",
-    filtersActive: qActive || statusActive || projectActive,
+    tag: tagRaw ?? "",
+    filtersActive: qActive || statusActive || projectActive || tagActive,
     hiddenByActiveView: !statusActive && walked.length > 0 && rows.length === 0,
   };
 }
@@ -496,6 +504,20 @@ function FilterForm({ vm }: { vm: ListViewModel }) {
             value={vm.q}
           />
         </div>
+        {/* The tag filter is free text matching the stored tag exactly, so it is an input like
+            the search, not a dropdown of known tags: a tag nothing carries is a no-match, and the
+            wrapper reuses the search's flex sizing. */}
+        <div class="input-wrap filter-search">
+          <label class="sr-only" for="tag">Tag</label>
+          <input
+            class="input"
+            id="tag"
+            name="tag"
+            type="search"
+            placeholder="Filter by tag"
+            value={vm.tag}
+          />
+        </div>
         <FilterSelect id="filter-project" label="Project" field="project" current={vm.project} options={projectOptions} />
         {/* The no-JS submit path: a native select carrying the name the hidden input holds, so the
             filters still work with scripting off. With JS on, this block is not in the DOM. */}
@@ -600,7 +622,12 @@ function ListRegion({ vm }: { vm: ListViewModel }) {
       <EmptyMatch
         revealAllHref={
           vm.hiddenByActiveView
-            ? `/?q=${encodeURIComponent(vm.q)}&project=${encodeURIComponent(vm.project)}&status=all`
+            ? `/?q=${encodeURIComponent(vm.q)}&project=${encodeURIComponent(vm.project)}&status=all${
+              // The escape hatch relaxes the status view, never the tag: a link that drops the
+              // tag would widen past the filter. An inactive tag carries no constraint and stays
+              // off the href, the way an omitted `tag` means no filter to the store.
+              vm.tag === "" ? "" : `&tag=${encodeURIComponent(vm.tag)}`
+            }`
             : undefined
         }
       />
@@ -677,6 +704,7 @@ function BatchForm({ vm }: { vm: ListViewModel }) {
       <input type="hidden" name="q" value={vm.q} />
       <input type="hidden" name="status" value={vm.status} />
       <input type="hidden" name="project" value={vm.project} />
+      <input type="hidden" name="tag" value={vm.tag} />
       <div class="toolbar batch-bar section-sticky">
         <button class="btn btn-fill btn-sm" type="submit" hx-disabled-elt="this">
           Approve selected
@@ -778,6 +806,15 @@ function EntryRowView({ entry }: { entry: EntryRow }) {
         <div class="entry-head">
           <a class="entry-link truncate" href={`/entries/${entry.id}`}>{title}</a>
           <span class="entry-file truncate">{entry.file}</span>
+          {/* What the entry is a sample of, as the filing agent tagged it: the system data chip,
+              so a bulk audit's rows read their group at a glance. Untagged rows render nothing.
+              The value rides a `.truncate` child because text-overflow applies to the chip's
+              block-level child, never to the flex chip itself. */}
+          {entry.tag !== null ? (
+            <span class="tag tag-data">
+              <span class="truncate">{entry.tag}</span>
+            </span>
+          ) : null}
         </div>
         {/* A titled entry displays the title in place of the anchor text, so the anchor the entry
             changes would otherwise reach no one but the editor. */}

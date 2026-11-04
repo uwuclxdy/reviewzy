@@ -137,7 +137,7 @@ describe("the tool surface", () => {
       properties?: Record<string, Record<string, unknown>>;
     };
     expect(input.type).toBe("object");
-    expect(Object.keys(input.properties ?? {})).toEqual(["project", "status", "ids", "q", "limit", "cursor"]);
+    expect(Object.keys(input.properties ?? {})).toEqual(["project", "status", "ids", "q", "tag", "limit", "cursor"]);
     const limit = input.properties?.limit ?? {};
     expect(limit.default).toBe(50);
     expect(limit.maximum).toBe(200);
@@ -160,9 +160,9 @@ describe("the returned rows", () => {
     const stored = rows(first.store, "fields")[0]!;
 
     // Exactly the approved lean shape, by equality on the key set: short scalar fields only — the
-    // one text field is human_notes, capped by the same marker — and no images; a listed page stays
-    // a page. A new store column reaches this wire only when someone adds it here deliberately.
-    expect(Object.keys(out).sort()).toEqual(["file", "human_notes", "id", "project", "status", "title", "updated_at"]);
+    // text fields are human_notes and tag, capped by the same marker — and no images; a listed page
+    // stays a page. A new store column reaches this wire only when someone adds it here deliberately.
+    expect(Object.keys(out).sort()).toEqual(["file", "human_notes", "id", "project", "status", "tag", "title", "updated_at"]);
     expect(out.id).toBe(stored.id);
     expect(out.project).toBe("fields");
     expect(out.file).toBe(stored.file);

@@ -1194,6 +1194,15 @@ button.setting-row {
 }
 .tag-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; background: currentColor; }
 
+/* The entry row's tag chip bounds its value the way `.copy-chip` does: min/max on the chip so
+   the fixed-layout entry cell, never a 200-char tag, sets the width, and the value is a
+   `.truncate` child (text-overflow applies to a block child; it never bites the flex chip
+   itself). Fixed layout matters: in an auto-layout cell `max-width: 100%` resolves against a
+   content-sized cell and the truncating chip wins the width argument — the measured
+   `.copy-chip` hazard — while a fixed cell's width is pinned by its col. */
+.entry-head .tag { min-width: 0; max-width: 100%; }
+.entry-head .tag > .truncate { min-width: 0; }
+
 /* The neutral chip fill, worn by the plain tag and by the mono data chip. It is
    a selector list rather than a "write .tag-default too" instruction, because
    `.tag-data` is documented as a standalone variant of `.tag`. `.avatar-more`

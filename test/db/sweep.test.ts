@@ -50,6 +50,7 @@ function insertEntry(
     batch_id: ulid(),
     repo: "https://example.com/repo.git",
     file: "src/index.ts",
+    title: "the title",
     anchor_text: "hello world",
     anchor_before: "line before",
     anchor_after: "line after",
@@ -66,6 +67,7 @@ function insertEntry(
     applied_hash: "a".repeat(64),
     images: '["https://example.com/shot.png"]',
     human_notes: "a scratch note",
+    tag: "prefix",
     created_at: 1000,
     updated_at: 2000,
     applied_at: 0,
@@ -74,16 +76,17 @@ function insertEntry(
   };
   db.run(
     `INSERT INTO entries (
-      id, project_id, batch_id, repo, file, anchor_text, anchor_before, anchor_after,
+      id, project_id, batch_id, repo, file, title, anchor_text, anchor_before, anchor_after,
       anchor_hash, file_hash, agent_draft, human_text, status, context, constraints,
-      filed_by, stale_note, applied_hash, images, human_notes, created_at, updated_at, applied_at, archived_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      filed_by, stale_note, applied_hash, images, human_notes, tag, created_at, updated_at, applied_at, archived_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       row.id,
       row.project_id,
       row.batch_id,
       row.repo,
       row.file,
+      row.title,
       row.anchor_text,
       row.anchor_before,
       row.anchor_after,
@@ -99,6 +102,7 @@ function insertEntry(
       row.applied_hash,
       row.images,
       row.human_notes,
+      row.tag,
       row.created_at,
       row.updated_at,
       row.applied_at,
@@ -130,7 +134,7 @@ function count(conn: { db: Database }, sql: string, ...params: SQLQueryBindings[
 
 /** Every entry column except `archived_at`, which the sweep stamps: the copy must match the live row on all of them. */
 const ENTRY_COLUMNS =
-  "id, project_id, batch_id, repo, file, anchor_text, anchor_before, anchor_after, anchor_hash, file_hash, agent_draft, human_text, status, context, constraints, filed_by, stale_note, applied_hash, images, human_notes, created_at, updated_at, applied_at";
+  "id, project_id, batch_id, repo, file, title, anchor_text, anchor_before, anchor_after, anchor_hash, file_hash, agent_draft, human_text, status, context, constraints, filed_by, stale_note, applied_hash, images, human_notes, tag, created_at, updated_at, applied_at";
 
 async function waitUntil(predicate: () => boolean, timeoutMs: number): Promise<boolean> {
   const deadline = Date.now() + timeoutMs;

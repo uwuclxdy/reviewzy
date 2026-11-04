@@ -206,4 +206,18 @@ export const MIGRATIONS: Migration[] = [
       );
     `,
   },
+  {
+    version: 8,
+    name: "entry-tag",
+    sql: `
+      -- An optional free-form label the filing agent groups its entries by: what a bulk audit's
+      -- sample is a sample of. Stored raw like title — the wire boundary caps the length, the
+      -- store never trims or normalizes it, and it never joins the identity key, so a re-file
+      -- with a new tag overwrites the draft in place instead of minting a second row. Nullable:
+      -- an entry without one is untagged everywhere it renders. The archive mirrors entries
+      -- column-for-column, so it gains the column too.
+      ALTER TABLE entries ADD COLUMN tag TEXT;
+      ALTER TABLE entries_archive ADD COLUMN tag TEXT;
+    `,
+  },
 ];

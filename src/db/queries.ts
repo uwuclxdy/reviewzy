@@ -8,15 +8,18 @@ export type EntryStatus = "draft" | "approved" | "applied" | "rejected";
 /**
  * One entry as it crosses into the store: every field already typed, hashed, and stringified.
  * The json boundary belongs to the tool that reads the wire (`src/mcp/file-entries.ts`); nothing
- * here re-parses what it already accepted. `agentDraft`, `contextJson`, `constraintsJson`, and
- * `imagesJson` are null when the caller did not send the field: a first filing stores the empty
- * default, and a draft re-file keeps the stored value (the schema refuses explicit null, so no
- * caller can express a wipe).
+ * here re-parses what it already accepted. `agentDraft`, `contextJson`, `constraintsJson`,
+ * `imagesJson`, and `tag` are null when the caller did not send the field: a first filing stores
+ * the empty default (for the nullable `tag`, the column's own NULL), and a draft re-file keeps
+ * the stored value (the schema refuses explicit null, so no caller can express a wipe). `tag` is
+ * the one optional key: callers that predate it build a NewEntry without it, and absent reads as
+ * null.
  */
 export type NewEntry = {
   readonly repo: string;
   readonly file: string;
   readonly title: string | null;
+  readonly tag?: string | null;
   readonly anchorText: string;
   readonly anchorBefore: string;
   readonly anchorAfter: string;
@@ -51,6 +54,7 @@ export type EntryRow = {
   readonly repo: string;
   readonly file: string;
   readonly title: string | null;
+  readonly tag: string | null;
   readonly anchor_text: string;
   readonly anchor_before: string;
   readonly anchor_after: string;
@@ -75,12 +79,15 @@ export type EntryRow = {
 /**
  * Every filter is `| undefined`, never optional: the tool always passes all of them, so the query
  * builder can test presence with `!== undefined` and the caller never wonders which keys exist.
+ * `tag` alone is an optional key: store-level callers that predate it construct this filter
+ * without it, and absent filters nothing, exactly as `undefined` does.
  */
 export type ListEntriesFilter = {
   readonly projectId: string | undefined;
   readonly status: EntryStatus | undefined;
   readonly ids: readonly string[] | undefined;
   readonly q: string | undefined;
+  readonly tag?: string | undefined;
   readonly limit: number;
   readonly cursor: string | undefined;
 };
@@ -212,10 +219,10 @@ function fileOneEntry(
     const now = Date.now();
     db.run(
       `INSERT INTO entries (
-        id, project_id, batch_id, repo, file, title, anchor_text, anchor_before, anchor_after,
+        id, project_id, batch_id, repo, file, title, tag, anchor_text, anchor_before, anchor_after,
         anchor_hash, file_hash, agent_draft, human_text, status, context, constraints,
         filed_by, stale_note, images, created_at, updated_at, applied_at, archived_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, 'draft', ?, ?, ?, NULL, ?, ?, ?, NULL, NULL)`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, 'draft', ?, ?, ?, NULL, ?, ?, ?, NULL, NULL)`,
       [
         id,
         projectId,
@@ -223,6 +230,7 @@ function fileOneEntry(
         entry.repo,
         entry.file,
         entry.title,
+        entry.tag ?? null,
         entry.anchorText,
         entry.anchorBefore,
         entry.anchorAfter,
@@ -244,8 +252,8 @@ function fileOneEntry(
     // `COALESCE(?, column)`: a field the newer call did not carry (null) keeps the stored value.
     // The schema refuses explicit null, so a re-file can only move the fields it names.
     db.run(
-      "UPDATE entries SET agent_draft = COALESCE(?, agent_draft), context = COALESCE(?, context), constraints = COALESCE(?, constraints), title = COALESCE(?, title), images = COALESCE(?, images), updated_at = ? WHERE id = ?",
-      [entry.agentDraft, entry.contextJson, entry.constraintsJson, entry.title, entry.imagesJson, Date.now(), existing.id],
+      "UPDATE entries SET agent_draft = COALESCE(?, agent_draft), context = COALESCE(?, context), constraints = COALESCE(?, constraints), title = COALESCE(?, title), tag = COALESCE(?, tag), images = COALESCE(?, images), updated_at = ? WHERE id = ?",
+      [entry.agentDraft, entry.contextJson, entry.constraintsJson, entry.title, entry.tag ?? null, entry.imagesJson, Date.now(), existing.id],
     );
     return { id: existing.id, status: "draft", deduped: true, updated: true };
   }
@@ -279,7 +287,7 @@ const APPROVED_PAGE_SIZE = 50;
 
 /** The columns `docs/mcp-contract.md`'s entry schema names; the one place the output row's shape is spelled out in SQL. */
 const ENTRY_COLUMNS = [
-  "id", "project_id", "batch_id", "repo", "file", "title", "anchor_text", "anchor_before",
+  "id", "project_id", "batch_id", "repo", "file", "title", "tag", "anchor_text", "anchor_before",
   "anchor_after", "anchor_hash", "file_hash", "agent_draft", "human_notes", "human_text", "status",
   "context", "constraints", "filed_by", "stale_note", "applied_hash", "images", "created_at",
   "updated_at", "applied_at", "archived_at",
@@ -316,6 +324,12 @@ export function listEntries(store: Store, filter: ListEntriesFilter): ListEntrie
       `(instr(lower(file), lower(?)) > 0 OR instr(lower(anchor_text), lower(?)) > 0 OR instr(lower(agent_draft), lower(?)) > 0 OR instr(lower(human_text), lower(?)) > 0)`,
     );
     params.push(filter.q, filter.q, filter.q, filter.q);
+  }
+  if (filter.tag !== undefined) {
+    // Exact match, never LIKE: a substring tag filter would make "prefix" answer for "prefix-2",
+    // and a tag no row carries is an empty page, not a refusal.
+    where.push("tag = ?");
+    params.push(filter.tag);
   }
   if (filter.cursor !== undefined) {
     where.push("id > ?");
