@@ -43,6 +43,7 @@ function draft(over: Partial<NewEntry>): NewEntry {
     repo: "https://example.com/org/repo.git",
     file: "docs/setup.md",
     title: "Setup wording",
+    tag: null,
     anchorText: "Run bun install",
     anchorBefore: "Run this before anything else.",
     anchorAfter: "Then run the tests.",

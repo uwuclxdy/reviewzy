@@ -1198,8 +1198,8 @@ button.setting-row {
    the fixed-layout entry cell, never a 200-char tag, sets the width, and the value is a
    `.truncate` child (text-overflow applies to a block child; it never bites the flex chip
    itself). Fixed layout matters: in an auto-layout cell `max-width: 100%` resolves against a
-   content-sized cell and the truncating chip wins the width argument — the measured
-   `.copy-chip` hazard — while a fixed cell's width is pinned by its col. */
+   content-sized cell and the truncating chip wins the width argument, while a fixed cell's
+   width is pinned by its col. */
 .entry-head .tag { min-width: 0; max-width: 100%; }
 .entry-head .tag > .truncate { min-width: 0; }
 

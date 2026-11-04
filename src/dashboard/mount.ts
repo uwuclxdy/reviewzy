@@ -493,8 +493,6 @@ async function styleGuideDraftReply(c: Context, store: Store, action: "approve" 
   return c.html(styleGuideRegionFragment(vm, state));
 }
 
-/** The three filters straight off an action's POST body, kept alive across a re-render. */
-||||||| parent of 2a6d1db (feat(mcp): optional per-entry tags, filterable in list and dashboard)
 /** The filters straight off an action's POST body, kept alive across a re-render. */
 async function listParamsFrom(form: FormData): Promise<ListParams> {
   const get = (key: string) => {

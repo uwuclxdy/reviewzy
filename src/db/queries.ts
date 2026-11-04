@@ -19,7 +19,7 @@ export type NewEntry = {
   readonly repo: string;
   readonly file: string;
   readonly title: string | null;
-  readonly tag?: string | null;
+  readonly tag: string | null;
   readonly anchorText: string;
   readonly anchorBefore: string;
   readonly anchorAfter: string;
@@ -87,7 +87,7 @@ export type ListEntriesFilter = {
   readonly status: EntryStatus | undefined;
   readonly ids: readonly string[] | undefined;
   readonly q: string | undefined;
-  readonly tag?: string | undefined;
+  readonly tag: string | undefined;
   readonly limit: number;
   readonly cursor: string | undefined;
 };

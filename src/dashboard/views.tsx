@@ -812,7 +812,7 @@ function EntryRowView({ entry }: { entry: EntryRow }) {
               block-level child, never to the flex chip itself. */}
           {entry.tag !== null ? (
             <span class="tag tag-data">
-              <span class="truncate">{entry.tag}</span>
+              <span class="truncate" title={entry.tag}>{entry.tag}</span>
             </span>
           ) : null}
         </div>
@@ -1059,7 +1059,7 @@ export type EditorState = {
 
 /** The one entry the editor edits, by the same keyset query the list uses; `undefined` when the id is unknown. */
 export function getEntry(store: Store, id: string): EntryRow | undefined {
-  return listEntries(store, { projectId: undefined, status: undefined, ids: [id], q: undefined, limit: 1, cursor: undefined })
+  return listEntries(store, { projectId: undefined, status: undefined, ids: [id], q: undefined, tag: undefined, limit: 1, cursor: undefined })
     .rows[0];
 }
 

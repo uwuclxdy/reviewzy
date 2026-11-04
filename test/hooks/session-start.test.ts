@@ -44,6 +44,7 @@ function draft(over: Partial<NewEntry> = {}): NewEntry {
     repo: "https://example.com/org/repo.git",
     file: "src/app.ts",
     title: null,
+    tag: null,
     anchorText: "anchor",
     anchorBefore: "",
     anchorAfter: "",
