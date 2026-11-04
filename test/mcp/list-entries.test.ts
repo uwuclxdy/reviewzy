@@ -149,7 +149,7 @@ describe("the tool surface", () => {
 });
 
 describe("the returned rows", () => {
-  test("carry the lean index row: id, project slug, file, title, status, updated_at — nothing else", async () => {
+  test("carry the lean index row: id, project slug, file, title, status, updated_at, human_notes — nothing else", async () => {
     await fileEntries({ project: "fields", filed_by: "audit-agent", entries: [entry()] });
     const { body } = await listEntries({ project: "fields" });
     expect(body.error).toBeUndefined();
@@ -159,10 +159,10 @@ describe("the returned rows", () => {
     const out = (body.result?.structuredContent as ListResult).entries[0]!;
     const stored = rows(first.store, "fields")[0]!;
 
-    // Exactly the approved lean shape, by equality on the key set: short scalar fields only, no
-    // text payloads, no images — a listed page stays a page. A new store column reaches this wire
-    // only when someone adds it here deliberately.
-    expect(Object.keys(out).sort()).toEqual(["file", "id", "project", "status", "title", "updated_at"]);
+    // Exactly the approved lean shape, by equality on the key set: short scalar fields only — the
+    // one text field is human_notes, capped by the same marker — and no images; a listed page stays
+    // a page. A new store column reaches this wire only when someone adds it here deliberately.
+    expect(Object.keys(out).sort()).toEqual(["file", "human_notes", "id", "project", "status", "title", "updated_at"]);
     expect(out.id).toBe(stored.id);
     expect(out.project).toBe("fields");
     expect(out.file).toBe(stored.file);
@@ -236,7 +236,7 @@ describe("the returned rows", () => {
     expect(byTitle.get("straddle")!.file).toBe(`${"a".repeat(199)}🔍…+5 chars`);
   });
 
-  test("human_notes is dashboard-only: stored notes never reach either wire channel", async () => {
+  test("human_notes rides the lean row (capped like every caller-supplied scalar); agent_draft and images never do", async () => {
     const filed = (await fileEntries({
       project: "private",
       entries: [entry({ images: ["https://example.com/shot.png"] })],
@@ -246,15 +246,15 @@ describe("the returned rows", () => {
 
     const { body } = await listEntries({ project: "private" });
     const out = (body.result?.structuredContent as ListResult).entries[0]!;
-    // Images are stored for the dashboard and off the agent wire entirely; the notes never reach
-    // either channel.
+    // The human's why is agent-readable; the agent's own draft and the images stay off the lean row.
+    expect(out.human_notes).toBe("private scratch");
+    expect("agent_draft" in out).toBe(false);
     expect("images" in out).toBe(false);
-    expect("human_notes" in out).toBe(false);
     expect(JSON.parse(rows(first.store, "private")[0]!.images as string)).toEqual(["https://example.com/shot.png"]);
-    // The text channel is the same object JSON-stringified; the notes must not leak there either.
+    // The text channel is the same object JSON-stringified: the notes ride it, the images never do.
     const text = body.result?.content?.[0]?.text ?? "";
-    expect(text).not.toContain("private scratch");
-    expect(text).not.toContain("human_notes");
+    expect(text).toContain("private scratch");
+    expect(text).not.toContain("shot.png");
   });
 });
 

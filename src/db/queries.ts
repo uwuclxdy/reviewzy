@@ -96,9 +96,11 @@ export type ListEntriesResult = {
 };
 
 /**
- * One approved row as `fetch_approved` returns it: the applying needs the contract's parenthetical
- * "text + anchor + constraints" and nothing else — no `context`, no `status`, since everything here
- * is approved by construction. `constraints` stays the stored string; the tool owns the parse.
+ * One approved row as the shared wire mapping receives it: the contract's parenthetical
+ * "text + anchor + constraints", plus `agent_draft` and `human_notes` — what the agent proposed
+ * and the human's why, the provenance a later session reads beside the approved text. No
+ * `context`; no `status` here (`entriesByIds` adds it for the await caller). `constraints` stays
+ * the stored string; the tool owns the parse.
  */
 export type ApprovedEntryRow = {
   readonly id: string;
@@ -110,6 +112,8 @@ export type ApprovedEntryRow = {
   readonly anchor_hash: string;
   readonly file_hash: string;
   readonly human_text: string | null;
+  readonly agent_draft: string | null;
+  readonly human_notes: string | null;
   readonly constraints: string;
 };
 
@@ -390,7 +394,7 @@ export function approvedEntries(
     params.push(filter.since);
   }
 
-  const sql = `SELECT id, repo, file, anchor_text, anchor_before, anchor_after, anchor_hash, file_hash, human_text, constraints FROM entries WHERE ${where.join(" AND ")} ORDER BY id LIMIT ?`;
+  const sql = `SELECT id, repo, file, anchor_text, anchor_before, anchor_after, anchor_hash, file_hash, human_text, agent_draft, human_notes, constraints FROM entries WHERE ${where.join(" AND ")} ORDER BY id LIMIT ?`;
   params.push(APPROVED_PAGE_SIZE);
 
   const rows = store.db.query(sql).all(...params) as ApprovedEntryRow[];
@@ -408,7 +412,7 @@ export function entriesByIds(
   store: Store,
   ids: readonly string[],
 ): readonly (ApprovedEntryRow & { readonly status: EntryStatus })[] {
-  const sql = `SELECT id, status, repo, file, anchor_text, anchor_before, anchor_after, anchor_hash, file_hash, human_text, constraints FROM entries WHERE id IN (${ids.map(() => "?").join(", ")})`;
+  const sql = `SELECT id, status, repo, file, anchor_text, anchor_before, anchor_after, anchor_hash, file_hash, human_text, agent_draft, human_notes, constraints FROM entries WHERE id IN (${ids.map(() => "?").join(", ")})`;
   return store.db.query(sql).all(...ids) as (ApprovedEntryRow & { readonly status: EntryStatus })[];
 }
 

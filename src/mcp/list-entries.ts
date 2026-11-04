@@ -37,9 +37,10 @@ function ellipsize(value: string): string {
 /**
  * The one mapping from stored rows to the wire's lean index row: every kept field spelled out, so
  * a new store column reaches the wire only when someone adds it here deliberately — the default
- * for a new column is OFF the wire (`human_notes` must never reach it; anchors, drafts, texts,
- * context, constraints, hashes, and images stay fetch_approved/dashboard-side). The SDK passes
- * structuredContent through untouched, so this projection is the strip, not the schema.
+ * for a new column is OFF the wire (`agent_draft` must never reach it; anchors, texts, context,
+ * constraints, hashes, and images stay fetch_approved/dashboard-side). `human_notes` is the one
+ * deliberate addition, capped like file/title. The SDK passes structuredContent through
+ * untouched, so this projection is the strip, not the schema.
  */
 function toWireEntry(row: EntryRow, slugByProjectId: ReadonlyMap<string, string>): z.infer<typeof Entry> {
   return {
@@ -47,22 +48,24 @@ function toWireEntry(row: EntryRow, slugByProjectId: ReadonlyMap<string, string>
     project: slugByProjectId.get(row.project_id) ?? row.project_id,
     file: ellipsize(row.file),
     title: row.title === null ? null : ellipsize(row.title),
+    human_notes: row.human_notes === null ? null : ellipsize(row.human_notes),
     status: row.status,
     updated_at: row.updated_at,
   };
 }
 
 /**
- * The contract's lean index row: short scalar fields only, no text payloads, no images — a listed
- * page of 200 rows must stay a page. The apply-back row is not reachable through this tool at all:
- * fetch_approved returns an approved entry's apply-back fields complete, and the dashboard reads
- * the store directly.
+ * The contract's lean index row: short scalar fields only, no text payloads beyond the capped
+ * `human_notes`, no images — a listed page of 200 rows must stay a page. The apply-back row is not
+ * reachable through this tool at all: fetch_approved returns an approved entry's apply-back fields
+ * complete, and the dashboard reads the store directly.
  */
 const Entry = z.object({
   id: z.string(),
   project: z.string(),
   file: z.string(),
   title: z.string().nullable(),
+  human_notes: z.string().nullable(),
   status: z.enum(["draft", "approved", "applied", "rejected"]),
   updated_at: z.number(),
 });
@@ -90,7 +93,7 @@ export function registerListEntriesTool(server: McpServer, store: Store): void {
     {
       title: "List entries for review",
       description:
-        "List the review queue's entries, ordered by ascending entry id. Every filter is optional and combines with AND. Walk pages via next_cursor; the walk is exhausted when it stops coming back. Each row is a lean index: id, project slug, file, title, status, updated_at. Apply-back fields (anchor, hashes, human text, constraints) come back through fetch_approved, and rejected or applied entries expose no agent-readable text anywhere — the dashboard owns authoring. An ids call adds missing_ids for an id no live row holds and archived_ids for one the sweep archived.",
+        "List the review queue's entries, ordered by ascending entry id. Every filter is optional and combines with AND. Walk pages via next_cursor; the walk is exhausted when it stops coming back. Each row is a lean index: id, project slug, file, title, status, updated_at, plus the human's own notes (human_notes, capped like file/title). Apply-back fields (anchor, the approved text, the agent's draft, constraints) come back through fetch_approved, and the agent's draft never rides this row — the dashboard owns authoring. An ids call adds missing_ids for an id no live row holds and archived_ids for one the sweep archived.",
       inputSchema: ListEntriesArgs,
       outputSchema: ListEntriesOutput,
     },

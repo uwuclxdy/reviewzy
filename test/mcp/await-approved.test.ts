@@ -300,11 +300,13 @@ describe("the wait", () => {
       notes: "no exclamation marks",
     });
     expect(Object.keys(wire!).sort()).toEqual([
+      "agent_draft",
       "anchor_after",
       "anchor_before",
       "anchor_text",
       "constraints",
       "file",
+      "human_notes",
       "id",
       "repo",
       "text",

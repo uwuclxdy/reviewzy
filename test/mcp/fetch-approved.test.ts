@@ -223,11 +223,13 @@ describe("what comes back", () => {
     const out = body.result?.structuredContent as FetchResult;
     const wire = out.entries[0]!;
     expect(Object.keys(wire).sort()).toEqual([
+      "agent_draft",
       "anchor_after",
       "anchor_before",
       "anchor_text",
       "constraints",
       "file",
+      "human_notes",
       "id",
       "repo",
       "text",
