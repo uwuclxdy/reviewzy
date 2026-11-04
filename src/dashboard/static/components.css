@@ -1200,7 +1200,7 @@ button.setting-row {
    itself). Fixed layout matters: in an auto-layout cell `max-width: 100%` resolves against a
    content-sized cell and the truncating chip wins the width argument, while a fixed cell's
    width is pinned by its col. */
-.entry-head .tag { min-width: 0; max-width: 100%; }
+.entry-head .tag { min-width: 0; max-width: 100%; align-self: flex-start; }
 .entry-head .tag > .truncate { min-width: 0; }
 
 /* The neutral chip fill, worn by the plain tag and by the mono data chip. It is
