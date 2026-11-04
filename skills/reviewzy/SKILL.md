@@ -12,15 +12,16 @@ load this skill whenever a copy change must wait on a human.
 
 ## tools
 
-five tools, one resource. names are unprefixed; the client namespaces by server.
+six tools, one resource. names are unprefixed; the client namespaces by server.
 
 | tool | what it does |
 |---|---|
 | `file_entries` | file one or more entries for a project, answers with a batch id and a dashboard url |
-| `list_entries` | filter the queue by project, status, ids, or text |
-| `fetch_approved` | return approved entries (text, anchor, constraints) plus the merged style guide |
+| `list_entries` | filter the queue by project, status, ids, tag, or text |
+| `fetch_approved` | return approved entries (text, anchor, constraints, the agent's draft, the human's notes) plus the merged style guide |
 | `await_approved` | block until named ids reach `approved` or `rejected` |
 | `mark_applied` | report an apply as `applied` or `anchor_stale` |
+| `file_style_guide` | propose a project style guide as a draft the human approves, edits, or discards on the dashboard |
 
 resource: `reviewzy://projects/{slug}/style-guide`, mime `text/markdown`. read it before drafting so the prose matches the project voice.
 
@@ -40,4 +41,4 @@ resource: `reviewzy://projects/{slug}/style-guide`, mime `text/markdown`. read i
 - anchors go stale when the file moves underneath an entry. re-verify `anchor_text` before replacing, and report `anchor_stale` rather than guessing.
 - constraints (`max_len`, `placeholders`, `tone`) are enforced at approval. a save that exceeds `max_len` or drops a declared placeholder is refused.
 - `await_approved` times out to `resolved: false` plus per-id statuses plus `poll_again_after_ms`; a timeout is never an error.
-- every entry carries exactly one file provenance: `file_content` (the whole file at filing time) or `file_hash` (sha256 hex). sending both or neither is refused. a `draft` re-file never refreshes `file_hash`: the overwrite touches only the agent draft, context, constraints, title, and images, so the stored hash stays from the first filing even when the newer call sends fresh `file_content`.
+- every entry carries exactly one file provenance: `file_content` (the whole file at filing time) or `file_hash` (sha256 hex). sending both or neither is refused. a `draft` re-file never refreshes `file_hash`: the overwrite touches only the agent draft, context, constraints, title, tag, and images, so the stored hash stays from the first filing even when the newer call sends fresh `file_content`.

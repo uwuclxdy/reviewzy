@@ -50,7 +50,8 @@ the call answers with the entry as `draft` and a dashboard link for the batch:
 
 - **file + snippet anchors, no i18n keys:** apply-back is a targeted replace in place
 - **humans author, agents apply:** the status machine is server-enforced; only the dashboard reaches `approved` or `rejected`
-- **per-project style guide (mcp resource):** merged with the global guide, embedded in `fetch_approved`
+- **per-project style guide (mcp resource):** merged with the global guide, embedded in `fetch_approved`, injected at session start by the plugin's hook
+- **per-entry tags:** label what each entry is a sample of, filter the queue by it on the dashboard and through `list_entries`
 - **append-only revision history:** every save is undoable; history survives archiving
 - **ntfy and webhook notifications, archive retention:** one ping per filing batch; applied entries archive after `ARCHIVE_AFTER_DAYS`
 
@@ -58,10 +59,10 @@ the call answers with the entry as `draft` and a dashboard link for the batch:
 
 | stage | who | what happens |
 |---|---|---|
-| file | agent | `file_entries` through the stdio shim, which finds or spawns one shared daemon |
+| file | agent | `file_entries` through the stdio shim — or `reviewzy file <entries.json>` for a script's bulk batch — which finds or spawns one shared daemon |
 | notify | daemon | pings ntfy or the webhook with a dashboard link |
 | author | human | edits, approves, or rejects on the dashboard; saving prose releases it as `approved` |
-| fetch | agent | `fetch_approved` (or a blocking `await_approved`) returns text, anchor, constraints, and the merged style guide |
+| fetch | agent | `fetch_approved` (or a blocking `await_approved`) returns text, anchor, constraints, the agent's draft, the human's notes, and the merged style guide |
 | apply | agent | replaces the anchor, reports through `mark_applied` |
 | archive | daemon | applied entries past `ARCHIVE_AFTER_DAYS` move to the archive with their revisions |
 
@@ -90,7 +91,7 @@ bun run daemon
 
 ### Claude Code plugin
 
-the plugin registers the MCP server and adds a `/reviewzy` slash command plus the reviewzy skill.
+the plugin registers the MCP server and adds a `/reviewzy` slash command, the reviewzy skill, and a SessionStart hook that injects the project's merged style guide into session context (silent when the project has no guide of its own; the harness caps hook output at 10000 chars, so guides have a size budget).
 
 ```
 /plugin marketplace add uwuclxdy/reviewzy
@@ -120,6 +121,14 @@ curl http://127.0.0.1:3123/health
 ```
 
 open http://127.0.0.1:3123/ for the dashboard. it needs a current evergreen browser (chrome/edge 117+, safari 16.2+, firefox 121+); older engines get a degraded page, since no fallback sheet ships.
+
+### File from a script
+
+```
+reviewzy file entries.json
+```
+
+a bulk-audit script files without carrying source files through the model: the json takes `project`, `filed_by?`, and `entries[]`, each entry naming a local `repo` checkout directory plus its `file`. the verb reads every file from disk, resolves each repo's provenance to its git remote url, and refuses hand-supplied `file_content`/`file_hash`; anchor verification, re-file dedupe, and notifications stay server-side. usage errors exit 2, refusals exit 1, success prints the tool's result as one json line.
 
 ## Configuration
 
@@ -176,7 +185,7 @@ the blocking human-in-the-loop mcp family pops a dialog per call: no queue, no p
 
 **How do I bulk-rewrite all user-facing copy in a codebase?** file batches per project, review one table per project on the dashboard, approve in bulk with a before/after diff, then let a later agent session fetch and apply.
 
-**How do I update the style guide my agents read?** edit it on the dashboard at `/style-guide`. a saved edit reaches agents in up to 60 seconds.
+**How do I update the style guide my agents read?** edit it on the dashboard at `/style-guide`, or approve an agent's `file_style_guide` proposal there. a saved edit reaches agents in up to 60 seconds.
 
 ## Development
 
