@@ -35,6 +35,7 @@ function draft(over: Partial<NewEntry>): NewEntry {
     repo: "https://example.com/org/repo.git",
     file: "docs/readme.md",
     title: null,
+    tag: null,
     anchorText: "anchor",
     anchorBefore: "",
     anchorAfter: "",
@@ -538,7 +539,7 @@ describe("dashboard entry list", () => {
     const done = serveApp();
     try {
       const batch = fileEntries(done.store, "alpha", "probe-agent", [
-        draft({ file: "docs/a.md", anchorText: "a", anchorHash: "hd", fileHash: "fd", agentDraft: "A note." }),
+        draft({ file: "docs/a.md", anchorText: "a", anchorHash: "hd", fileHash: "fd", agentDraft: "A note.", tag: "terminal" }),
       ]);
       done.store.db.run("UPDATE entries SET status = 'applied' WHERE id = ?", [batch.results[0]!.id]);
       const html = await (await done.get("/")).text();
@@ -546,15 +547,22 @@ describe("dashboard entry list", () => {
       expect(html).not.toContain("entry-head");
       // No filters are active, so the filter-miss escape hatch does not show either.
       expect(html).not.toContain("Clear filters");
-      // The explicit all-statuses view still shows the row.
+      // The explicit all-statuses view still shows the row, wearing its bounded tag chip with the
+      // full value as the title affordance.
       const all = await (await done.get("/?status=all")).text();
       expect(all).toContain(`class="entry-link truncate" href="/entries/${batch.results[0]!.id}">a</a>`);
+      expect(all).toContain('<span class="truncate" title="terminal">terminal</span>');
       // A search matching only terminal rows names the hiding view and offers the way onward
       // (hono JSX escapes the href's ampersands).
       const searched = await (await done.get("/?q=a")).text();
       expect(searched).toContain("No entries match");
       expect(searched).toContain("Applied and rejected entries are hidden from this view.");
       expect(searched).toContain('href="/?q=a&amp;project=&amp;status=all"');
+      // A tag filter whose only matches are terminal keeps the tag on the way onward, so the
+      // escape hatch never widens past the filter it relaxes.
+      const tagged = await (await done.get("/?tag=terminal")).text();
+      expect(tagged).toContain("Applied and rejected entries are hidden from this view.");
+      expect(tagged).toContain('href="/?q=&amp;project=&amp;status=all&amp;tag=terminal"');
       // A search that matches nothing keeps the plain filter-miss state.
       const missed = await (await done.get("/?q=zzz")).text();
       expect(missed).toContain("No entries match");
@@ -749,6 +757,7 @@ describe("dashboard entry list", () => {
         status: undefined,
         ids: undefined,
         q: undefined,
+        tag: undefined,
         cursor: undefined,
         limit: 200,
       });
@@ -757,6 +766,7 @@ describe("dashboard entry list", () => {
         status: undefined,
         ids: undefined,
         q: undefined,
+        tag: undefined,
         cursor: page1.nextCursor ?? undefined,
         limit: 200,
       });
