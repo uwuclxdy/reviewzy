@@ -444,3 +444,21 @@ describe("the session-start hook", () => {
     }
   });
 });
+
+describe("the plugin manifest", () => {
+  test("wires SessionStart to this repo's hook script on the bun command, bounded at 10s", async () => {
+    // The hook suites spawn hooks/session-start.ts directly; nothing else reads hooks.json, so a
+    // typo in the path, event key, or timeout would ship with every check green and a hook that
+    // never fires.
+    const manifest = JSON.parse(
+      await Bun.file(new URL("../../hooks/hooks.json", import.meta.url)).text(),
+    ) as {
+      hooks?: { SessionStart?: { hooks?: { type: string; command: string; timeout: number }[] }[] };
+    };
+    const entry = manifest.hooks?.SessionStart?.at(0)?.hooks?.at(0);
+    expect(entry?.type).toBe("command");
+    expect(entry?.command).toContain("${CLAUDE_PLUGIN_ROOT}/hooks/session-start.ts");
+    expect(entry?.command).toMatch(/^bun /);
+    expect(entry?.timeout).toBe(10);
+  });
+});
