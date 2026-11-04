@@ -1,7 +1,17 @@
 #!/usr/bin/env bun
+import { runFileCommand } from "../src/cli/file.ts";
 import { runShim } from "../src/shim/main.ts";
 
-runShim().catch((error: unknown) => {
+// The shim stays the default so the mcp config's stdio command is untouched: only the explicit
+// `file` verb routes to the CLI.
+const [, , verb, ...rest] = process.argv;
+const fail = (error: unknown) => {
   console.error(error instanceof Error ? error.message : String(error));
   process.exit(1);
-});
+};
+
+if (verb === "file") {
+  runFileCommand(rest).catch(fail);
+} else {
+  runShim().catch(fail);
+}
