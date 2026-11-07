@@ -1,8 +1,8 @@
 import { appendFileSync, readFileSync, realpathSync, statSync, type Stats } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve, sep } from "node:path";
 import { loadConfig, type Config } from "../config.ts";
 import { forwardLine } from "../shim/main.ts";
-import { ensureDaemon, type DaemonHandle } from "../shim/daemon.ts";
+import { ensureDaemon, TransportAuthError, TRANSPORT_AUTH, type DaemonHandle } from "../shim/daemon.ts";
 import { lockfilePath } from "../shim/lockfile.ts";
 import { NAME, VERSION } from "../version.ts";
 
@@ -28,6 +28,7 @@ const ENTRY_KEYS = new Set([
   "repo",
   "file",
   "title",
+  "tag",
   "anchor_text",
   "anchor_before",
   "anchor_after",
@@ -57,7 +58,7 @@ type Provenance = { file: string; file_content: string };
 
 type ReplyFrame = {
   result?: { isError?: boolean; structuredContent?: unknown; content?: { text?: string }[] };
-  error?: { message?: string };
+  error?: { message?: string; data?: { transport?: string } };
 };
 
 function refuse(where: string, problem: string, fix: string): never {
@@ -79,14 +80,8 @@ export async function runFileCommand(argv: string[]): Promise<void> {
     console.log(JSON.stringify(output));
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    // The transport is the only producer of these two phrases: a relayed tool refusal quotes the
-    // entry's own text, which may contain anything, so a bare substring would decorate an
-    // unrelated refusal with token advice. The credential that fixes a real mismatch lives in this
-    // process's environment.
-    const tokenMismatch =
-      message.includes("daemon replied http 401") || message.includes("refused /drain with http 401");
     console.error(
-      tokenMismatch
+      error instanceof TransportAuthError
         ? `${message}. fix: set REVIEWZY_TOKEN in this process's environment to the daemon's token, or unset it on both sides`
         : message,
     );
@@ -118,7 +113,11 @@ async function fileThroughDaemon(config: Config, args: Record<string, unknown>):
     throw new Error("reviewzy: the daemon answered with a frame that is not an object");
   }
   if (parsed.error !== undefined) {
-    throw new Error(`reviewzy: ${parsed.error.message ?? "the daemon refused the call"}`);
+    const message = `reviewzy: ${parsed.error.message ?? "the daemon refused the call"}`;
+    // The shim marks a 401 on the error frame (see transportError); the marker rides as data, so
+    // the auth signal is matched by type here, never by message text.
+    if (parsed.error.data?.transport === TRANSPORT_AUTH) throw new TransportAuthError(message);
+    throw new Error(message);
   }
 
   const result = parsed.result;
@@ -182,7 +181,11 @@ async function ensureDaemonQuietly(config: Config): Promise<DaemonHandle> {
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    throw new Error(notes.length > 0 ? [...notes, message].join("\n") : message);
+    const narration = notes.length > 0 ? [...notes, message].join("\n") : message;
+    // The rewrap must not erase the auth signal: runFileCommand matches the class, never message
+    // text, so a relayed refusal quoting a transport phrase can never read as a token mismatch.
+    if (error instanceof TransportAuthError) throw new TransportAuthError(narration);
+    throw new Error(narration);
   } finally {
     // Guarded, not blind: a nested capture may already have replaced the patch, and a blind restore
     // would then clobber it with ours.
@@ -223,7 +226,7 @@ function buildArguments(input: InputFile): Record<string, unknown> {
 function readProvenance(entries: readonly Entry[]): Provenance[] {
   const rows = new Map<string, Provenance>();
   const readFrom = new Map<string, { repo: string; index: number }>();
-  const resolvedRepos = new Map<string, string>();
+  const resolvedRepos = new Map<string, { text: string; root: string }>();
   for (const [index, entry] of entries.entries()) {
     const where = entryWhere(entry, index);
     const repoPath = entry.repo as string;
@@ -231,14 +234,28 @@ function readProvenance(entries: readonly Entry[]): Provenance[] {
 
     let resolvedRepo = resolvedRepos.get(repoPath);
     if (resolvedRepo === undefined) {
-      resolvedRepo = resolveRepoText(repoPath, where);
+      // The root is the containment check's trusted side, real-pathed so a repo reached through its
+      // own symlink contains its files; a repo that vanishes between the two syscalls refuses like
+      // any other missing directory.
+      const text = resolveRepoText(repoPath, where);
+      let root: string;
+      try {
+        root = realpathSync(repoPath);
+      } catch (error) {
+        refuse(
+          where,
+          `repo "${repoPath}" is not an existing local directory (${(error as NodeJS.ErrnoException).code})`,
+          "set repo to an existing local checkout directory",
+        );
+      }
+      resolvedRepo = { text, root };
       resolvedRepos.set(repoPath, resolvedRepo);
     }
-    entry.repo = resolvedRepo;
+    entry.repo = resolvedRepo.text;
 
     const seen = readFrom.get(file);
     if (seen !== undefined) {
-      if (seen.repo !== resolvedRepo) {
+      if (seen.repo !== resolvedRepo.text) {
         refuse(
           where,
           `file "${file}" was already read from repo "${seen.repo}" (entries[${seen.index}])`,
@@ -248,9 +265,10 @@ function readProvenance(entries: readonly Entry[]): Provenance[] {
       continue;
     }
 
+    const realFile = containedFilePath(repoPath, file, resolvedRepo.root, where);
     let content: string;
     try {
-      content = readFileSync(join(repoPath, file), "utf8");
+      content = readFileSync(realFile, "utf8");
     } catch (error) {
       refuse(
         where,
@@ -258,10 +276,33 @@ function readProvenance(entries: readonly Entry[]): Provenance[] {
         "set file to a path that exists relative to the repo root",
       );
     }
-    readFrom.set(file, { repo: resolvedRepo, index });
+    readFrom.set(file, { repo: resolvedRepo.text, index });
     rows.set(file, { file, file_content: content });
   }
   return [...rows.values()];
+}
+
+/**
+ * Resolves one entry's file to its real path inside the repo: both sides go through realpath, so a
+ * `..` segment and a symlink out of the repo refuse the same way, while a repo reached through its
+ * own symlink still contains its files. The root itself counts as inside — the caller's read then
+ * fails on the directory as it always has.
+ */
+function containedFilePath(repoPath: string, file: string, repoRoot: string, where: string): string {
+  let realFile: string;
+  try {
+    realFile = realpathSync(resolve(repoPath, file));
+  } catch (error) {
+    refuse(
+      where,
+      `repo file "${file}" cannot be read (${(error as NodeJS.ErrnoException).code})`,
+      "set file to a path that exists relative to the repo root",
+    );
+  }
+  if (realFile !== repoRoot && !realFile.startsWith(`${repoRoot}${sep}`)) {
+    refuse(where, `file "${file}" escapes the repo root`, "set file to a path that resolves inside the repo root");
+  }
+  return realFile;
 }
 
 /**
@@ -407,10 +448,13 @@ function validateEntryShape(value: unknown, index: number): void {
 
   const unknown = Object.keys(entry).filter((key) => !ENTRY_KEYS.has(key));
   if (unknown.length > 0) {
+    // Derived from the set, never a second list: two hand-held lists are how an allowed key goes
+    // missing from this message.
+    const allowed = [...ENTRY_KEYS].map((key, i, all) => (i === all.length - 1 ? `and ${key}` : key)).join(", ");
     refuse(
       where,
       `unrecognized key(s) ${unknown.map((key) => JSON.stringify(key)).join(", ")}`,
-      "entries take only repo, file, title, anchor_text, anchor_before, anchor_after, agent_draft, context, constraints, and images; drop the extra key or spell it snake_case",
+      `entries take only ${allowed}; drop the extra key or spell it snake_case`,
     );
   }
 

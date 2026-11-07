@@ -20,8 +20,20 @@ export type DaemonHandle = { pid: number; port: number; version: string };
 
 /** A lifecycle failure a caller can tell apart from a bug: bad state on disk, not broken code. */
 export class ShimError extends Error {
-  override readonly name = "ShimError";
+  // Typed as string, not the literal: subclasses override it with their own names.
+  override readonly name: string = "ShimError";
 }
+
+/**
+ * A 401 from the daemon's own transport surface: the token mismatched. Typed so callers match the
+ * class, never message text — a relayed tool refusal can quote any phrase in the entry's own words.
+ */
+export class TransportAuthError extends ShimError {
+  override readonly name = "TransportAuthError";
+}
+
+/** The `data.transport` value marking a 401 transport-error frame; main.ts sets it, the file verb reads it. */
+export const TRANSPORT_AUTH = "auth";
 
 const HEALTH_POLL_MS = 50;
 const HEALTH_BOOT_TIMEOUT_MS = 10_000;
@@ -142,7 +154,10 @@ async function drainAndAwaitExit(lock: Lockfile, token: string | undefined): Pro
     );
   }
   if (response.status !== 200) {
-    throw new ShimError(`reviewzy: daemon pid ${lock.pid} refused /drain with http ${response.status}`);
+    // Only a token mismatch carries the auth type: a 405 or 500 refuses the drain for reasons no
+    // credential fixes, and token advice on it would name a fix that cannot work.
+    const message = `reviewzy: daemon pid ${lock.pid} refused /drain with http ${response.status}`;
+    throw response.status === 401 ? new TransportAuthError(message) : new ShimError(message);
   }
 
   const deadline = Date.now() + DRAIN_EXIT_TIMEOUT_MS;

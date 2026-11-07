@@ -45,7 +45,7 @@ async function abandonedPort(): Promise<number> {
   });
 }
 
-type Frame = { jsonrpc?: string; id?: number | string | null; result?: unknown; error?: { code: number; message?: string } };
+type Frame = { jsonrpc?: string; id?: number | string | null; result?: unknown; error?: { code: number; message?: string; data?: { transport?: string } } };
 
 describe("forwardLine", () => {
   test("carries a request to the daemon and returns its response frame verbatim", async () => {
@@ -203,6 +203,8 @@ describe("forwardLine against a bearer-guarded daemon", () => {
     expect(frame.error).toBeDefined();
     // The daemon's 401 body is an OAuth challenge, not a JSON-RPC frame; stdout must never see it.
     expect(frame.error?.message).toContain("401");
+    // The auth marker rides the frame as data, so clients match the type, never the message text.
+    expect(frame.error?.data).toEqual({ transport: "auth" });
   });
 
   test("with the token the request is served normally", async () => {

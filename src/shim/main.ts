@@ -1,6 +1,6 @@
 import * as readline from "node:readline";
 import { loadConfig } from "../config.ts";
-import { ensureDaemon } from "./daemon.ts";
+import { ensureDaemon, TRANSPORT_AUTH } from "./daemon.ts";
 import { lockfilePath } from "./lockfile.ts";
 import { VERSION } from "../version.ts";
 
@@ -53,7 +53,11 @@ function deriveHeaders(frame: LooseFrame | undefined): Record<string, string> {
  * only), carrying the request's own id so the client can match it. A notification gets silence:
  * the protocol never answers one, not even with an error.
  */
-function transportError(frame: LooseFrame | undefined, message: string): string | null {
+function transportError(
+  frame: LooseFrame | undefined,
+  message: string,
+  data?: { transport: string },
+): string | null {
   // A notification is the ABSENCE of the `id` key; reading `id === null` as "no id" would answer
   // an error frame to a message the protocol says can never be answered.
   const isNotification = frame === undefined || !("id" in frame);
@@ -64,7 +68,7 @@ function transportError(frame: LooseFrame | undefined, message: string): string 
   return JSON.stringify({
     jsonrpc: "2.0",
     id: (frame as { id: unknown }).id,
-    error: { code: -32603, message },
+    error: { code: -32603, message, ...(data === undefined ? {} : { data }) },
   });
 }
 
@@ -148,11 +152,16 @@ export async function forwardLine(
   // `202 Accepted` is the transport's "notification received": no response frame exists for it.
   if (response.status === 202) return null;
 
+  // A 401 means the token mismatched, whatever reply shape carries it: every body-shaped transport
+  // error below carries the auth marker, which clients match by type, never by text. A 401 whose
+  // body is itself a valid frame relays without the marker — no producer answers 401 that way.
+  const authFailure = response.status === 401 ? { transport: TRANSPORT_AUTH } : undefined;
+
   const text = await response.text();
   // A 200 with an empty body answers nothing; for a request, that is a transport error, not
   // silence (a notification still gets silence, since transportError drops those).
   if (text === "") {
-    return transportError(frame, `daemon replied http ${response.status} with an empty body`);
+    return transportError(frame, `daemon replied http ${response.status} with an empty body`, authFailure);
   }
 
   // The legacy leg answers every request as an SSE body: a stateless server has no session to
@@ -169,7 +178,11 @@ export async function forwardLine(
       if (data.length > 0) frames.push(data.join("\n"));
     }
     if (frames.length === 0) {
-      return transportError(frame, `daemon replied http ${response.status} with an sse body carrying no data frame`);
+      return transportError(
+        frame,
+        `daemon replied http ${response.status} with an sse body carrying no data frame`,
+        authFailure,
+      );
     }
     return frames.join("\n");
   }
@@ -178,13 +191,13 @@ export async function forwardLine(
   try {
     parsed = JSON.parse(text);
   } catch {
-    return transportError(frame, `daemon replied http ${response.status} with a non-json body`);
+    return transportError(frame, `daemon replied http ${response.status} with a non-json body`, authFailure);
   }
   if (typeof parsed === "object" && parsed !== null && "jsonrpc" in parsed) return text;
 
   // E.g. the daemon's 401 OAuth challenge body: a real reply, but not a frame; stdout must never
   // carry it raw.
-  return transportError(frame, `daemon replied http ${response.status} with a non-json-rpc body`);
+  return transportError(frame, `daemon replied http ${response.status} with a non-json-rpc body`, authFailure);
 }
 
 /** The wait for in-flight frames after stdin closes, before the shim exits. */

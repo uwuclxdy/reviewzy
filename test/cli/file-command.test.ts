@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { loadConfig } from "../../src/config.ts";
@@ -65,9 +65,15 @@ function seedGitRepo(dir: string, name: string, remote: string): string {
 }
 
 /** Runs the published bin exactly as a user would, every path sandboxed away from the real HOME. */
-function runCli(workdir: string, port: number, jsonPath: string, argv: string[] = ["file", jsonPath]) {
+function runCli(
+  workdir: string,
+  port: number,
+  jsonPath: string,
+  argv: string[] = ["file", jsonPath],
+  envExtra: Record<string, string> = {},
+) {
   const child = Bun.spawn([process.execPath, "bin/reviewzy", ...argv], {
-    env: sandboxEnv(workdir, port),
+    env: { ...sandboxEnv(workdir, port), ...envExtra },
     stdin: "ignore",
     stdout: "pipe",
     stderr: "pipe",
@@ -364,5 +370,197 @@ describe("reviewzy file <entries.json>", () => {
     const stderr = await new Response(child.stderr).text();
     expect(stderr).toContain("reviewzy");
     expect(await new Response(child.stdout).text()).toBe("");
+  });
+
+  test("the verb accepts tag: a tagged entry files and the store row carries the tag", async () => {
+    const dir = scratch();
+    const port = freePort();
+    const repo = seedRepo(dir, "tag-repo");
+    const json = writeJson(dir, "tag.json", {
+      project: "cli-tag",
+      entries: [{ repo, file: "src/app.ts", anchor_text: "Save changes", agent_draft: "Save your changes", tag: "sample" }],
+    });
+
+    const run = await runCli(dir, port, json);
+    expect(run.stderr).toBe("");
+    expect(run.code).toBe(0);
+
+    const store = openStore(loadConfig({ REVIEWZY_DB: join(dir, "reviewzy.db") }));
+    try {
+      const row = store.db.query("SELECT tag FROM entries").get() as { tag: string | null };
+      expect(row.tag).toBe("sample");
+    } finally {
+      store.close();
+    }
+  });
+
+  test("the unknown-entry-key refusal lists tag among the allowed keys", async () => {
+    const dir = scratch();
+    const port = freePort();
+    const repo = seedRepo(dir, "keys-repo");
+    const json = writeJson(dir, "keys.json", {
+      project: "cli-keys",
+      entries: [{ repo, file: "src/app.ts", anchor_text: "Save changes", agent_draft: "x", bogus_key: "y" }],
+    });
+
+    const run = await runCli(dir, port, json);
+    expect(run.code).toBe(1);
+    expect(run.stderr).toContain('"bogus_key"');
+    expect(run.stderr).toContain("title, tag, anchor_text");
+  });
+
+  test("an entry file that escapes the repo root (`..`) refuses by name, exit 1, nothing filed", async () => {
+    const dir = scratch();
+    const port = freePort();
+    const repo = seedRepo(dir, "escape-repo");
+    mkdirSync(join(dir, "outside"), { recursive: true });
+    writeFileSync(join(dir, "outside", "leak.txt"), "secret: top secret line\n");
+    const json = writeJson(dir, "escape.json", {
+      project: "cli-escape",
+      entries: [{ repo, file: "../outside/leak.txt", anchor_text: "secret: top secret line", agent_draft: "x" }],
+    });
+
+    const run = await runCli(dir, port, json);
+    expect(run.code).toBe(1);
+    expect(run.stderr).toContain("entries[0]");
+    expect(run.stderr).toContain("escapes the repo root");
+
+    const store = openStore(loadConfig({ REVIEWZY_DB: join(dir, "reviewzy.db") }));
+    try {
+      const rows = store.db.query("SELECT COUNT(*) AS n FROM entries").get() as { n: number };
+      expect(rows.n).toBe(0);
+    } finally {
+      store.close();
+    }
+  });
+
+  test("an entry file that escapes the repo root through a symlink refuses by name, exit 1", async () => {
+    const dir = scratch();
+    const port = freePort();
+    const repo = seedRepo(dir, "symlink-repo");
+    mkdirSync(join(dir, "outside"), { recursive: true });
+    writeFileSync(join(dir, "outside", "leak.txt"), "secret: top secret line\n");
+    symlinkSync(join(dir, "outside", "leak.txt"), join(repo, "link.txt"));
+    const json = writeJson(dir, "symlink.json", {
+      project: "cli-symlink",
+      entries: [{ repo, file: "link.txt", anchor_text: "secret: top secret line", agent_draft: "x" }],
+    });
+
+    const run = await runCli(dir, port, json);
+    expect(run.code).toBe(1);
+    expect(run.stderr).toContain("entries[0]");
+    expect(run.stderr).toContain("escapes the repo root");
+
+    const store = openStore(loadConfig({ REVIEWZY_DB: join(dir, "reviewzy.db") }));
+    try {
+      const rows = store.db.query("SELECT COUNT(*) AS n FROM entries").get() as { n: number };
+      expect(rows.n).toBe(0);
+    } finally {
+      store.close();
+    }
+  });
+
+  test("a relayed refusal carrying a transport-error phrase gets no token advice", async () => {
+    const dir = scratch();
+    const port = freePort();
+    const repo = seedRepo(dir, "phrase-repo");
+    const json = writeJson(dir, "phrase.json", {
+      project: "cli-phrase",
+      entries: [
+        {
+          repo,
+          file: "src/app.ts",
+          anchor_text: "Save changes",
+          agent_draft: "Save your changes",
+          context: "daemon replied http 401 with a non-json-rpc body",
+        },
+      ],
+    });
+
+    const run = await runCli(dir, port, json);
+    expect(run.code).toBe(1);
+    expect(run.stderr).toContain("context must be a json object");
+    expect(run.stderr).not.toContain("fix: set REVIEWZY_TOKEN");
+  });
+
+  test("a real 401 from the daemon still appends the token advice", async () => {
+    const dir = scratch();
+    const port = freePort();
+    const repo = seedRepo(dir, "auth-repo");
+    const json = writeJson(dir, "auth.json", {
+      project: "cli-auth",
+      entries: [{ repo, file: "src/app.ts", anchor_text: "Save changes", agent_draft: "Save your changes" }],
+    });
+
+    // The daemon is ensured with the token first, so the lockfile holds a token-carrying daemon;
+    // the second run drops the token and its filing call answers 401.
+    const first = await runCli(dir, port, json, undefined, { REVIEWZY_TOKEN: "sekrit" });
+    expect(first.code).toBe(0);
+    const second = await runCli(dir, port, json);
+    expect(second.code).toBe(1);
+    expect(second.stderr).toContain("fix: set REVIEWZY_TOKEN in this process's environment");
+  });
+
+  test("a real 401 on the dev drain still appends the token advice", async () => {
+    const dir = scratch();
+    const port = freePort();
+    const repo = seedRepo(dir, "drain-repo");
+    const json = writeJson(dir, "drain.json", {
+      project: "cli-drain",
+      entries: [{ repo, file: "src/app.ts", anchor_text: "Save changes", agent_draft: "Save your changes" }],
+    });
+
+    const first = await runCli(dir, port, json, undefined, { REVIEWZY_TOKEN: "sekrit" });
+    expect(first.code).toBe(0);
+    // REVIEWZY_DEV=1 forces the startup drain; the drained daemon carries the token, the CLI does not.
+    const second = await runCli(dir, port, json, undefined, { REVIEWZY_DEV: "1" });
+    expect(second.code).toBe(1);
+    expect(second.stderr).toContain("fix: set REVIEWZY_TOKEN in this process's environment");
+  });
+
+  test("an entry path that stays inside the repo through `..` still files", async () => {
+    const dir = scratch();
+    const port = freePort();
+    const repo = seedRepo(dir, "dotdot-repo");
+    const json = writeJson(dir, "dotdot.json", {
+      project: "cli-dotdot",
+      entries: [{ repo, file: "src/../src/app.ts", anchor_text: "Save changes", agent_draft: "Save your changes" }],
+    });
+
+    const run = await runCli(dir, port, json);
+    expect(run.code).toBe(0);
+    expect(run.stderr).toBe("");
+  });
+
+  test("a sibling directory sharing the repo name's prefix escapes: containment is not a prefix match", async () => {
+    const dir = scratch();
+    const port = freePort();
+    const repo = seedRepo(dir, "prefix-repo");
+    seedRepo(dir, "prefix-repo-evil");
+    writeFileSync(join(dir, "prefix-repo-evil", "leak.txt"), "secret: top secret line\n");
+    const json = writeJson(dir, "prefix.json", {
+      project: "cli-prefix",
+      entries: [{ repo, file: "../prefix-repo-evil/leak.txt", anchor_text: "secret: top secret line", agent_draft: "x" }],
+    });
+
+    const run = await runCli(dir, port, json);
+    expect(run.code).toBe(1);
+    expect(run.stderr).toContain("escapes the repo root");
+  });
+
+  test("a repo reached through its own symlink still files: the containment root is real-pathed", async () => {
+    const dir = scratch();
+    const port = freePort();
+    const real = seedRepo(dir, "real-repo");
+    const repo = join(dir, "link-repo");
+    symlinkSync(real, repo);
+    const json = writeJson(dir, "linkrepo.json", {
+      project: "cli-linkrepo",
+      entries: [{ repo, file: "src/app.ts", anchor_text: "Save changes", agent_draft: "Save your changes" }],
+    });
+
+    const run = await runCli(dir, port, json);
+    expect(run.code).toBe(0);
+    expect(run.stderr).toBe("");
   });
 });
