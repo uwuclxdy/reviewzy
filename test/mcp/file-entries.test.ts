@@ -710,18 +710,87 @@ describe("anchor verification", () => {
     expect(rows(first.store, "verified-ambiguous")).toHaveLength(0);
   });
 
-  test("files an anchor appearing twice when anchor_before disambiguates it", async () => {
+  test("refuses an anchor appearing twice whose context matches no placement", async () => {
     const { body } = await fileEntries({
       project: "verified-context",
       entries: [
         entry({
           anchor_text: "Continue",
+          anchor_before: "no such line above",
+          anchor_after: "no such line below",
+          file_content: "before\nContinue\nmiddle\nContinue\nafter\n",
+        }),
+      ],
+    });
+    expect(body.result?.isError).toBe(true);
+    const text = body.result?.content?.[0]?.text ?? "";
+    expect(text).toContain("2");
+    expect(text).toContain("nothing sent disambiguates it");
+    expect(rows(first.store, "verified-context")).toHaveLength(0);
+  });
+
+  test("an empty-string context counts as absent: a multi-match anchor with empty context refuses", async () => {
+    const { body } = await fileEntries({
+      project: "verified-empty-context",
+      entries: [
+        entry({
+          anchor_text: "Continue",
+          anchor_before: "",
+          anchor_after: "",
+          file_content: "before\nContinue\nmiddle\nContinue\nafter\n",
+        }),
+      ],
+    });
+    expect(body.result?.isError).toBe(true);
+    expect(rows(first.store, "verified-empty-context")).toHaveLength(0);
+  });
+
+  test("files a multi-match anchor whose after matches even when the before is junk", async () => {
+    const { body } = await fileEntries({
+      project: "verified-context-mixed",
+      entries: [
+        entry({
+          anchor_text: "Continue",
+          anchor_before: "no such line above",
+          anchor_after: "\nafter",
           file_content: "before\nContinue\nmiddle\nContinue\nafter\n",
         }),
       ],
     });
     expect(body.result?.isError).toBeUndefined();
-    expect(rows(first.store, "verified-context")).toHaveLength(1);
+    expect(rows(first.store, "verified-context-mixed")).toHaveLength(1);
+  });
+
+  test("files an anchor appearing twice whose anchor_before matches one placement", async () => {
+    const { body } = await fileEntries({
+      project: "verified-context-before",
+      entries: [
+        entry({
+          anchor_text: "Continue",
+          anchor_before: "before\n",
+          anchor_after: undefined,
+          file_content: "before\nContinue\nmiddle\nContinue\nafter\n",
+        }),
+      ],
+    });
+    expect(body.result?.isError).toBeUndefined();
+    expect(rows(first.store, "verified-context-before")).toHaveLength(1);
+  });
+
+  test("files an anchor appearing twice whose anchor_after matches one placement", async () => {
+    const { body } = await fileEntries({
+      project: "verified-context-after",
+      entries: [
+        entry({
+          anchor_text: "Continue",
+          anchor_before: undefined,
+          anchor_after: "\nafter",
+          file_content: "before\nContinue\nmiddle\nContinue\nafter\n",
+        }),
+      ],
+    });
+    expect(body.result?.isError).toBeUndefined();
+    expect(rows(first.store, "verified-context-after")).toHaveLength(1);
   });
 
   test("a file_hash-only entry skips verification: the server never saw the file", async () => {

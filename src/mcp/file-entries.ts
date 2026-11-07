@@ -47,7 +47,7 @@ const EntryShape = {
   title: z.string().min(1).optional().describe("Optional human-readable label the dashboard shows in place of the file path."),
   tag: z.string().min(1).optional().describe("Optional free-form label naming what this entry is a sample of, so a bulk audit's entries group by it; shown and filterable on the dashboard and through list_entries. On a re-file of a known draft, a new tag overwrites the stored one and an omitted tag keeps it."),
   anchor_text: z.string().min(1).describe("The exact current text to replace: one line or many, the whole passage being replaced."),
-  anchor_before: z.string().optional().describe("3 lines of context above the anchor, disambiguating a repeated string. Send it (or anchor_after) when anchor_text appears more than once in the file; the server refuses an ambiguous anchor without it."),
+  anchor_before: z.string().optional().describe("3 lines of context above the anchor, disambiguating a repeated string. Send it (or anchor_after) when anchor_text appears more than once in the file; the server refuses an ambiguous anchor unless sent context matches its placement."),
   anchor_after: z.string().optional().describe("3 lines of context below the anchor, disambiguating a repeated string (same rule as anchor_before)."),
   agent_draft: z.string().optional().describe("The proposed replacement text; inert until a human touches it."),
   file_content: z.string().optional().describe("The whole file at filing time; the server hashes it. Preferred: it lets the server verify your anchors against the file."),
@@ -343,13 +343,18 @@ function validateEntry(
         "read the file and copy anchor_text exactly as it is now, or send the current file_content",
       );
     }
-    // Presence-only: any non-empty context string admits an ambiguous anchor, whatever it holds.
-    if (matches > 1 && !raw.anchor_before && !raw.anchor_after) {
-      refuse(
-        where,
-        `anchor_text appears ${matches} times in the file content and no disambiguating context was sent`,
-        "add anchor_before or anchor_after (3 lines of context each side), or make anchor_text longer so it matches exactly one place",
-      );
+    // Context that matches no placement disambiguates nothing: only a context adjoining an actual
+    // occurrence of the anchor counts, and absent context counts as no match on its side.
+    if (matches > 1) {
+      const beforeMatches = raw.anchor_before ? countOccurrences(content, `${raw.anchor_before}${raw.anchor_text}`) : 0;
+      const afterMatches = raw.anchor_after ? countOccurrences(content, `${raw.anchor_text}${raw.anchor_after}`) : 0;
+      if (beforeMatches === 0 && afterMatches === 0) {
+        refuse(
+          where,
+          `anchor_text appears ${matches} times in the file content and nothing sent disambiguates it`,
+          "send anchor_before or anchor_after (copied byte-exact from the file around the anchor), or a longer anchor_text",
+        );
+      }
     }
   }
 
