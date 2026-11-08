@@ -93,6 +93,38 @@
   max-width: none;
 }
 
+/* ---- Variant groups: one card per surface, one labeled block per case ----
+   Entries sharing project, file and a non-null variant render as one card instead of table rows;
+   each block keeps its own title, status, anchor, proposal and actions, hairlined off its
+   siblings, and entries with no variant stay table rows. */
+.variant-card { margin-top: var(--space-4); }
+.variant-card .card-title { min-width: 0; }
+.variant-block { display: grid; gap: var(--space-2); }
+.variant-block + .variant-block {
+  margin-top: var(--space-4);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--line-soft);
+}
+.variant-block-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+.variant-block-head > .entry-link { min-width: 0; }
+.variant-block-head .tag { flex-shrink: 0; }
+/* The data chip takes the row head's bound: a raw tag is uncapped, so without min/max the
+   shrink-locked chips overflow the card where the table row truncates the same input. */
+.variant-block-head .tag-data { min-width: 0; max-width: 100%; }
+.variant-case {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  min-width: 0;
+}
+.variant-case-label { flex-shrink: 0; font-size: var(--t-2); color: var(--text-3); }
+.variant-case-text { min-width: 0; }
+
 /* ---- Entry table cells ----
    The table lays out with a fixed colgroup so the entry column takes the remainder and a long
    title or file path truncates instead of widening the table; select, status, filed and actions
@@ -292,6 +324,10 @@ main.page textarea.input { height: auto; resize: none; }
 .page-meta { min-width: 0; }
 .page-meta-item { min-width: 0; }
 .page-file { min-width: 0; max-width: 100%; }
+/* The header's variant chip bounds its value the way the file item does: the meta row, never a
+   long case label, sets the width. */
+.page-meta-item .tag { min-width: 0; max-width: 100%; }
+.page-meta-item .tag > .truncate { min-width: 0; }
 
 /* ---- Notes ----
    The notes card: the agent's row is the info-table readout; the human's textarea and its

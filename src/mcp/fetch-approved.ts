@@ -29,7 +29,8 @@ const ParsedConstraints = z.strictObject({
 /**
  * The wire entry the contract's parenthetical names: text + anchor + constraints, no status and no
  * context. `agent_draft` and `human_notes` ride beside the text — what the agent proposed and the
- * human's why — with both keys present, null when the row holds neither.
+ * human's why — with both keys present, null when the row holds neither, and `variant` rides the
+ * same way: the case label grouping the entry with its sibling filings, null when it has none.
  */
 export const ApprovedEntry = z.object({
   id: z.string(),
@@ -40,6 +41,7 @@ export const ApprovedEntry = z.object({
   anchor_after: z.string(),
   text: z.string().nullable(),
   agent_draft: z.string().nullable(),
+  variant: z.string().nullable(),
   human_notes: z.string().nullable(),
   constraints: ParsedConstraints,
 });
@@ -87,6 +89,7 @@ export function approvedRowsToWire(rows: readonly ApprovedEntryRow[]): z.infer<t
     anchor_after: row.anchor_after,
     text: row.human_text,
     agent_draft: row.agent_draft,
+    variant: row.variant,
     human_notes: row.human_notes,
     constraints: parseConstraints(row.constraints),
   }));
@@ -104,7 +107,7 @@ export function registerFetchApprovedTool(server: McpServer, store: Store): void
     {
       title: "Fetch approved entries to apply",
       description:
-        "Fetch a project's approved entries, ready to apply: the human-signed text, the anchor to locate and replace it by, and the constraints the replacement must keep. Each row also carries the agent's draft and the human's notes beside the approved text. Only approved entries are returned: an id naming a draft, applied or rejected entry contributes nothing. At most 50 per page, ordered by ascending id; when next_since comes back, pass it back as since to continue. The merged style guide rides the first page of a walk (neither ids nor since) so bulk rewrites pay it once.",
+        "Fetch a project's approved entries, ready to apply: the human-signed text, the anchor to locate and replace it by, and the constraints the replacement must keep. Each row also carries the agent's draft, the case label (variant) grouping it with its sibling filings, and the human's notes beside the approved text. Only approved entries are returned: an id naming a draft, applied or rejected entry contributes nothing. At most 50 per page, ordered by ascending id; when next_since comes back, pass it back as since to continue. The merged style guide rides the first page of a walk (neither ids nor since) so bulk rewrites pay it once.",
       inputSchema: FetchApprovedArgs,
       outputSchema: FetchApprovedOutput,
     },

@@ -718,13 +718,19 @@ function BatchForm({ vm }: { vm: ListViewModel }) {
 }
 
 /**
- * One project's entries as one dense table. The project is a heading, not a disclosure: batches
- * stay a data concept behind the row selection and the one approve action. The select-all sits in
- * the header and drives this table's drafts through ui.js's per-wrap state machine.
+ * One project's entries as one dense table, plus one card per variant group. The project is a
+ * heading, not a disclosure: batches stay a data concept behind the row selection and the one
+ * approve action. The select-all sits in the header and drives this table's drafts through ui.js's
+ * per-wrap state machine. Entries sharing file and a non-null variant are one surface's cases and
+ * render as that card's labeled blocks instead of table rows — a grouped entry renders exactly
+ * once — so a project of only grouped entries ships no table at all.
  */
 function ProjectTable({ group }: { group: ProjectGroup }) {
   const count = group.entries.length;
-  const drafts = group.entries.filter((entry) => entry.status === "draft").length;
+  const { plain, groups } = splitVariantGroups(group.entries);
+  // The draft count names what the batch form can select: variant blocks carry no checkbox, so
+  // their drafts sign per case and never ride the select-all.
+  const drafts = plain.filter((entry) => entry.status === "draft").length;
   const draftWord = drafts === 1 ? "draft" : "drafts";
   const entryWord = count === 1 ? "entry" : "entries";
   return (
@@ -732,43 +738,144 @@ function ProjectTable({ group }: { group: ProjectGroup }) {
       <div class="section-head project-head">
         <h2 class="section-title project-name">{group.slug}</h2>
         <p class="section-lede project-meta">
-          {drafts > 0 ? `${drafts} ${draftWord} · ${count} ${entryWord}` : `${count} ${entryWord}`}
+          {/* The drafts clause shows only when the batch form reaches every draft: with variant
+              cards on the page the two numbers would answer different populations, and each card's
+              own subtitle already names its cases. */}
+          {drafts > 0 && groups.length === 0 ? `${drafts} ${draftWord} · ${count} ${entryWord}` : `${count} ${entryWord}`}
         </p>
       </div>
-      <div class="table-wrap table-dense">
-        <table>
-          <colgroup>
-            <col class="col-select" />
-            <col />
-            <col class="col-status" />
-            <col class="col-filed" />
-            <col class="col-actions" />
-          </colgroup>
-          <thead>
-            <tr>
-              {/* The select-all lives in the checkbox column: ui.js's initTables owns the
-                  checked and indeterminate state machine for the wrap. No `name`, so it never
-                  submits as an entry id; only the draft checkboxes post as `id`. */}
-              <th class="cell-select" scope="col">
-                <span class="sr-only">Select</span>
-                <label class="checkbox-label">
-                  <input type="checkbox" data-select-all aria-label={`Select all drafts in ${group.slug}`} />
-                </label>
-              </th>
-              <th scope="col">Entry</th>
-              <th scope="col">Status</th>
-              <th class="cell-filed" scope="col">Filed</th>
-              <th scope="col">Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {group.entries.map((entry) => (
-              <EntryRowView key={entry.id} entry={entry} />
-            ))}
-          </tbody>
-        </table>
-      </div>
+      {plain.length > 0 ? (
+        <div class="table-wrap table-dense">
+          <table>
+            <colgroup>
+              <col class="col-select" />
+              <col />
+              <col class="col-status" />
+              <col class="col-filed" />
+              <col class="col-actions" />
+            </colgroup>
+            <thead>
+              <tr>
+                {/* The select-all lives in the checkbox column: ui.js's initTables owns the
+                    checked and indeterminate state machine for the wrap. No `name`, so it never
+                    submits as an entry id; only the draft checkboxes post as `id`. */}
+                <th class="cell-select" scope="col">
+                  <span class="sr-only">Select</span>
+                  <label class="checkbox-label">
+                    <input type="checkbox" data-select-all aria-label={`Select all ungrouped drafts in ${group.slug}`} />
+                  </label>
+                </th>
+                <th scope="col">Entry</th>
+                <th scope="col">Status</th>
+                <th class="cell-filed" scope="col">Filed</th>
+                <th scope="col">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {plain.map((entry) => (
+                <EntryRowView key={entry.id} entry={entry} />
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : null}
+      {groups.map((variantGroup) => (
+        <VariantGroupCard key={JSON.stringify([variantGroup.file, variantGroup.variant])} group={variantGroup} />
+      ))}
     </section>
+  );
+}
+
+/** One surface's cases: the entries of one project, file and non-null variant, walked in ascending id order. */
+type VariantGroup = { variant: string; file: string; entries: EntryRow[] };
+
+/**
+ * Splits a project's rows for rendering: entries carrying a variant group by their (file, variant)
+ * pair — one surface's cases, the card the filing agent asked for — and entries with no variant
+ * stay table rows. Both sides keep the list query's ascending id order, so a card's blocks read in
+ * id order (same-millisecond ulids tie in random-bits order, never filing order) and the map yields
+ * groups in the order their first member was filed. The key serializes the pair because both fields
+ * are free-form text: a space-joined concat would merge `(file "a b", variant "c")` with
+ * `(file "a", variant "b c")` into one mislabeled card.
+ */
+function splitVariantGroups(entries: readonly EntryRow[]): { plain: EntryRow[]; groups: VariantGroup[] } {
+  const plain: EntryRow[] = [];
+  const bySurface = new Map<string, VariantGroup>();
+  for (const entry of entries) {
+    if (entry.variant === null) {
+      plain.push(entry);
+      continue;
+    }
+    const key = JSON.stringify([entry.file, entry.variant]);
+    const group = bySurface.get(key);
+    if (group === undefined) bySurface.set(key, { variant: entry.variant, file: entry.file, entries: [entry] });
+    else group.entries.push(entry);
+  }
+  return { plain, groups: [...bySurface.values()] };
+}
+
+/**
+ * One variant group as one card: the case label and the surface it groups lead, and each entry
+ * renders as its own labeled block below — the card the per-entry `variant` promises, one block
+ * per case, no table row beside it.
+ */
+function VariantGroupCard({ group }: { group: VariantGroup }) {
+  const caseWord = group.entries.length === 1 ? "case" : "cases";
+  return (
+    <div class="card variant-card" data-variant-group={group.variant}>
+      <div class="card-header">
+        <div>
+          <div class="card-title"><span class="truncate" title={group.variant}>{group.variant}</span></div>
+          <div class="card-subtitle">{group.file} · {group.entries.length} {caseWord}</div>
+        </div>
+      </div>
+      <div class="variant-blocks">
+        {group.entries.map((entry) => (
+          <VariantBlock key={entry.id} entry={entry} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * One case of a variant group: its own title link, status, anchor, proposal and the shared action
+ * markup, so the human signs one case at a time. The proposal of record is the human's text once
+ * one exists, the agent's draft before that, and the line is omitted when the entry carries
+ * neither.
+ */
+function VariantBlock({ entry }: { entry: EntryRow }) {
+  const proposal = entry.human_text ?? entry.agent_draft;
+  return (
+    <div class="variant-block" data-variant-block={entry.id}>
+      <div class="variant-block-head">
+        <a class="entry-link truncate" href={`/entries/${entry.id}`}>{entryTitle(entry)}</a>
+        <span class={`tag ${STATUS_TAG[entry.status]}`}>
+          <span class="tag-dot"></span>
+          {STATUS_LABEL[entry.status]}
+        </span>
+        {/* What the case is a sample of: the tag stays dashboard-visible on a grouped entry the
+            way it is on a table row, per the tag field's own contract. */}
+        {entry.tag !== null ? (
+          <span class="tag tag-data">
+            <span class="truncate" title={entry.tag}>{entry.tag}</span>
+          </span>
+        ) : null}
+      </div>
+      <div class="variant-case">
+        <span class="variant-case-label">Anchor</span>
+        <span class="variant-case-text truncate" title={entry.anchor_text}>{entry.anchor_text}</span>
+      </div>
+      {proposal !== null ? (
+        <div class="variant-case">
+          <span class="variant-case-label">Proposal</span>
+          <span class="variant-case-text truncate" title={proposal}>{proposal}</span>
+        </div>
+      ) : null}
+      <div class="cell-actions">
+        <EntryActions entry={entry} />
+      </div>
+    </div>
   );
 }
 
@@ -783,20 +890,16 @@ function filedStamp(createdAt: number): { iso: string; short: string } {
  * the entry for the batch form (and `data-name` hands it to the selection controller); it exists
  * only on drafts, because an approve on any other status always refuses and a checkbox that can
  * only refuse is noise (races are still reported per entry). The status chip sits in its own
- * column; the three icon action slots always render, inapplicable ones disabled, so a
- * double-click's second click lands on the disabled slot rather than a shifted action. Approve
- * and reject target the list region and include the batch form's hidden filters, so an action
- * round re-renders the region under the same filter; the editor link is always present.
+ * column, and the actions cell carries the shared `EntryActions` slots.
  */
 function EntryRowView({ entry }: { entry: EntryRow }) {
   const title = entryTitle(entry);
   const filed = filedStamp(entry.created_at);
-  const approve = entry.status === "draft";
-  const reject = entry.status === "draft" || entry.status === "approved";
+  const draft = entry.status === "draft";
   return (
     <tr>
       <td class="cell-select">
-        {approve ? (
+        {draft ? (
           <label class="checkbox-label">
             <input type="checkbox" name="id" value={entry.id} data-name={entry.id} aria-label={`Select ${entry.file}`} />
           </label>
@@ -830,50 +933,68 @@ function EntryRowView({ entry }: { entry: EntryRow }) {
         <time class="num" datetime={filed.iso}>{filed.short}</time>
       </td>
       <td class="cell-actions">
-        {approve ? (
-          <button
-            type="button"
-            class="btn btn-icon action-approve"
-            aria-label={`Approve ${entry.file}`}
-            hx-post={`/entries/${entry.id}/approve`}
-            hx-target="#entries-list"
-            hx-swap="innerHTML"
-            hx-indicator="#entries-loading"
-            hx-disabled-elt="this"
-          >
-            <svg aria-hidden="true"><use href="#i-check" /></svg>
-          </button>
-        ) : (
-          // The approve slot stays occupied on every non-draft row: a double-click's second click
-          // lands on the disabled button (pointer-events none) rather than the next slot.
-          <button type="button" class="btn btn-icon action-approve" aria-label={`Approve ${entry.file}`} disabled>
-            <svg aria-hidden="true"><use href="#i-check" /></svg>
-          </button>
-        )}
-        {reject ? (
-          <button
-            type="button"
-            class="btn btn-icon action-reject"
-            aria-label={`Reject ${entry.file}`}
-            hx-post={`/entries/${entry.id}/reject`}
-            hx-target="#entries-list"
-            hx-swap="innerHTML"
-            hx-indicator="#entries-loading"
-            hx-disabled-elt="this"
-          >
-            <svg aria-hidden="true"><use href="#i-x" /></svg>
-          </button>
-        ) : (
-          // The reject slot stays occupied on applied and rejected rows for the same guard.
-          <button type="button" class="btn btn-icon action-reject" aria-label={`Reject ${entry.file}`} disabled>
-            <svg aria-hidden="true"><use href="#i-x" /></svg>
-          </button>
-        )}
-        <a class="btn btn-icon" href={`/entries/${entry.id}`} aria-label={`Edit ${entry.file}`}>
-          <svg aria-hidden="true"><use href="#i-edit" /></svg>
-        </a>
+        <EntryActions entry={entry} />
       </td>
     </tr>
+  );
+}
+
+/**
+ * The three action slots — approve, reject, edit — shared by the table row and the variant
+ * sub-block, so a case's block signs exactly like a row does. The three slots always render,
+ * inapplicable ones disabled, so a double-click's second click lands on the disabled slot rather
+ * than a shifted action. Approve and reject target the list region and include the batch form's
+ * hidden filters, so an action round re-renders the region under the same filter; the editor link
+ * is always present.
+ */
+function EntryActions({ entry }: { entry: EntryRow }) {
+  const approve = entry.status === "draft";
+  const reject = entry.status === "draft" || entry.status === "approved";
+  return (
+    <>
+      {approve ? (
+        <button
+          type="button"
+          class="btn btn-icon action-approve"
+          aria-label={`Approve ${entry.file}`}
+          hx-post={`/entries/${entry.id}/approve`}
+          hx-target="#entries-list"
+          hx-swap="innerHTML"
+          hx-indicator="#entries-loading"
+          hx-disabled-elt="this"
+        >
+          <svg aria-hidden="true"><use href="#i-check" /></svg>
+        </button>
+      ) : (
+        // The approve slot stays occupied on every non-draft row: a double-click's second click
+        // lands on the disabled button (pointer-events none) rather than the next slot.
+        <button type="button" class="btn btn-icon action-approve" aria-label={`Approve ${entry.file}`} disabled>
+          <svg aria-hidden="true"><use href="#i-check" /></svg>
+        </button>
+      )}
+      {reject ? (
+        <button
+          type="button"
+          class="btn btn-icon action-reject"
+          aria-label={`Reject ${entry.file}`}
+          hx-post={`/entries/${entry.id}/reject`}
+          hx-target="#entries-list"
+          hx-swap="innerHTML"
+          hx-indicator="#entries-loading"
+          hx-disabled-elt="this"
+        >
+          <svg aria-hidden="true"><use href="#i-x" /></svg>
+        </button>
+      ) : (
+        // The reject slot stays occupied on applied and rejected rows for the same guard.
+        <button type="button" class="btn btn-icon action-reject" aria-label={`Reject ${entry.file}`} disabled>
+          <svg aria-hidden="true"><use href="#i-x" /></svg>
+        </button>
+      )}
+      <a class="btn btn-icon" href={`/entries/${entry.id}`} aria-label={`Edit ${entry.file}`}>
+        <svg aria-hidden="true"><use href="#i-edit" /></svg>
+      </a>
+    </>
   );
 }
 
@@ -1220,6 +1341,25 @@ function EditorHeader({ vm }: { vm: EditorViewModel }) {
         <h1 class="page-title editor-title">{entryTitle(entry)}</h1>
         <div class="page-meta">
           <EntryStatusTag status={entry.status} />
+          {/* What the entry is a sample of, as the filing agent tagged it: the same system data chip
+              the list row shows, so authoring sees the group the entry belongs to. */}
+          {entry.tag !== null ? (
+            <span class="page-meta-item">
+              <span class="tag tag-data">
+                <span class="truncate" title={entry.tag}>{entry.tag}</span>
+              </span>
+            </span>
+          ) : null}
+          {/* The case label the filing agent grouped this entry by: the system data chip, so the
+              header names the case beside the status the way the list's card groups it. Chipless
+              when the entry carries no variant. */}
+          {entry.variant !== null ? (
+            <span class="page-meta-item">
+              <span class="tag tag-data">
+                <span class="truncate" title={entry.variant}>{entry.variant}</span>
+              </span>
+            </span>
+          ) : null}
           <span class="page-meta-item"><RepoValue repo={entry.repo} /></span>
           <span class="page-meta-item"><span class="page-file truncate">{entry.file}</span></span>
           <span class="page-meta-item">filed <time class="num" datetime={filed.iso}>{filed.short}</time></span>

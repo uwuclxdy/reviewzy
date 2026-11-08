@@ -134,7 +134,7 @@ describe("openStore", () => {
     const store = openTempStore();
     const version = (store.db.query("PRAGMA user_version").get() as { user_version: number })
       .user_version;
-    expect(version).toBe(8);
+    expect(version).toBe(9);
     store.close();
   });
 
@@ -202,7 +202,7 @@ describe("openStore", () => {
     const second = openStore(configWithDb(dbPath));
     const version = (second.db.query("PRAGMA user_version").get() as { user_version: number })
       .user_version;
-    expect(version).toBe(8);
+    expect(version).toBe(9);
 
     const row = second.db.query("SELECT slug FROM projects WHERE id = ?").get(project.id) as {
       slug: string;

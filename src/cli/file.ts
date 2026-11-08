@@ -29,6 +29,7 @@ const ENTRY_KEYS = new Set([
   "file",
   "title",
   "tag",
+  "variant",
   "anchor_text",
   "anchor_before",
   "anchor_after",
@@ -36,6 +37,7 @@ const ENTRY_KEYS = new Set([
   "context",
   "constraints",
   "images",
+  "variant",
 ]);
 
 const TOP_LEVEL_KEYS = new Set(["project", "filed_by", "entries"]);

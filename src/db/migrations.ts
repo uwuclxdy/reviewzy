@@ -220,4 +220,19 @@ export const MIGRATIONS: Migration[] = [
       ALTER TABLE entries_archive ADD COLUMN tag TEXT;
     `,
   },
+  {
+    version: 9,
+    name: "entry-variant",
+    sql: `
+      -- An optional case label the filing agent groups the cases of one surface by: entries sharing
+      -- project, file and variant render as one dashboard card with a labeled block per case.
+      -- Stored raw like tag — no input cap, the list row caps its display, the store never trims or
+      -- normalizes it, and it sits outside the identity key, so a re-file carrying a new variant
+      -- overwrites the draft in place and an omitted one keeps the stored value. Nullable: an
+      -- entry without one is ungrouped everywhere it renders. The archive mirrors entries
+      -- column-for-column, so it gains the column too.
+      ALTER TABLE entries ADD COLUMN variant TEXT;
+      ALTER TABLE entries_archive ADD COLUMN variant TEXT;
+    `,
+  },
 ];

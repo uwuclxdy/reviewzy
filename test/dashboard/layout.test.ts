@@ -44,6 +44,7 @@ function draft(over: Partial<NewEntry>): NewEntry {
     file: "docs/setup.md",
     title: "Setup wording",
     tag: null,
+    variant: null,
     anchorText: "Run bun install",
     anchorBefore: "Run this before anything else.",
     anchorAfter: "Then run the tests.",

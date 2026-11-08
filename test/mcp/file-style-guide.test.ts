@@ -65,6 +65,7 @@ function draft(over: Partial<NewEntry> = {}): NewEntry {
     file: "src/app.ts",
     title: null,
     tag: null,
+    variant: null,
     anchorText: "anchor",
     anchorBefore: "",
     anchorAfter: "",

@@ -311,6 +311,7 @@ describe("the wait", () => {
       "id",
       "repo",
       "text",
+      "variant",
     ]);
 
     // The settle tore the waiter down: nothing may survive the resolve.

@@ -51,6 +51,7 @@ function toWireEntry(row: EntryRow, slugByProjectId: ReadonlyMap<string, string>
     title: row.title === null ? null : ellipsize(row.title),
     human_notes: row.human_notes === null ? null : ellipsize(row.human_notes),
     tag: row.tag === null ? null : ellipsize(row.tag),
+    variant: row.variant === null ? null : ellipsize(row.variant),
     status: row.status,
     updated_at: row.updated_at,
   };
@@ -69,6 +70,7 @@ const Entry = z.object({
   title: z.string().nullable(),
   human_notes: z.string().nullable(),
   tag: z.string().nullable(),
+  variant: z.string().nullable(),
   status: z.enum(["draft", "approved", "applied", "rejected"]),
   updated_at: z.number(),
 });
@@ -96,7 +98,7 @@ export function registerListEntriesTool(server: McpServer, store: Store): void {
     {
       title: "List entries for review",
       description:
-        "List the review queue's entries, ordered by ascending entry id. Every filter is optional and combines with AND. Walk pages via next_cursor; the walk is exhausted when it stops coming back. Each row is a lean index: id, project slug, file, title, tag, status, updated_at, plus the human's own notes (human_notes, capped like file/title). Apply-back fields (anchor, the approved text, the agent's draft, constraints) come back through fetch_approved, and the agent's draft never rides this row — the dashboard owns authoring. An ids call adds missing_ids for an id no live row holds and archived_ids for one the sweep archived.",
+        "List the review queue's entries, ordered by ascending entry id. Every filter is optional and combines with AND. Walk pages via next_cursor; the walk is exhausted when it stops coming back. Each row is a lean index: id, project slug, file, title, tag, variant, status, updated_at, plus the human's own notes (human_notes, capped like file/title). Apply-back fields (anchor, the approved text, the agent's draft, constraints) come back through fetch_approved, and the agent's draft never rides this row — the dashboard owns authoring. An ids call adds missing_ids for an id no live row holds and archived_ids for one the sweep archived.",
       inputSchema: ListEntriesArgs,
       outputSchema: ListEntriesOutput,
     },

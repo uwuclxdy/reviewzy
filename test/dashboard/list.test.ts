@@ -36,6 +36,7 @@ function draft(over: Partial<NewEntry>): NewEntry {
     file: "docs/readme.md",
     title: null,
     tag: null,
+    variant: null,
     anchorText: "anchor",
     anchorBefore: "",
     anchorAfter: "",
@@ -353,8 +354,8 @@ describe("dashboard entry list", () => {
     // One select-all per project table (2), labelled by the project, and it never carries `name`,
     // so it is not submitted as an entry id — the draft checkboxes alone post as `id`.
     expect(html.match(/data-select-all/g) ?? []).toHaveLength(2);
-    expect(html).toContain('data-select-all="true" aria-label="Select all drafts in alpha"');
-    expect(html).toContain('data-select-all="true" aria-label="Select all drafts in zeta"');
+    expect(html).toContain('data-select-all="true" aria-label="Select all ungrouped drafts in alpha"');
+    expect(html).toContain('data-select-all="true" aria-label="Select all ungrouped drafts in zeta"');
     expect(html).not.toContain('name="id" data-select-all');
 
     // Only draft rows carry a selectable checkbox: alpha holds two drafts and zeta one; the

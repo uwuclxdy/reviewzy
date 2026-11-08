@@ -9,17 +9,18 @@ export type EntryStatus = "draft" | "approved" | "applied" | "rejected";
  * One entry as it crosses into the store: every field already typed, hashed, and stringified.
  * The json boundary belongs to the tool that reads the wire (`src/mcp/file-entries.ts`); nothing
  * here re-parses what it already accepted. `agentDraft`, `contextJson`, `constraintsJson`,
- * `imagesJson`, and `tag` are null when the caller did not send the field: a first filing stores
- * the empty default (for the nullable `tag`, the column's own NULL), and a draft re-file keeps
- * the stored value (the schema refuses explicit null, so no caller can express a wipe). `tag` is
- * the one optional key: callers that predate it build a NewEntry without it, and absent reads as
- * null.
+ * `imagesJson`, `tag`, and `variant` are null when the caller did not send the field: a first
+ * filing stores the empty default (for the nullable `tag` and `variant`, the column's own NULL),
+ * and a draft re-file keeps the stored value (the schema refuses explicit null, so no caller can
+ * express a wipe). `tag` and `variant` carry no value when the caller did not send them: absent
+ * reads as null, never as a wipe.
  */
 export type NewEntry = {
   readonly repo: string;
   readonly file: string;
   readonly title: string | null;
   readonly tag: string | null;
+  readonly variant: string | null;
   readonly anchorText: string;
   readonly anchorBefore: string;
   readonly anchorAfter: string;
@@ -55,6 +56,7 @@ export type EntryRow = {
   readonly file: string;
   readonly title: string | null;
   readonly tag: string | null;
+  readonly variant: string | null;
   readonly anchor_text: string;
   readonly anchor_before: string;
   readonly anchor_after: string;
@@ -105,9 +107,10 @@ export type ListEntriesResult = {
 /**
  * One approved row as the shared wire mapping receives it: the contract's parenthetical
  * "text + anchor + constraints", plus `agent_draft` and `human_notes` — what the agent proposed
- * and the human's why, the provenance a later session reads beside the approved text. No
- * `context`; no `status` here (`entriesByIds` adds it for the await caller). `constraints` stays
- * the stored string; the tool owns the parse.
+ * and the human's why, the provenance a later session reads beside the approved text — and
+ * `variant`, the case label grouping it with its sibling filings. No `context`; no `status` here
+ * (`entriesByIds` adds it for the await caller). `constraints` stays the stored string; the tool
+ * owns the parse.
  */
 export type ApprovedEntryRow = {
   readonly id: string;
@@ -120,6 +123,7 @@ export type ApprovedEntryRow = {
   readonly file_hash: string;
   readonly human_text: string | null;
   readonly agent_draft: string | null;
+  readonly variant: string | null;
   readonly human_notes: string | null;
   readonly constraints: string;
 };
@@ -219,10 +223,10 @@ function fileOneEntry(
     const now = Date.now();
     db.run(
       `INSERT INTO entries (
-        id, project_id, batch_id, repo, file, title, tag, anchor_text, anchor_before, anchor_after,
+        id, project_id, batch_id, repo, file, title, tag, variant, anchor_text, anchor_before, anchor_after,
         anchor_hash, file_hash, agent_draft, human_text, status, context, constraints,
         filed_by, stale_note, images, created_at, updated_at, applied_at, archived_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, 'draft', ?, ?, ?, NULL, ?, ?, ?, NULL, NULL)`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, 'draft', ?, ?, ?, NULL, ?, ?, ?, NULL, NULL)`,
       [
         id,
         projectId,
@@ -231,6 +235,7 @@ function fileOneEntry(
         entry.file,
         entry.title,
         entry.tag ?? null,
+        entry.variant ?? null,
         entry.anchorText,
         entry.anchorBefore,
         entry.anchorAfter,
@@ -252,8 +257,8 @@ function fileOneEntry(
     // `COALESCE(?, column)`: a field the newer call did not carry (null) keeps the stored value.
     // The schema refuses explicit null, so a re-file can only move the fields it names.
     db.run(
-      "UPDATE entries SET agent_draft = COALESCE(?, agent_draft), context = COALESCE(?, context), constraints = COALESCE(?, constraints), title = COALESCE(?, title), tag = COALESCE(?, tag), images = COALESCE(?, images), updated_at = ? WHERE id = ?",
-      [entry.agentDraft, entry.contextJson, entry.constraintsJson, entry.title, entry.tag ?? null, entry.imagesJson, Date.now(), existing.id],
+      "UPDATE entries SET agent_draft = COALESCE(?, agent_draft), context = COALESCE(?, context), constraints = COALESCE(?, constraints), title = COALESCE(?, title), tag = COALESCE(?, tag), variant = COALESCE(?, variant), images = COALESCE(?, images), updated_at = ? WHERE id = ?",
+      [entry.agentDraft, entry.contextJson, entry.constraintsJson, entry.title, entry.tag ?? null, entry.variant ?? null, entry.imagesJson, Date.now(), existing.id],
     );
     return { id: existing.id, status: "draft", deduped: true, updated: true };
   }
@@ -287,7 +292,7 @@ const APPROVED_PAGE_SIZE = 50;
 
 /** The columns `docs/mcp-contract.md`'s entry schema names; the one place the output row's shape is spelled out in SQL. */
 const ENTRY_COLUMNS = [
-  "id", "project_id", "batch_id", "repo", "file", "title", "tag", "anchor_text", "anchor_before",
+  "id", "project_id", "batch_id", "repo", "file", "title", "tag", "variant", "anchor_text", "anchor_before",
   "anchor_after", "anchor_hash", "file_hash", "agent_draft", "human_notes", "human_text", "status",
   "context", "constraints", "filed_by", "stale_note", "applied_hash", "images", "created_at",
   "updated_at", "applied_at", "archived_at",
@@ -408,7 +413,7 @@ export function approvedEntries(
     params.push(filter.since);
   }
 
-  const sql = `SELECT id, repo, file, anchor_text, anchor_before, anchor_after, anchor_hash, file_hash, human_text, agent_draft, human_notes, constraints FROM entries WHERE ${where.join(" AND ")} ORDER BY id LIMIT ?`;
+  const sql = `SELECT id, repo, file, anchor_text, anchor_before, anchor_after, anchor_hash, file_hash, human_text, agent_draft, variant, human_notes, constraints FROM entries WHERE ${where.join(" AND ")} ORDER BY id LIMIT ?`;
   params.push(APPROVED_PAGE_SIZE);
 
   const rows = store.db.query(sql).all(...params) as ApprovedEntryRow[];
@@ -426,7 +431,7 @@ export function entriesByIds(
   store: Store,
   ids: readonly string[],
 ): readonly (ApprovedEntryRow & { readonly status: EntryStatus })[] {
-  const sql = `SELECT id, status, repo, file, anchor_text, anchor_before, anchor_after, anchor_hash, file_hash, human_text, agent_draft, human_notes, constraints FROM entries WHERE id IN (${ids.map(() => "?").join(", ")})`;
+  const sql = `SELECT id, status, repo, file, anchor_text, anchor_before, anchor_after, anchor_hash, file_hash, human_text, agent_draft, variant, human_notes, constraints FROM entries WHERE id IN (${ids.map(() => "?").join(", ")})`;
   return store.db.query(sql).all(...ids) as (ApprovedEntryRow & { readonly status: EntryStatus })[];
 }
 

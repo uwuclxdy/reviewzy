@@ -160,9 +160,9 @@ describe("the returned rows", () => {
     const stored = rows(first.store, "fields")[0]!;
 
     // Exactly the approved lean shape, by equality on the key set: short scalar fields only — the
-    // text fields are human_notes and tag, capped by the same marker — and no images; a listed page
-    // stays a page. A new store column reaches this wire only when someone adds it here deliberately.
-    expect(Object.keys(out).sort()).toEqual(["file", "human_notes", "id", "project", "status", "tag", "title", "updated_at"]);
+    // text fields are human_notes, tag, and variant, capped by the same marker — and no images; a
+    // listed page stays a page. A new store column reaches this wire only when someone adds it here deliberately.
+    expect(Object.keys(out).sort()).toEqual(["file", "human_notes", "id", "project", "status", "tag", "title", "updated_at", "variant"]);
     expect(out.id).toBe(stored.id);
     expect(out.project).toBe("fields");
     expect(out.file).toBe(stored.file);

@@ -233,6 +233,7 @@ describe("what comes back", () => {
       "id",
       "repo",
       "text",
+      "variant",
     ]);
     expect(wire.text).toBe("human prose");
     expect(wire.repo).toBe("https://example.com/repo.git");

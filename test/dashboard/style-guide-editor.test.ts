@@ -43,6 +43,7 @@ const FIXTURE: NewEntry = {
   file: "docs/setup.md",
   title: null,
   tag: null,
+  variant: null,
   anchorText: "Run bun install",
   anchorBefore: "Run this before anything else.",
   anchorAfter: "Then run the tests.",

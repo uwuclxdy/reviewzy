@@ -406,7 +406,7 @@ describe("reviewzy file <entries.json>", () => {
     const run = await runCli(dir, port, json);
     expect(run.code).toBe(1);
     expect(run.stderr).toContain('"bogus_key"');
-    expect(run.stderr).toContain("title, tag, anchor_text");
+    expect(run.stderr).toContain("title, tag, variant, anchor_text");
   });
 
   test("an entry file that escapes the repo root (`..`) refuses by name, exit 1, nothing filed", async () => {
@@ -562,5 +562,27 @@ describe("reviewzy file <entries.json>", () => {
     const run = await runCli(dir, port, json);
     expect(run.code).toBe(0);
     expect(run.stderr).toBe("");
+  });
+
+  test("the verb accepts variant: a variant-carrying entry files and the store row carries it", async () => {
+    const dir = scratch();
+    const port = freePort();
+    const repo = seedRepo(dir, "variant-repo");
+    const json = writeJson(dir, "variant.json", {
+      project: "cli-variant",
+      entries: [{ repo, file: "src/app.ts", anchor_text: "Save changes", agent_draft: "Save your changes", variant: "error: no git" }],
+    });
+
+    const run = await runCli(dir, port, json);
+    expect(run.stderr).toBe("");
+    expect(run.code).toBe(0);
+
+    const store = openStore(loadConfig({ REVIEWZY_DB: join(dir, "reviewzy.db") }));
+    try {
+      const row = store.db.query("SELECT variant FROM entries").get() as { variant: string | null };
+      expect(row.variant).toBe("error: no git");
+    } finally {
+      store.close();
+    }
   });
 });

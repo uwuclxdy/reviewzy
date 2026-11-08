@@ -46,6 +46,7 @@ const EntryShape = {
   file: z.string().min(1).describe("The path relative to the repo root."),
   title: z.string().min(1).optional().describe("Optional human-readable label the dashboard shows in place of the file path."),
   tag: z.string().min(1).optional().describe("Optional free-form label naming what this entry is a sample of, so a bulk audit's entries group by it; shown and filterable on the dashboard and through list_entries. On a re-file of a known draft, a new tag overwrites the stored one and an omitted tag keeps it."),
+  variant: z.string().min(1).optional().describe("Optional case label grouping this entry with the other cases of one surface: --verbose beside the default output, the error case beside the success case. Entries sharing project, file and variant render as one dashboard card with one labeled block per case. On a re-file of a known draft a new label overwrites the stored one and an omitted label keeps it."),
   anchor_text: z.string().min(1).describe("The exact current text to replace: one line or many, the whole passage being replaced."),
   anchor_before: z.string().optional().describe("3 lines of context above the anchor, disambiguating a repeated string. Send it (or anchor_after) when anchor_text appears more than once in the file; the server refuses an ambiguous anchor unless sent context matches its placement."),
   anchor_after: z.string().optional().describe("3 lines of context below the anchor, disambiguating a repeated string (same rule as anchor_before)."),
@@ -161,7 +162,7 @@ function refuseEntryKeys(index: number, file: string, anchorText: string, issues
   return refuse(
     where,
     `unrecognized key(s) ${keys.map((k) => JSON.stringify(k).slice(0, 60)).join(", ")}`,
-    "entries take only repo, file, title, tag, anchor_text, anchor_before, anchor_after, agent_draft, file_content, file_hash, context, constraints, and images; drop the extra key or spell it snake_case",
+    "entries take only repo, file, title, tag, variant, anchor_text, anchor_before, anchor_after, agent_draft, file_content, file_hash, context, constraints, and images; drop the extra key or spell it snake_case",
   );
 }
 
@@ -365,6 +366,7 @@ function validateEntry(
     // Stored raw like title: the schema's min(1) is the whole normalization, and a null
     // here means the re-file COALESCE keeps whatever the stored draft carries.
     tag: raw.tag ?? null,
+    variant: raw.variant ?? null,
     anchorText: raw.anchor_text,
     anchorBefore: raw.anchor_before ?? "",
     anchorAfter: raw.anchor_after ?? "",
