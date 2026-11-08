@@ -129,10 +129,10 @@ describe("editor page", () => {
     // Status tag: the draft is still a draft.
     expect(html).toContain("Draft");
 
-    // Details pane: the parsed context as key-value rows, then the provenance collapsed behind the
-    // disclosure. The anchor, repo and file live in the page header, so the order check is scoped
-    // to the pane itself, and the context value is matched with its cell markup since the current
-    // text card carries the same words.
+    // Details pane: the parsed context as key-value rows, led by the reproduction command, then
+    // the provenance directly. The anchor, repo and file live in the page header, so the order
+    // check is scoped to the pane itself, and the context value is matched with its cell markup
+    // since the current text card carries the same words.
     const contextPane = html.slice(html.indexOf("<span>Details</span>"));
     expectOrder(contextPane, ["<td>where</td>", "setup docs", "<td>code</td>", "<td>bun install</td>"]);
     expect(html).toContain("https://example.com/org/repo.git");
@@ -160,6 +160,59 @@ describe("editor page", () => {
     // Revision history: settled empty state, not a loading state.
     expect(html).toContain("Revision history");
     expect(html).toContain("No saved revisions yet");
+    env.close();
+  });
+
+  test("context rows: the reproduction command leads, multi-line values render preformatted, no disclosure", async () => {
+    // command is sent second, so a renderer keeping the sent key order would place it after
+    // "where": the command-first rule is only bound by this order.
+    const { env, id } = envWithDraft({
+      contextJson: JSON.stringify({
+        where: "hero button",
+        command: "app doctor --json",
+        output: "checking app...\nok: 3 checks passed\nwarn: 1 stale lock",
+        flags: { verbose: true },
+      }),
+    });
+    const res = await env.get(`/entries/${id}`);
+    expect(res.status).toBe(200);
+    const html = await res.text();
+
+    // The command leads the context rows, readable before authoring; the other keys keep their
+    // sent order behind it. The order check is scoped to the pane since the current-text card
+    // carries other copies of these words.
+    const contextPane = html.slice(html.indexOf("<span>Details</span>"));
+    expectOrder(contextPane, ["<td>command</td>", "app doctor --json", "<td>where</td>", "hero button"]);
+
+    // A multi-line string value renders as a preformatted block: the value sits inside the pre
+    // element itself, so an unrelated pre anywhere in the pane cannot green this pin. Monospace,
+    // whitespace preserved, the newlines intact in the markup.
+    expect(contextPane).toContain("<pre>checking app...\nok: 3 checks passed\nwarn: 1 stale lock</pre>");
+
+    // A single-line string stays inline text in its cell: the exact bare-td form reds if every
+    // string value were pre-wrapped instead.
+    expect(contextPane).toContain("<td>hero button</td>");
+
+    // A non-string value keeps the stringify row, served in hono's escaped text form.
+    expect(contextPane).toContain('{&quot;verbose&quot;:true}');
+
+    // Context entries carry no "More" disclosure: nothing inside the Details section's body (the
+    // label through its own closing tag) sits behind a summary, whatever its class. The old
+    // class's absence stays pinned beside it.
+    const detailsSlice = contextPane.slice(0, contextPane.indexOf("</details>"));
+    expect(detailsSlice).not.toContain("<summary");
+    expect(html).not.toContain('class="disclosure context-secondary"');
+    expectOrder(contextPane, ["<td>File hash</td>", "f-editor"]);
+    env.close();
+  });
+
+  test("an entry with no context keys renders the provenance directly, as before", async () => {
+    const { env, id } = envWithDraft({ contextJson: "{}" });
+    const html = await (await env.get(`/entries/${id}`)).text();
+
+    const contextPane = html.slice(html.indexOf("<span>Details</span>"));
+    expectOrder(contextPane, ["<td>File hash</td>", "f-editor", "<td>Filed by</td>", "probe-agent"]);
+    expect(html).not.toContain('class="disclosure context-secondary"');
     env.close();
   });
 

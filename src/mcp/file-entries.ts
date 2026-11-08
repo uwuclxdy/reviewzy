@@ -53,7 +53,7 @@ const EntryShape = {
   agent_draft: z.string().optional().describe("The proposed replacement text; inert until a human touches it."),
   file_content: z.string().optional().describe("The whole file at filing time; the server hashes it. Preferred: it lets the server verify your anchors against the file."),
   file_hash: z.string().optional().describe("The sha256 of the whole file as 64 lowercase hex chars."),
-  context: z.unknown().optional().describe("A json object of free-form notes for the human: where the string renders, surrounding code."),
+  context: z.unknown().optional().describe("A json object of notes the human reads before writing the text. command: the command (with its flags and state) that produces the anchored text, so the human can reproduce what they are judging; add where the string renders, surrounding code, and anything else the judgment needs."),
   constraints: z.unknown().optional().describe("What the copy must keep: max_len (a length cap), placeholders (strings the text must contain), tone, notes — all optional."),
   images: z.unknown().optional().describe("Screenshots and links for the human, shown on the dashboard, never returned by an mcp tool."),
 };

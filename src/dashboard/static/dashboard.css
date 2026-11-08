@@ -335,10 +335,9 @@ main.page textarea.input { height: auto; resize: none; }
 .notes-field { margin-top: var(--space-2); }
 .notes-actions { margin-top: var(--space-2); display: flex; justify-content: flex-end; }
 
-/* The details card's secondary block: the provenance rows (hash, filer, stale note) collapsed
-   behind a disclosure, so the agent-supplied context rows lead the card. */
-.context-secondary { margin-top: var(--space-3); }
-.context-secondary .info-table { margin-top: var(--space-2); }
+/* A multi-line context value renders as a pre inside the details cell: the shipped pre's
+   overflow-x would scroll the card, so the cell's copy wraps, the .diff-code shape. */
+.info-table td pre { margin: 0; white-space: pre-wrap; word-break: break-word; }
 
 /* Repo row link: the brand icon beside the shortened owner/repo path, linking out to the host. */
 .repo-link { display: inline-flex; align-items: center; gap: var(--space-1); color: var(--text); text-decoration: none; }

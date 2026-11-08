@@ -1474,37 +1474,38 @@ function ProvenanceTable({ entry }: { entry: EntryRow }) {
 }
 
 /**
- * The entry's agent-supplied context rows, then the provenance behind a disclosure. An entry
- * without context rows shows the provenance directly: a section holding only a "More" toggle reads
- * as an empty card. The anchor, repo, file and filed time live in the page header, so no row here
+ * The entry's agent-supplied context rows, led by the reproduction `command` so the human can
+ * reproduce what they are judging before anything else, then the provenance table directly: a
+ * section holding only a "More" toggle reads as an empty card. Multi-line values render
+ * preformatted. The anchor, repo, file and filed time live in the page header, so no row here
  * repeats them.
  */
 function DetailsSection({ entry }: { entry: EntryRow }) {
   const context = parseContext(entry.context);
   const rows = Object.entries(context);
+  const commandRow = rows.find(([key]) => key === "command");
+  const contextRows = commandRow ? [commandRow, ...rows.filter(([key]) => key !== "command")] : rows;
   return (
     <SupportSection label="Details">
-      {rows.length === 0 ? (
+      {contextRows.length === 0 ? (
         <ProvenanceTable entry={entry} />
       ) : (
         <>
           <table class="info-table">
-            {rows.map(([key, value]) => (
+            {contextRows.map(([key, value]) => (
               <tr key={key}>
                 <td>{key}</td>
-                <td>{typeof value === "string" ? value : JSON.stringify(value)}</td>
+                <td>
+                  {typeof value === "string"
+                    ? value.includes("\n")
+                      ? <pre>{value}</pre>
+                      : value
+                    : JSON.stringify(value)}
+                </td>
               </tr>
             ))}
           </table>
-          <details class="disclosure context-secondary">
-            <summary>
-              <svg aria-hidden="true"><use href="#i-chevron-right" /></svg>
-              <span>More</span>
-            </summary>
-            <div class="disclosure-body">
-              <ProvenanceTable entry={entry} />
-            </div>
-          </details>
+          <ProvenanceTable entry={entry} />
         </>
       )}
     </SupportSection>
