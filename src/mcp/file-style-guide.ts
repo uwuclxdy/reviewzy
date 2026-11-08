@@ -21,7 +21,7 @@ const FileStyleGuideShape = {
   markdown: z
     .string()
     .describe(
-      "The proposed guide markdown: the project's own rules, which render below the global guide once published. Stored raw, never trimmed.",
+      "The proposed guide markdown: the project's own rules, which render below the global guide once published. It must not be empty or only whitespace: an empty markdown is refused. Stored raw, never trimmed.",
     ),
   banned_words: z
     .array(z.string().min(1))
@@ -129,6 +129,14 @@ export function registerFileStyleGuideTool(server: McpServer, store: Store): voi
           `project "${args.project}"`,
           "no such project, and a proposal never creates one",
           "file an entry into it with file_entries first, then file the guide again",
+        );
+      }
+
+      if (args.markdown.trim() === "") {
+        refuse(
+          "markdown",
+          "markdown is empty, and the guide would carry no rules text",
+          "write the project's rules as markdown, or omit the filing",
         );
       }
 

@@ -150,6 +150,53 @@ describe("file_style_guide over the wire", () => {
     expect(nonString.result?.content?.[0]?.text).toContain('glossary."widget"');
   });
 
+  test("an empty markdown is refused by name, with the fix, and leaves the standing draft alone", async () => {
+    const seeded = await fileStyleGuide({ project: "voice", markdown: "Pad rules." });
+    expect(seeded.result?.isError).toBeUndefined();
+
+    const empty = await fileStyleGuide({ project: "voice", markdown: "" });
+    expect(empty.result?.isError).toBe(true);
+    expect(empty.result?.content?.[0]?.text).toBe(
+      "file_style_guide refused: markdown: markdown is empty, and the guide would carry no rules text. fix: write the project's rules as markdown, or omit the filing",
+    );
+    expect(readStyleGuideDraft(env.store, "voice")?.markdown).toBe("Pad rules.");
+  });
+
+  test("a whitespace-only markdown is refused like the empty one", async () => {
+    const seeded = await fileStyleGuide({ project: "voice", markdown: "Pad rules." });
+    expect(seeded.result?.isError).toBeUndefined();
+
+    const blank = await fileStyleGuide({ project: "voice", markdown: "   \n  " });
+    expect(blank.result?.isError).toBe(true);
+    expect(blank.result?.content?.[0]?.text).toBe(
+      "file_style_guide refused: markdown: markdown is empty, and the guide would carry no rules text. fix: write the project's rules as markdown, or omit the filing",
+    );
+    expect(readStyleGuideDraft(env.store, "voice")?.markdown).toBe("Pad rules.");
+  });
+
+  test("a fresh project's empty markdown stores no draft row", async () => {
+    fileEntries(env.store, "empty-guard", null, [
+      {
+        repo: "https://example.com/org/repo.git",
+        file: "src/app.ts",
+        title: null,
+        tag: null,
+        anchorText: "anchor",
+        anchorBefore: "",
+        anchorAfter: "",
+        anchorHash: "h-anchor",
+        fileHash: "f-file",
+        agentDraft: "a draft",
+        contextJson: "{}",
+        constraintsJson: "{}",
+        imagesJson: null,
+      },
+    ]);
+    const empty = await fileStyleGuide({ project: "empty-guard", markdown: "" });
+    expect(empty.result?.isError).toBe(true);
+    expect(readStyleGuideDraft(env.store, "empty-guard")).toBeNull();
+  });
+
   test("a __proto__ glossary term stores as an own key, never swallowed", async () => {
     // The computed key is the own property; a bare `__proto__:` literal would set the prototype
     // and never reach the wire.
