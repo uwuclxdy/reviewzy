@@ -52,6 +52,7 @@ the call answers with the entry as `draft` and a dashboard link for the batch:
 - **humans author, agents apply:** the status machine is server-enforced; only the dashboard reaches `approved` or `rejected`
 - **per-project style guide (mcp resource):** merged with the global guide, embedded in `fetch_approved`, injected at session start by the plugin's hook
 - **per-entry tags:** label what each entry is a sample of, filter the queue by it on the dashboard and through `list_entries`
+- **per-entry variants:** group one surface's cases (`--verbose` beside the default output, the error case beside the success case) into one dashboard card the human signs case by case
 - **append-only revision history:** every save is undoable; history survives archiving
 - **ntfy and webhook notifications, archive retention:** one ping per filing batch; applied entries archive after `ARCHIVE_AFTER_DAYS`
 
