@@ -184,4 +184,87 @@ describe("entry tags", () => {
     const leaked = untaggedIds.filter((id) => html.includes(id));
     expect(leaked).toHaveLength(0);
   });
+
+  test("the tag filter matches whole values only: prefix never answers for prefix-2 or xprefix", async () => {
+    await seeded;
+    const plants = [
+      { file: "src/prefix-2.ts", anchor_text: "anchor p2", agent_draft: "Draft p2", tag: "prefix-2" },
+      { file: "src/xprefix.ts", anchor_text: "anchor x", agent_draft: "Draft x", tag: "xprefix" },
+      { file: "src/prefix-upper.ts", anchor_text: "anchor u", agent_draft: "Draft u", tag: "Prefix" },
+      { file: "src/prefix-pad.ts", anchor_text: "anchor pad", agent_draft: "Draft pad", tag: " prefix " },
+      { file: "src/pre-wild.ts", anchor_text: "anchor w1", agent_draft: "Draft w1", tag: "pre_fix" },
+      { file: "src/prezfix.ts", anchor_text: "anchor w2", agent_draft: "Draft w2", tag: "prezfix" },
+    ];
+    const planted = await callTool("file_entries", {
+      project: "tags",
+      entries: plants.map((p) => ({
+        repo: "https://example.com/org/repo.git",
+        file: p.file,
+        anchor_text: p.anchor_text,
+        agent_draft: p.agent_draft,
+        file_hash: sha256(p.file),
+        tag: p.tag,
+      })),
+    });
+    expect(planted.result?.isError).toBeUndefined();
+    const plantedIds = (planted.result?.structuredContent as { results: { id: string }[] }).results.map((r) => r.id);
+    expect(plantedIds).toHaveLength(plants.length);
+
+    // The tags stored exactly as sent, so the exclusions below are never vacuous.
+    const stored = new Map(
+      (
+        store.db
+          .query(`SELECT id, tag FROM entries WHERE id IN (${plants.map(() => "?").join(", ")})`)
+          .all(...plantedIds) as { id: string; tag: string }[]
+      ).map((r) => [r.id, r.tag]),
+    );
+    expect(plantedIds.every((id) => stored.has(id))).toBe(true);
+    expect([...stored.values()].sort()).toEqual(plants.map((p) => p.tag).sort());
+
+    // The store's exact rows carrying `prefix` (the oracle is raw SQL spelling the whole-value
+    // rule, never the code under test): the re-file test may have renamed one to "renamed", so
+    // the set is derived at assertion time, not sliced from the filed 20.
+    const expected = (
+      store.db
+        .query("SELECT e.id FROM entries e JOIN projects p ON p.id = e.project_id WHERE p.slug = 'tags' AND e.tag = 'prefix'")
+        .all() as { id: string }[]
+    ).map((r) => r.id);
+
+    const listed = await callTool("list_entries", { project: "tags", tag: TAG, limit: 200 });
+    expect(listed.result?.isError).toBeUndefined();
+    const out = listed.result?.structuredContent as { entries: { id: string; tag: string }[] };
+    expect(out.entries.every((e) => e.tag === "prefix")).toBe(true);
+    expect(out.entries.map((e) => e.id).sort()).toEqual([...expected].sort());
+    expect(plantedIds.filter((id) => out.entries.some((e) => e.id === id))).toHaveLength(0);
+
+    // A wildcard-bearing filter answers for exactly its own row: `pre_fix` must not reach
+    // `prezfix` the way SQL's LIKE would (the underscore is a one-char wildcard there).
+    const wild = await callTool("list_entries", { project: "tags", tag: "pre_fix", limit: 200 });
+    expect(wild.result?.isError).toBeUndefined();
+    const wildOut = wild.result?.structuredContent as { entries: { id: string; tag: string }[] };
+    expect(wildOut.entries).toHaveLength(1);
+    expect(wildOut.entries[0]?.tag).toBe("pre_fix");
+
+    // An unmatched tag that is a proper substring of a planted tag still yields the empty page.
+    const unmatched = await callTool("list_entries", { project: "tags", tag: "prefix-", limit: 200 });
+    expect(unmatched.result?.isError).toBeUndefined();
+    expect(((unmatched.result?.structuredContent as { entries: unknown[] }).entries) ?? []).toHaveLength(0);
+
+    // A padded query answers for exactly its own padded row, never for the unpadded tag either
+    // side of it (trimming the stored value or the query both move this count).
+    const padded = await callTool("list_entries", { project: "tags", tag: " prefix ", limit: 200 });
+    expect(padded.result?.isError).toBeUndefined();
+    const paddedOut = padded.result?.structuredContent as { entries: { id: string; tag: string }[] };
+    expect(paddedOut.entries).toHaveLength(1);
+    expect(paddedOut.entries[0]?.tag).toBe(" prefix ");
+
+    // The dashboard's tag filter routes through the store's exact match too, so a mutant at the
+    // store reds both channels through this one test.
+    const response = await app.request("/?project=tags&tag=prefix");
+    expect(response.status).toBe(200);
+    const html = await response.text();
+    const missing = [...expected].sort().filter((id) => !html.includes(id));
+    expect(missing).toHaveLength(0);
+    expect(plantedIds.filter((id) => html.includes(id))).toHaveLength(0);
+  });
 });
