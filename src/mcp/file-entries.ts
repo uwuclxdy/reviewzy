@@ -47,10 +47,10 @@ const EntryShape = {
   title: z.string().min(1).optional().describe("Optional human-readable label the dashboard shows in place of the file path."),
   tag: z.string().min(1).optional().describe("Optional free-form label naming what this entry is a sample of, so a bulk audit's entries group by it; shown and filterable on the dashboard and through list_entries. On a re-file of a known draft, a new tag overwrites the stored one and an omitted tag keeps it."),
   variant: z.string().min(1).optional().describe("Optional case label grouping this entry with the other cases of one surface: --verbose beside the default output, the error case beside the success case. Entries sharing project, file and variant render as one dashboard card with one labeled block per case. On a re-file of a known draft a new label overwrites the stored one and an omitted label keeps it."),
-  anchor_text: z.string().min(1).describe("The exact current text to replace: one line or many, the whole passage being replaced."),
+  anchor_text: z.string().min(1).describe("The exact current text, copied byte-exact from the file: one line or many. Span everything the user sees at once — the whole output block, menu or message as it renders together — even when the fix touches only part of it. When that unit is very large, anchor the section that must change and put the full output in context."),
   anchor_before: z.string().optional().describe("3 lines of context above the anchor, disambiguating a repeated string. Send it (or anchor_after) when anchor_text appears more than once in the file; the server refuses an ambiguous anchor unless sent context matches its placement."),
   anchor_after: z.string().optional().describe("3 lines of context below the anchor, disambiguating a repeated string (same rule as anchor_before)."),
-  agent_draft: z.string().optional().describe("The proposed replacement text; inert until a human touches it."),
+  agent_draft: z.string().optional().describe("The proposed replacement for the whole anchored span, inert until a human touches it. Carry every line that needs no change through unchanged, so the human edits a diff instead of authoring the whole unit."),
   file_content: z.string().optional().describe("The whole file at filing time; the server hashes it. Preferred: it lets the server verify your anchors against the file."),
   file_hash: z.string().optional().describe("The sha256 of the whole file as 64 lowercase hex chars."),
   context: z.unknown().optional().describe("A json object of notes the human reads before writing the text. command: the command (with its flags and state) that produces the anchored text, so the human can reproduce what they are judging; add where the string renders, surrounding code, and anything else the judgment needs."),
@@ -89,7 +89,7 @@ const FileEntriesArgs = {
     .array(FileProvenanceWire)
     .optional()
     .describe("Provenance sent once for entries filed from the same file: each item is {file, file_content}; an entry without its own file_content or file_hash picks up the row matching its file. Every row must match an entry."),
-  entries: z.array(FileEntryArgs).min(1).describe("The entries to file. One edit per entry."),
+  entries: z.array(FileEntryArgs).min(1).describe("The entries to file."),
   filed_by: z.string().min(1).optional().describe("A free-form label for the filing agent, shown on the dashboard."),
 };
 const StrictFileEntriesArgs = z.strictObject(FileEntriesArgs);
@@ -393,7 +393,7 @@ export function registerFileEntriesTool(server: McpServer, baseUrl: string, stor
     {
       title: "File entries for review",
       description:
-        "File the text you want changed as draft entries for a human to author, approve or reject on the dashboard. One entry is one edit: a multi-line block is ONE entry, not one entry per line. anchor_text is verified against the file content you send. Re-filing a known anchor is safe: a draft updates in place; an approved, applied or rejected entry comes back untouched when the content you send still contains its anchor. The dashboard groups entries by project.",
+        "File the text you want changed as draft entries for a human to author, approve or reject on the dashboard. One entry covers everything the user sees at once: a multi-line block is ONE entry, not one entry per line. Cases of one surface (flags, success vs error) file as one entry per case under a shared variant. anchor_text is verified against the file content you send. Re-filing a known anchor is safe: a draft updates in place; an approved, applied or rejected entry comes back untouched when the content you send still contains its anchor. The dashboard groups entries by project.",
       inputSchema: z.looseObject(FileEntriesArgs),
       outputSchema: FiledOutput,
     },
